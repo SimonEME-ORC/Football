@@ -5,6 +5,7 @@ from PIL import Image, ImageDraw, ImageFont
 import pycountry
 import datetime
 import operator
+import json
 
 # Manual Country Code Flag Dict
 ctrydict = {
@@ -18,6 +19,8 @@ ctrydict = {
     "Cayman-Inseln": "ky",
     "Chinese Taipei (Taiwan)": "tw",
     "Congo DR": "cd",
+	"Curacao" : "cw",
+	"DR Congo": "cd",
     "Cote d'Ivoire": "ci",
     "CSSR": "cz",
     "Czech Republic": "cz",
@@ -65,6 +68,9 @@ class Transfers:
 	""" Transfermarket lookups """
 	def __init__(self, bot):
 		self.bot = bot
+		self.parsed = []
+		self.transferson = True
+		self.bot.transferticker = bot.loop.create_task(self.transfer_ticker())
 		self.cats = {
 			"players":{
 				"cat":"players",
@@ -130,7 +136,196 @@ class Transfers:
 				"outfunc":self.get_rumours
 			}
 		}
+	
+	def __unload(self):
+		self.bot.transferticker.cancel()
+		self.transferson = False
+	
+	async def imgurify(self,imgurl):
+		d = {"image":imgurl}
+		h = {'Authorization': self.bot.credentials["Imgur"]["Authorization"]}
+		async with self.bot.session.post("https://api.imgur.com/3/image",data = d,headers=h) as resp:
+			res = await resp.json()
+		return res['data']['link']
 		
+	async def transfer_ticker(self):
+		await self.bot.wait_until_ready()
+		firstrun = True
+		while self.transferson:
+			try:
+				async with self.bot.session.get('https://www.transfermarkt.co.uk/statistik/neuestetransfers') as resp:
+					if resp.status != 200:
+						return await ctx.send(f'{resp.status} error accessing to {resp.url}')
+					tree = html.fromstring(await resp.text())
+			except:
+				continue
+			players = tree.xpath('.//div[@class="responsive-table"]/div/table/tbody/tr')
+
+			for i in players:
+				pname = "".join(i.xpath('.//td[1]//tr[1]/td[2]/a/text()'))
+				if not pname:
+					continue
+				if pname in self.parsed:
+					continue # continue when loop.
+				if firstrun:
+					self.parsed.append(pname)
+					continue
+				e = discord.Embed(color = 0x1a3151)
+				e.set_author(name=pname)
+				
+				# Player Profile Link
+				plink = "".join(i.xpath('.//td[1]//tr[1]/td[2]/a/@href'))
+				e.url = f"https://www.transfermarkt.co.uk{plink}"
+				
+				# Age and position
+				age = "".join(i.xpath('./td[2]//text()')).strip()
+				pos = "".join(i.xpath('./td[1]//tr[2]/td/text()'))
+				e.description = f"{age}, {pos}"
+				
+				# Nationality
+				nat = i.xpath('.//td[3]/img/@title')
+				flags = []
+				for j in nat:
+					flags.append(self.get_flag(j))
+				natout = ", ".join([f'{j[0]} {j[1]}' for j in list(zip(flags,nat))])
+				e.description += f" ({natout})"
+				
+				# To, From, Fee
+				movedtoteam = "".join(i.xpath('.//td[5]/table//tr[1]/td/a/text()'))
+				movedtolink = "".join(i.xpath('.//td[5]/table//tr[1]/td/a/@href'))
+				mtteam = "".join(i.xpath('.//td[5]/table//tr[2]/td/a/text()'))
+				mttlink = "".join(i.xpath('.//td[5]/table//tr[2]/td/a/@href'))
+				if mttlink:
+					mttlink = f"https://www.transfermarkt.co.uk{mttlink}"
+				mttflag = self.get_flag("".join(i.xpath('.//td[5]/table//tr[2]/td//img/@alt')))
+				mttflag = f"{mttflag} "
+				movedto = f"[{movedtoteam}](https://www.transfermarkt.co.uk{movedtolink}) " \
+							f"([{mttflag}{mtteam}]({mttlink}))"
+				
+				e.description += f"\n**To:** {movedto}"				
+				
+				movedfromteam = "".join(i.xpath('.//td[4]/table//tr[1]/td/a/text()'))
+				movedfromlink = "".join(i.xpath('.//td[4]/table//tr[1]/td/a/@href'))
+				mfteam = "".join(i.xpath('.//td[4]/table//tr[2]/td/a/text()'))
+				mftlink = "".join(i.xpath('.//td[4]/table//tr[2]/td/a/@href'))
+				if mftlink:
+					mftlink = f"https://www.transfermarkt.co.uk{mftlink}"
+				mftflag = self.get_flag("".join(i.xpath('.//td[4]/table//tr[2]/td//img/@alt')))
+				mftflag = f"{mftflag} "
+				movedfrom = f"[{movedfromteam}](https://www.transfermarkt.co.uk{movedfromlink}) " \
+							f"([{mftflag}{mfteam}](https://www.transfermarkt.co.uk{mftlink}))"
+				
+				e.description += f"\n**From:** {movedfrom}"
+							
+				fee = "".join(i.xpath('.//td[6]//a/text()'))
+				feelink = "".join(i.xpath('.//td[6]//a/@href'))
+				
+				e.description += f"\n**Fee:** [{fee}]({feelink})"
+				# Get picture and rehost on imgur.
+				th = "".join(i.xpath('.//td[1]//tr[1]/td[1]/img/@src'))
+				th = await self.imgurify(th)
+				e.set_thumbnail(url=th)
+				self.parsed.append(pname)
+				for i in self.bot.config:
+					if "transferchannel" in self.bot.config[i]:
+						ch = self.bot.config[i]["transferchannel"]
+						if ch is None:
+							continue
+						ch = self.bot.get_channel(ch)
+						await ch.send(embed=e)
+			firstrun = False
+			# Run every 5 mins
+			await asyncio.sleep(300)
+	
+	# Enable the ticker
+	@commands.group(invoke_without_command=True,aliases=["tf"])
+	@commands.is_owner()
+	async def transferticker(self,ctx):
+		""" Check the status of the transfers channel """
+		e = discord.Embed(title="Transfer Channel Status")
+		e.set_thumbnail(url=ctx.guild.icon_url)
+		if self.transferson:
+			e.description = "```diff\n+ Enabled```"
+			e.color=0x00ff00
+		else:
+			e.description = "```diff\n- Disabled```"
+			e.color = 0xff0000
+
+		if "transferchannel" in self.bot.config[str(ctx.guild.id)]:
+			ch = self.bot.config[str(ctx.guild.id)]["transferchannel"]
+			chan = self.bot.get_channel(ch)
+			chanval = chan.mention
+		else:
+			chanval = "None Set"
+			e.color = 0xff0000
+		e.add_field(name=f"output Channel",value=chanval,inline=False)
+		
+		if self.bot.is_owner(ctx.author):
+			x =  self.bot.transferticker._state
+			if x == "PENDING":
+				v = "? Task running."
+			elif x == "CANCELLED":
+				e.color = 0xff0000
+				v = "? Task Cancelled."
+			elif x == "FINISHED":
+				e.color = 0xff0000
+				self.bot.transferticker.print_stack()
+				v = "? Task Finished"
+				z = self.bot.transferticker.exception()
+			else:
+				v = f"? `{self.bot.transferticker._state}`"
+			e.add_field(name="Debug Info",value=v,inline=False)
+			try:
+				e.add_field(name="Exception",value=z,inline=False)
+			except NameError:
+				pass
+		await ctx.send(embed=e)
+	
+	@transferticker.command(name="on")
+	@commands.has_permissions(manage_messages=True)
+	async def transfers_on(self,ctx):
+		""" Turn the transfer ticker channel back on """
+		if not self.transferson:
+			self.transferson = True
+			await ctx.send("? Transfer ticker channel has been enabled.")
+			self.bot.transferticker = self.bot.loop.create_task(self.ls())
+		elif self.bot.scorechecker._state == ["FINISHED","CANCELLED"]:
+			await ctx.send(f"? Restarting {self.bot.transferticker._state} task after exception {self.bot.transferticker.exception()}.")
+			self.bot.transferticker = bot.loop.create_task(self.ls())
+		else:
+			await ctx.send("? Transfer ticker channel has been enabled.")
+	
+	@transferticker.command(name="off")
+	@commands.has_permissions(manage_messages=True)
+	async def transfers_off(self,ctx):	
+		""" Turn off the transfer ticker channel """
+		if self.transferson:
+			self.transferson = False
+			await ctx.send("? Transfer ticker channel has been disabled.")
+		else:
+			await ctx.send("? Transfer ticker channel already disabled.")
+	
+	@transferticker.command(name="set")
+	@commands.has_permissions(manage_channels=True)
+	async def _set(self,ctx):
+		""" Sets the transfer ticker channel for this server """
+		self.bot.config[f"{ctx.guild.id}"].update({"transferchannel":ctx.channel.id})
+		with await self.bot.configlock:
+			with open('config.json',"w",encoding='utf-8') as f:
+				json.dump(self.bot.config,f,ensure_ascii=True,
+				sort_keys=True,indent=4, separators=(',',':'))
+		await ctx.send(f"Transfer ticker channel for {ctx.guild.name} set to {ctx.channel.mention}")
+	
+	@transferticker.command(name="unset")
+	@commands.has_permissions(manage_channels=True)
+	async def _unset(self,ctx):
+		""" Unsets the live score channel for this server """
+		self.bot.config[str(ctx.guild.id)]["transferchannel"] = None
+		with await self.bot.configlock:
+			with open('config.json',"w",encoding='utf-8') as f:
+				json.dump(self.bot.config,f,ensure_ascii=True,
+				sort_keys=True,indent=4, separators=(',',':'))
+		await ctx.send(f"Transfer ticker channel for {ctx.guild.name} set to None")
 	
 	# Base lookup - No Subcommand.
 	@commands.group(invoke_without_command=True)
@@ -323,7 +518,7 @@ class Transfers:
 			try:
 				res = await self.bot.wait_for("reaction_add",check=check,timeout=30)
 			except asyncio.TimeoutError:
-				await m.delete()
+				await m.clear_reactions()
 				break
 			res = res[0]
 			if res.emoji == "â®": #first
@@ -471,18 +666,21 @@ class Transfers:
 	async def get_transfers(self,ctx,e,target):
 		e.description = ""
 		target = target.replace('startseite','transfers')
-		target = f"{target}/saison_id/{datetime.datetime.now().year}"
 		if datetime.datetime.now().month < 7:
 			period = "w"
+			seasonid = datetime.datetime.now().year - 1
 		else:
 			period = "s"
+			seasonid = datetime.datetime.now().year
+		target = f"{target}/saison_id/{seasonid}/pos//detailpos/0/w_s={period}"
+			
 		p = {"w_s":period}
-		async with self.bot.session.get(f"{target}",params=p) as resp:
+		async with self.bot.session.get(target,params=p) as resp:
 			if resp.status != 200:
 				return await ctx.send(f"Error {resp.status} connecting to {resp.url}")
 			tree = html.fromstring(await resp.text())
 		
-		e.set_author(name = tree.xpath('.//head/title[1]/text()')[0],url=str(resp.url))
+		e.set_author(name = "".join(tree.xpath('.//head/title/text()')),url=target)
 		e.set_footer(text=discord.Embed.Empty)
 		ignore,intable,outtable = tree.xpath('.//div[@class="large-8 columns"]/div[@class="box"]')
 		
@@ -494,16 +692,20 @@ class Transfers:
 		for i in intable:
 			pname = "".join(i.xpath('.//td[@class="hauptlink"]/a[@class="spielprofil_tooltip"]/text()'))
 			plink = "".join(i.xpath('.//td[@class="hauptlink"]/a[@class="spielprofil_tooltip"]/@href'))
+			
 			plink = f"http://transfermarkt.co.uk{plink}"
 			age   = "".join(i.xpath('.//td[3]/text()'))
 			ppos  = "".join(i.xpath('.//td[2]//tr[2]/td/text()'))
-			flag  = self.get_flag(i.xpath('.//td/img[1]/@title')[1])
+			try:
+				flag  = self.get_flag(i.xpath('.//td[4]/img[1]/@title')[0])
+			except IndexError:
+				flag = ""
 			fee = "".join(i.xpath('.//td[6]//text()'))
 			if "loan" in fee.lower():
 				inloans.append(f"{flag} [{pname}]({plink}) {ppos}, {age}\n")
 				continue
 			inlist.append(f"{flag} [{pname}]({plink}) {ppos}, {age} ({fee})\n")
-		
+			
 		for i in outtable:
 			pname = "".join(i.xpath('.//td[@class="hauptlink"]/a[@class="spielprofil_tooltip"]/text()'))
 			plink = "".join(i.xpath('.//td[@class="hauptlink"]/a[@class="spielprofil_tooltip"]/@href'))
@@ -526,10 +728,14 @@ class Transfers:
 					break
 			e.add_field(name=title,value=output.strip(","))
 		
-		write_field(inlist,"Inbound Transfers")
-		write_field(inloans,"Inbound Loans")
-		write_field(outlist,"Outbound Transfers")
-		write_field(outloans,"Outbound Loans")
+		if inlist:
+			write_field(inlist,"Inbound Transfers")
+		if inloans:
+			write_field(inloans,"Inbound Loans")
+		if outlist:
+			write_field(outlist,"Outbound Transfers")
+		if outloans:
+			write_field(outloans,"Outbound Loans")
 		
 		await ctx.send(embed=e)
 	
