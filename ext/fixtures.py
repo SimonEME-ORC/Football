@@ -53,7 +53,10 @@ class Fixtures:
 			return await m.edit(content=f"No results for query: {qry}")
 		
 		if len(resdict) == 1:
-			await m.delete()
+			try:
+				await m.delete()
+			except:
+				pass
 			return f'https://www.flashscore.com/{resdict["0"]["url"]}'
 			
 		outtext = ""
@@ -70,9 +73,15 @@ class Fixtures:
 				return True
 		
 		match = await self.bot.wait_for("message",check=check,timeout=30)
-		await m.delete()
+		try:
+			await m.delete()
+		except:
+			pass
 		mcontent = match.content
-		await match.delete()
+		try:
+			await match.delete()
+		except:
+			pass
 		return f'https://www.flashscore.com/{resdict[mcontent]["url"]}'
 
 	@commands.command()
@@ -221,14 +230,16 @@ class Fixtures:
 				a = sc[1]
 				sc = "-".join(sc)
 				# Assume we're playing at home.
-				op = "".join(i.xpath('.//span[@class="padr"]/text()')) # PADR IS HOME.
-				wh = "A" if team in op else "H"
-				w = "L" if h > a else "D" if h == a else "W"
+				op = "".join(i.xpath('.//span[@class="padl"]/text()')) # PADR IS HOME.
 				
+				wh = "H"
+				w = "W" if h > a else "D" if h == a else "L"
 				if team in op:
 					# if we're actually the away team.
-					op = "".join(i.xpath('.//span[@class="padl"]/text()'))
-					w = "W" if h > a else "D" if h == a else "L"
+					wh = "A"
+					op = "".join(i.xpath('.//span[@class="padr"]/text()'))
+					w = "L" if h > a else "D" if h == a else "W"
+					
 				dates.append(f"`{wh}: {d}`")
 				games.append(f"`{w}: {sc} v {op}`")
 		else:
@@ -287,7 +298,7 @@ class Fixtures:
 					tv = ""
 				op = "".join(i.xpath('.//span[@class="padr"]/text()'))
 				wh = "A"
-				if op == team:
+				if team in op:
 					op = "".join(i.xpath('.//span[@class="padl"]/text()'))
 					wh = "H"
 				games.append(f"`{wh}: {op}`{tv}")
@@ -342,28 +353,44 @@ class Fixtures:
 				wf = "reaction_add"
 				r = await self.bot.wait_for(wf,check=check,timeout=120)
 			except asyncio.TimeoutError:
-				await m.clear_reactions()
+				try:
+					await m.clear_reactions()
+				except discord.Forbidden:
+					pass
 				break
 			r = r[0]
 			if r.emoji == "⏮": #first	
 				page = 0
-				await m.remove_reaction("⏮",ctx.author)
+				try:
+					await m.remove_reaction("⏮",ctx.author)
+				except discord.Forbidden:
+					pass
 			if r.emoji == "⬅": #prev
-				await m.remove_reaction("⬅",ctx.author)
+				try:
+					await m.remove_reaction("⬅",ctx.author)
+				except discord.Forbidden:
+					pass
 				if page > 0:
 					page = page - 1
-			if r.emoji == "➡": #next	
-				await m.remove_reaction("➡",ctx.author)
+			if r.emoji == "➡": #next
+				try:
+					await m.remove_reaction("➡",ctx.author)
+				except discord.Forbidden:
+					pass
 				if page < numpages - 1:
 					page = page + 1
 			if r.emoji == "⏭": #last
 				page = numpages - 1
-				await m.remove_reaction("⏭",ctx.author)
+				try:
+					await m.remove_reaction("⏭",ctx.author)
+				except discord.Forbidden:
+					pass
 			if r.emoji == "⏏": #eject
 				return await m.delete()
 			await m.edit(embed=pages[page])
 	
 	def parse_table(self,table):
+		table += "/standings/"
 		self.driver.get(table)
 		try:
 			z = self.driver.find_element_by_link_text("Main")
@@ -371,7 +398,11 @@ class Fixtures:
 		except NoSuchElementException:
 			pass
 		xp = './/table[contains(@id,"table-type-")]'
-		tbl = self.driver.find_element_by_xpath(xp)
+		try:
+			tbl = self.driver.find_element_by_xpath(xp)
+		except NoSuchElementException:
+			WebDriverWait(self.driver, 2)
+			tbl = self.driver.find_element_by_xpath(xp)
 		location = tbl.location
 		size = tbl.size
 		im = Image.open(BytesIO(tbl.screenshot_as_png))
