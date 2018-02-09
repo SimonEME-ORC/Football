@@ -1,0 +1,23 @@
+# Junk data
+__pycache__/
+ext/__pycache__/
+
+# bot logs
+*.log
+*.bat
+
+
+# config files
+config.json
+ignored.json
+credentials.json
+
+# debug files
+*.html
+
+# random media
+*.m4a
+*.webm
+*.png
+*.jpg
+*.txt

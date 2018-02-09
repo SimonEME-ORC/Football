@@ -82,7 +82,7 @@ class Tv:
 				e = discord.Embed()
 				async with self.bot.session.get(self.bot.tv[team]) as resp:
 					if resp.status != 200:
-						await ctx.send(f"ðŸš« {resp.url} returned {resp.status}")
+						await ctx.send(f"🚫 {resp.url} returned {resp.status}")
 						return
 					tree = html.fromstring(await resp.text())
 				tvlist = []
@@ -132,7 +132,7 @@ class Tv:
 			else:
 				async with self.bot.session.get("http://www.livesoccertv.com/schedules/") as resp:
 					if resp.status != 200:
-						await ctx.send(f"ðŸš« {resp.url} returned {resp.status}")
+						await ctx.send(f"🚫 {resp.url} returned {resp.status}")
 						return
 					tree = html.fromstring(await resp.text())
 					tvlist = []

@@ -13,28 +13,28 @@ import sys
 load = [	
 	'ext.admin','ext.fixtures','ext.fun','ext.google','ext.images','ext.info',
 	'ext.meta','ext.mod','ext.mtb','ext.nufc','ext.quotes',
-	'ext.reactions','ext.scores', 'ext.sidebar',
-	'ext.tables','ext.twitter','ext.transfers',	
-	'ext.tv','ext.wiki'
-	# 'ext.radio',
+	'ext.reactions','ext.scores', 'ext.sidebar','ext.twitter',
+	'ext.transfers','ext.tv','ext.radio'
+	# 'ext.wiki'
 ]
 					
 # Enable Logging
 log = logging.getLogger('discord')
 log.setLevel(logging.INFO)
-handler = logging.FileHandler(filename='Rewrite.log',
-							  encoding='utf-8', mode='w')
+handler = logging.FileHandler(filename='rewrite.log',encoding='utf-8', mode='w')
 log.addHandler(handler)
 
 description = "Football lookup bot by Painezor#8489"
 #help_attrs = dict(hidden=True)
 
 async def get_prefix(bot, message):
+	if message.guild is None:
+		return ['+','-','.','$','!','?']
 	if not f"{message.guild.id}" in bot.config:
-		bot.config["message.guild.id"] = {"prefix":""}
+		bot.config[f"{message.guild.id}"] = {"prefix":".tb"}
 	try:
 		pref = bot.config[f"{message.guild.id}"]["prefix"]
-	except TypeError:
+	except KeyError:
 		pref = []
 	return commands.when_mentioned_or(*pref)(bot, message)
 
@@ -60,7 +60,6 @@ async def on_ready():
 	print(f'{bot.user.name}: {datetime.now()}\n---------------------')
 	if not hasattr(bot, 'uptime'):
 		bot.uptime = datetime.utcnow()
-	# bot.reddit = praw.Reddit(**bot.credentials["Reddit"])
 	bot.reddit = praw.Reddit(**bot.credentials["Reddit"])
 	bot.session = aiohttp.ClientSession(loop=bot.loop)
 	for c in load:
@@ -69,7 +68,7 @@ async def on_ready():
 		except Exception as e:
 			print(f'Failed to load cog {c}\n{type(e).__name__}: {e}')
 	await asyncio.sleep(5)
-	await bot.change_presence(game=discord.Game(name="Use !help",type=0))
+	await bot.change_presence(game=discord.Game(name="Use -help",type=0))
 
 # Define command handler
 @bot.event
@@ -81,7 +80,7 @@ async def on_command(ctx):
 	else:
 		destination = f'#{ctx.channel.name} ({ctx.guild.name})'
 	log.info(f'{ctx.message.created_at}: {ctx.author.name} in'
-			  '{destination}: {ctx.message.content}')
+			  f'{destination}: {ctx.message.content}')
 
 # Load bot and logging.
 if __name__ == '__main__':
@@ -91,14 +90,10 @@ if __name__ == '__main__':
 	bot.commands_used = Counter()
 	with open('ignored.json') as f:
 		bot.ignored = json.load(f)
-	with open('leagues.json') as f:
-		bot.leagues = json.load(f)
 	with open('config.json') as f:
 		bot.config = json.load(f)
 	with open('tv.json') as f:
 		bot.tv = json.load(f)
-	with open('comps.json') as f:
-		bot.comps = json.load(f)
 	bot.configlock = asyncio.Lock()
 	bot.run(bot.credentials['bot']['token'])
 	

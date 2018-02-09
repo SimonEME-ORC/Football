@@ -8,12 +8,22 @@ class NUFC:
 	""" NUFC.com player profiles """
 	def __init__(self, bot):
 		self.bot = bot
-		print("FUCKING RELOAD.")
-		self.bot.streams = []
+		self.bot.streams = {}
 	
 	def nufccheck(ctx):
 		if ctx.guild:
 			return ctx.guild.id in [238704683340922882,332159889587699712]
+	
+	@commands.check(nufccheck)
+	@commands.command()
+	async def steam(self,ctx):
+		""" Shows the link for the r/NUFC steam page """
+		await ctx.send('http://steamcommunity.com/groups/nufcreddit')
+	
+	@commands.command(hidden=True)
+	@commands.is_owner()
+	async def shake(self,ctx):
+		await ctx.send("Well to start off with anyone who thinks you can trick women into sleeping with you, don't understand game, and are generally the ones who embarrass themselves. In a social context women are a lot cleverer then men (in general) and understand what's going on when it comes to male female dynamic, that's why you see a lot less 40 year old women virgins. \n\nBut just to dispel some myths about \"game\" that are being pushed in this sub. If you actually read into game, it's moved on from silly one liners and \"negging\" in the 80's (long before my time) to becoming a cool guy who brings value to girls lives around you, by working on yourself and understanding what the girl truly wants. Girls want to meet a cool guy \"who understands her\", right? It's more about the vibe and body language you give off and \"lines\" are actually pretty heavily advised against. \n\nWhen I said 5/6 I wasn't just talking about looks but personality aswell. However if you class judging whether a girl is attractive or not as objectifying women, which is what you are implying. then I hate to break it to you but women and in fact everyone does this all the time. In fact any man who buys a girl a drink, flowers or a meal is \"objectifying women\". Would you buy your friend a meal or flowers? \n\nNearly every women you have encountered (in your demographic), even on a subconscious level has judged whether they find you attractive or not (not just your looks), she's probably even ranked you compared to other guys she's met. That's just the dynamic between men and women.")
 	
 	async def get_players(self):
 		names,pics = await self.gp("https://www.nufc.co.uk/teams/first-team")
@@ -36,31 +46,49 @@ class NUFC:
 	
 	@commands.group(invoke_without_command=True,aliases=["stream"])
 	async def streams(self,ctx):
-		""" List all streams for the match added by users. """
-		if not self.bot.streams:
-			await ctx.send("Nobody has added any streams yet.")
+		""" List alls for the match added by users. """
+		try:
+			if not self.bot.streams[f"{ctx.guild.id}"]:
+				return await ctx.send("Nobody has added any streams yet.")
+		except KeyError:
+			self.bot.streams[f"{ctx.guild.id}"] = []
+			return await ctx.send("Nobody has added any streams yet.")
 		output = "**Streams: **\n"
-		for c,v in enumerate(self.bot.streams,1):
+		for c,v in enumerate(self.bot.streams[f"{ctx.guild.id}"],1):
 			output += f"{c}: {v}\n"
 		await ctx.send(output)
 		
 	@streams.command(name="add")
 	async def stream_add(self,ctx,*,stream):
+		""" Add a stream to the stream list. """
+		# Hide link preview.
 		if "http" in stream:
 			stream = f"<{stream}>"
-		self.bot.streams.append(f"{stream} (added by {ctx.author.name})")
+		
+		# Check for dupes.
+		try:
+			for i in self.bot.streams[f"{ctx.guild.id}"]:
+				if stream in i:
+					return await ctx.send("Already in stream list.")
+		except KeyError:
+			self.bot.streams[f"{ctx.guild.id}"] = [stream]
+		else:
+			self.bot.streams[f"{ctx.guild.id}"].append(f"{stream} (added by {ctx.author.name})")
 		await ctx.send(f"Added {stream} to stream list.")
 		
 	@streams.command(name="del")
 	async def stream_del(self,ctx,*,num:int):
-		num = num+1
-		removed = self.bot.streams.pop(num)
+		""" Delete a stream from the stream list """
+		num = num - 1
+		if not ctx.author.name in self.bot.streams[f"{ctx.guild.id}"][num]:
+			return await ctx.send("You didn't add that stream",delete_after=5)
+		removed = self.bot.streams[f"{ctx.guild.id}"].pop(num)
 		await ctx.send(f"{removed} removed from streams list.")
 		
 	@streams.command(name="clear")
-	@commands.has_permissions(manage_guild=True)
+	@commands.has_permissions(manage_messages=True)
 	async def stream_clear(self,ctx):
-		self.bot.streams = []
+		self.bot.streams[f"{ctx.guild.id}"] = [stream]
 		await ctx.send("Streams cleared.")
 	
 	@commands.command()

@@ -79,7 +79,7 @@ class Sidebar:
 		m = await ctx.send("Getting data...")
 		await ctx.trigger_typing()
 		# Get Data
-		sb,table,fixtures,res,lastres,threads = await self.get_data(m)
+		sb,table,fixtures,res,lastres,threads = await self.get_data()
 		sb = (f"{sb}{table}{fixtures}")
 		lastres = lastres + threads
 		thetime = datetime.datetime.now().strftime('%a %d %b at %H:%M')
@@ -140,8 +140,7 @@ class Sidebar:
 		await m.edit(content="",embed=e)
 		
 	@sidebar.command(name="off")
-	@commands.has_permissions(manage_messages=True)
-	@commands.check(nufccheck)
+	@commands.is_owner()
 	async def _off(self,ctx):
 		""" Disable sidebar auto-updating """
 		if self.tweetson:
@@ -151,8 +150,7 @@ class Sidebar:
 			await ctx.send("Reddit sidebar updater already disabled.")
 
 	@sidebar.command(name="on")
-	@commands.has_permissions(manage_messages=True)
-	@commands.check(nufccheck)
+	@commands.is_owner()
 	async def _on(self,ctx):
 		""" Enable Reddit sidebar auto-updating """
 		if not self.sidebaron:
@@ -168,7 +166,6 @@ class Sidebar:
 	
 	async def looptask(self):
 		while self.sidebaron and not self.bot.is_closed():
-			mc = self.bot.get_channel(306552425144385536)
 			nowt = datetime.datetime.now()
 			if nowt.hour < 18:
 				self.nextrun = nowt.replace(hour=18,minute=0,second=0)
@@ -180,8 +177,7 @@ class Sidebar:
 			runin = self.nextrun - nowt
 			await asyncio.sleep(runin.seconds)
 			
-			m = await mc.send("Sidebar auto-updater task started.")
-			sb,table,fixtures,res,lastres,threads = await self.get_data(m)
+			sb,table,fixtures,res,lastres,threads = await self.get_data()
 			sb = (f"{sb}{table}{fixtures}")
 			lastres = lastres + threads
 			thetime = datetime.datetime.now().strftime('%a %d %b at %H:%M')
@@ -230,20 +226,11 @@ class Sidebar:
 			# Post
 			l = self.bot.loop
 			await l.run_in_executor(None,self.post_sidebar,sb)	
-			
-			e = discord.Embed(color=0xff4500)
-			th = ("http://vignette2.wikia.nocookie.net/valkyriecrusade/images"
-				  "/b/b5/Reddit-The-Official-App-Icon.png")
-			e.set_author(icon_url=th,name="Sidebar updater")
-			e.description = (f"Sidebar for http://www.reddit.com/r/"
-							 f"{self.subreddit} auto-updated.")
-			e.timestamp = datetime.datetime.now()
-			e.set_footer(text=f"{len(sb)} / 10240 Characters")
-			await m.edit(content="",embed=e)
 
 	@sidebar.command(aliases=["captext","text"])
 	@commands.has_permissions(manage_messages=True)
 	async def caption(self,ctx,*,captext):
+		""" Set the sidebar caption on r/NUFC """
 		await ctx.trigger_typing()
 		s = await self.bot.loop.run_in_executor(None,self.get_current_sidebar)
 		wk = await self.bot.loop.run_in_executor(None,self.get_sidebar)
@@ -278,8 +265,8 @@ class Sidebar:
 	@sidebar.command()
 	@commands.has_permissions(manage_messages=True)
 	async def image(self,ctx,*,link=""):
+		""" Set the sidebar image on r/NUFC (400 x 300) """
 		if not ctx.message.attachments:
-			print("No attachments.")
 			if not link:
 				return await ctx.send("Upload the image with the command, or provide a link to the image.")
 			async with self.bot.session.get(link) as resp:
@@ -299,18 +286,17 @@ class Sidebar:
 		except:
 			return await ctx.send("Failed. File too large?")
 		style = s.stylesheet().stylesheet
-		s.stylesheet.update(style,reason="Update sidebar image")
+		s.stylesheet.update(style,reason=f"{ctx.author.name} Updated sidebar image via discord.")
 		await ctx.send(f"Sidebar image changed on http://www.reddit.com/r/{self.subreddit}")
 		
 
 	def post_wiki(self,newside):
-		print("Post_wiki ACCESSED.")
 		try:
 			s = self.bot.reddit.subreddit(f'{self.subreddit}')
 			s.wiki['sidebar'].edit(newside,reason="SideCaption")
 		except RequestException as e:
 			print(e)
-			print("Failed at post_wiki, retrying.")
+			print("Failed to post wiki page, retrying.")
 			if not self.bot.is_closed():
 				self.post_wiki(newside)
 			
@@ -337,7 +323,7 @@ class Sidebar:
 			if not self.bot.is_closed():
 				self.post_sidebar(sidebar)
 				
-	async def get_data(self,m):
+	async def get_data(self):
 		if self.sidebaron:
 			table=fixtures=results=threads="Retry"
 			sb = await self.bot.loop.run_in_executor(None,self.get_sidebar)
@@ -346,13 +332,10 @@ class Sidebar:
 					return None
 				if table == "Retry":
 					table = await self.table()
-					await m.edit(content="Got table, getting fixtures...")
 				if fixtures == "Retry":
 					fixtures = await self.bot.loop.run_in_executor(None,self.fixtures)
-					await m.edit(content="Got fixtures getting results...")
 				if results == "Retry":
 					results,lastres,lastop = await self.bot.loop.run_in_executor(None,self.results)
-					await m.edit(content="Got results, finding pre/post/match threads....")
 				if threads == "Retry":
 					threads = await self.bot.loop.run_in_executor(None,self.threads,lastop)
 				if "Retry" in [table,fixtures,results]:
@@ -448,8 +431,7 @@ class Sidebar:
 	def fixtures(self):	
 		fixblock = []
 		driver = webdriver.PhantomJS()
-		driver.get("http://www.flashscore.com/team/newcastle-utd/"
-			   "p6ahwuwJ/fixtures/")
+		driver.get("http://www.flashscore.com/team/newcastle-utd/p6ahwuwJ/fixtures/")
 		driver.implicitly_wait(2)
 		url = "http://www.livesoccertv.com/teams/england/newcastle-united/"
 
@@ -483,7 +465,7 @@ class Sidebar:
 				try:
 					op = f"{self.bot.teams[op]['icon']}{self.bot.teams[op]['shortname']}"
 				except KeyError:
-					print(f"No db entry for: {op}")
+					print(f"Sidebar - fixtures - No db entry for: {op}")
 				fixblock.append(f"[{d} {t}]({lnk})|{ic}|{op}|{comp}\n")
 		
 		fixmainhead = "\n* Upcoming fixtures"

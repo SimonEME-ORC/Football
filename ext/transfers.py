@@ -41,7 +41,7 @@ ctrydict = {
     "Neukaledonien": "nc",
     "Northern Ireland": "gb",
     "Osttimor": "tl",
-    "PalÃ¤stina": "ps",
+    "Palästina": "ps",
     "Russia": "ru",
     "Scotland": "gb",
     "Sint Maarten": "sx",
@@ -57,11 +57,11 @@ ctrydict = {
     "Vietnam": "vn",
     "Wales": "gb"}
 unidict = {
-	"a":"ðŸ‡¦","b":"ðŸ‡§","c":"ðŸ‡¨","d":"ðŸ‡©","e":"ðŸ‡ª",
-	"f":"ðŸ‡«","g":"ðŸ‡¬","h":"ðŸ‡­","i":"ðŸ‡®","j":"ðŸ‡¯",
-	"k":"ðŸ‡°","l":"ðŸ‡±","m":"ðŸ‡²","n":"ðŸ‡³","o":"ðŸ‡´",
-	"p":"ðŸ‡µ","q":"ðŸ‡¶","r":"ðŸ‡·","s":"ðŸ‡¸","t":"ðŸ‡¹",
-	"u":"ðŸ‡º","v":"ðŸ‡»","w":"ðŸ‡¼","x":"ðŸ‡½","y":"ðŸ‡¾","z":"ðŸ‡¿"
+	"a":"🇦","b":"🇧","c":"🇨","d":"🇩","e":"🇪",
+	"f":"🇫","g":"🇬","h":"🇭","i":"🇮","j":"🇯",
+	"k":"🇰","l":"🇱","m":"🇲","n":"🇳","o":"🇴",
+	"p":"🇵","q":"🇶","r":"🇷","s":"🇸","t":"🇹",
+	"u":"🇺","v":"🇻","w":"🇼","x":"🇽","y":"🇾","z":"🇿"
 	}
 
 class Transfers:
@@ -232,10 +232,12 @@ class Transfers:
 						if ch is None:
 							continue
 						ch = self.bot.get_channel(ch)
+						if ch is None:
+							continue
 						await ch.send(embed=e)
 			firstrun = False
 			# Run every 5 mins
-			await asyncio.sleep(300)
+			await asyncio.sleep(60)
 	
 	# Enable the ticker
 	@commands.group(invoke_without_command=True,aliases=["tf"])
@@ -337,7 +339,7 @@ class Transfers:
 				return await ctx.send(f"HTTP Error connecting to transfernarkt: {resp.status}")
 			tree = html.fromstring(await resp.text())
 		
-		replacelist = ["ðŸ‡¦","ðŸ‡§",'ðŸ‡¨','ðŸ‡©','ðŸ‡ª','ðŸ‡«','ðŸ‡¬']
+		replacelist = ["🇦","🇧",'🇨','🇩','🇪','🇫','🇬']
 		
 		# Header names, scrape then compare (because they don't follow a pattern.)
 		cats = [i.lower() for i in tree.xpath(".//div[@class='table-header']/text()")]
@@ -357,9 +359,9 @@ class Transfers:
 
 		# If only one category has results, invoke that search.
 		if len(sortedlist) == 1:
-			return await ctx.invoke(res["ðŸ‡¦"][1],qry=target)
+			return await ctx.invoke(res["🇦"][1],qry=target)
 			
-		res["â"] = ("","")
+		res["⏏"] = ("","")
 		e = discord.Embed(url = str(resp.url))
 		e.title = "Transfermarkt lookup"
 		e.description = "\n".join(sortedlist)
@@ -381,7 +383,7 @@ class Transfers:
 		except asyncio.TimeoutError:
 			return await m.clear_reactions()
 		rea = rea[0]
-		if rea.emoji == "â": #eject cancels.
+		if rea.emoji == "⏏": #eject cancels.
 			return await m.clear_reactions()
 		elif rea.emoji in res.keys():
 			# invoke appropriate subcommand for category selection.
@@ -472,8 +474,8 @@ class Transfers:
 		def make_embed(e,lines,targets):
 			e.description = ""
 			if special:
-				replacelist = ["ðŸ‡¦","ðŸ‡§",'ðŸ‡¨','ðŸ‡©','ðŸ‡ª',
-							   'ðŸ‡«','ðŸ‡¬',"ðŸ‡­","ðŸ‡®","ðŸ‡¯"]
+				replacelist = ["🇦","🇧",'🇨','🇩','🇪',
+							   '🇫','🇬',"🇭","🇮","🇯"]
 				reactdict = {}
 				for i,j in zip(lines,targets):
 					emoji = replacelist.pop(0)
@@ -491,27 +493,27 @@ class Transfers:
 			e = make_embed(e,lines,targets)
 		# Create message and add reactions		
 		m = await ctx.send(embed=e)	
-		await m.add_reaction("â") # eject
+		await m.add_reaction("⏏") # eject
 		if maxpage > 2:
-			await m.add_reaction("â®") # first
+			await m.add_reaction("⏮") # first
 		if maxpage > 1:
-			await m.add_reaction("â—€") # prev
+			await m.add_reaction("◀") # prev
 		if special:
 			for i in reactdict:
 				await m.add_reaction(i)
 		if maxpage > 1:
-			await m.add_reaction("â–¶") # next
+			await m.add_reaction("▶") # next
 		if maxpage > 2:
-			await m.add_reaction("â­") # last
+			await m.add_reaction("⏭") # last
 		
 		# Only respond to user who invoked command.
 		def check(reaction,user):
 			if reaction.message.id == m.id and user == ctx.author:
 				e = str(reaction.emoji)
 				if special:
-					return e.startswith(('â®','â—€','â–¶','â­','â')) or e in reactdict
+					return e.startswith(('⏮','◀','▶','⏭','⏏')) or e in reactdict
 				else:
-					return e.startswith(('â®','â—€','â–¶','â­','â'))
+					return e.startswith(('⏮','◀','▶','⏭','⏏'))
 		
 		# Reaction Logic Loop.
 		while True:
@@ -521,21 +523,21 @@ class Transfers:
 				await m.clear_reactions()
 				break
 			res = res[0]
-			if res.emoji == "â®": #first
+			if res.emoji == "⏮": #first
 				page = 1
-				await m.remove_reaction("â®",ctx.message.author)
-			if res.emoji == "â—€": #prev
-				await m.remove_reaction("â—€",ctx.message.author)
+				await m.remove_reaction("⏮",ctx.message.author)
+			if res.emoji == "◀": #prev
+				await m.remove_reaction("◀",ctx.message.author)
 				if page > 1:
 					page = page - 1
-			if res.emoji == "â–¶": #next	
-				await m.remove_reaction("â–¶",ctx.message.author)
+			if res.emoji == "▶": #next	
+				await m.remove_reaction("▶",ctx.message.author)
 				if page < maxpage:
 					page = page + 1
-			if res.emoji == "â­": #last
+			if res.emoji == "⏭": #last
 				page = maxpage
-				await m.remove_reaction("â­",ctx.message.author)
-			if res.emoji == "â": #eject
+				await m.remove_reaction("⏭",ctx.message.author)
+			if res.emoji == "⏏": #eject
 				await m.clear_reactions()
 				break
 			if res.emoji in reactdict:
@@ -637,7 +639,7 @@ class Transfers:
 			if flag:
 				flag = self.get_flag(flag)
 			else:
-				flag = "ðŸŒ"
+				flag = "🌍"
 			
 			output.append(f"{flag} [{cupname}]({cuplink})")
 			targets.append(cuplink)
@@ -649,7 +651,7 @@ class Transfers:
 			cupname = "".join(i.xpath('.//td[2]/a/text()'))
 			cuplink = "".join(i.xpath('.//td[2]/a/@href'))
 			
-			output.append(f"ðŸŒ [{cupname}]({cuplink})")
+			output.append(f"🌍 [{cupname}]({cuplink})")
 			targets.append(cuplink)
 		return output,targets
 	

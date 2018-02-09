@@ -4,19 +4,14 @@ import random
 import datetime
 
 reactdict = {
-			"brighton":["🍾"],
-			"cous cous":["🇲🇦"],
+			"brighton":["🍼"],
 			"digi":[":digi:332195917157629953"],
 			"gamez":["✝"],
 			"gayle":[":windmill:332195722864885761"],
 			"mackem":["💩"],
 			"mbemba":[":mbemba:332196308825931777"],
-			"mitro":["🚒"],
-			"ritchie":["✨","🎩"],
-			"shelvey":["🇲🇦"],
 			"shola":["🚴🏿","🍏"],
 			"sunderland":["💩"],
-			"voldermort":["🇲🇦"],
 			"yedlin":["🇺🇸"],
 			}
 
@@ -25,33 +20,54 @@ class GlobalChecks:
 	def __init__(self, bot):
 		self.bot = bot
 		self.bot.add_check(self.disabledcmds)
+		self.bot.add_check(self.muted)
 
-	async def disabledcmds(self, ctx):
-		if str(ctx.command) in self.bot.config[f"{ctx.guild.id}"]["disabled"]:
-			await ctx.send(f"Sorry, the {ctx.command} command has been disabled on this server.",delete_after=5)
-		else:
+	def muted(self,ctx):
+		return not str(ctx.author.id) in self.bot.ignored
+
+	def disabledcmds(self,ctx):
+		if ctx.guild is None:
 			return True
-			
+		try:
+			return not str(ctx.command) in self.bot.config[f"{ctx.guild.id}"]["disabled"]
+		except:
+			self.bot.config[f"{ctx.guild.id}"] = {"disabled":[]}
+			return not str(ctx.command) in self.bot.config[f"{ctx.guild.id}"]["disabled"]
+	
 class Reactions:
 	def __init__(self, bot):
 		self.bot = bot
 		with open('girlsnames.txt',"r") as f:
 			self.bot.girls = f.read().splitlines()
-	
+
+	async def _save(self):
+		with await self.bot.configlock:
+			with open('config.json',"w",encoding='utf-8') as f:
+				json.dump(self.bot.config,f,ensure_ascii=True,
+				sort_keys=True,indent=4, separators=(',',':'))
+			
+	async def on_guild_remove(self,guild):
+		self.bot.config.pop(f"{guild.id}")
+		await self._save()
+
 	async def on_member_update(self,before,after):
-		if not before.id == 178631560650686465:
+		# Goala 178631560650686465
+		# Keegs 272722118192529409
+		if not before.id == 272722118192529409:
 			return
 		if before.nick != after.nick:
 			async for i in before.guild.audit_logs(limit=1):
-				if i.user.id == 178631560650686465:
+				if i.user.id == 272722118192529409:
 					await after.edit(nick=random.choice(self.bot.girls).title())	
 					
 	async def on_member_join(self,member):
-		if not member.id == 178631560650686465:
+		if not member.id == 272722118192529409:
 			return
 		await member.edit(nick=random.choice(self.bot.girls).title())
 		
 	async def on_message_delete(self,message):
+		if message.guild is None:
+			return
 		if not message.guild.id == 332159889587699712:
 			return
 		if message.author.bot:
@@ -59,7 +75,7 @@ class Reactions:
 		for i in message.author.roles:
 			if i.name == "Moderators":
 				return
-		for i in self.bot.command_prefix:
+		for i in self.bot.config[f"{message.guild.id}"]["prefix"]:
 			if message.content.startswith(i):
 				return
 		delchan = self.bot.get_channel(id=335816981423063050)
@@ -88,13 +104,11 @@ class Reactions:
 				await m.channel.send(lf)
 				await m.delete()
 			return
-		# if command disabled.
-		if m.author.id in self.bot.ignored:
+		# if user ignored.
+		if str(m.author.id) in self.bot.ignored:
 			return
 		# Emoji reactions
 		if m.guild and m.guild.id == 332159889587699712:
-			if "😡✊" in c:
-				await m.delete()
 			if "toon toon" in c:
 				await m.channel.send("**Black and white army.**")
 			for string,reactions in reactdict.items():
@@ -109,9 +123,6 @@ class Reactions:
 					except:
 						return await m.channel.send(f"Done. {m.author.mention} is now a moderator.")
 					await m.channel.send(f"{m.author} was auto-kicked.")
-					mod = self.bot.get_channel(id=332167195339522048)
-					ak = f"{m.author.mention} Auto-kicked: asked to be made a mod"
-					await mod.send(f"Auto-kicked {m.author.mention} for asking to be a mod.")
 			if "https://www.reddit.com/r/" in c and "/comments/" in c:
 				if not "nufc" in c:
 					rm = ("*Reminder: Please do not vote on submissions or "

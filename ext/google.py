@@ -13,7 +13,6 @@ class google:
 	
 	@commands.command()
 	async def g(self,ctx,*,qstr:str):
-	
 		""" Perform a google search """
 		p = {"q":qstr,"safe":"on"}
 		h = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.3; Win64; x64)'}
@@ -82,8 +81,9 @@ class google:
 				timein = tree.xpath(".//ol//div[@class='_Tsb _HOb _Qeb']")
 				if timein:
 					timein = timein[0]
-					e.title = f"🕛 {timein.xpath('.//text()')[4].strip()}"
-					e.description = "".join(timein.xpath(".//text()")[0:4])
+					print(timein.xpath('.//text()'[3]))
+					e.title = f"🕛 {timein.xpath('.//text()')[3].strip()}"
+					e.description = "".join(timein.xpath(".//text()")[0:2])
 				
 				# Weather			
 				weather = tree.xpath(".//ol//div[@class='e']")

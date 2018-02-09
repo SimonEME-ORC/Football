@@ -1,3 +1,4 @@
+from discord.ext.commands.cooldowns import BucketType
 from discord.ext import commands
 from lxml import html
 import asyncio
@@ -45,10 +46,10 @@ class Misc:
 			opta  = resp["choicea"].strip().capitalize().rstrip('.?,!').lstrip('.')
 			optb  = resp["choiceb"].strip().capitalize().rstrip('.?,!').lstrip('.')
 			await ctx.send(f"{ctx.author.mention} **{title}...** \n{opta} \n{optb}")
+	
 	@commands.command()
 	@commands.is_owner()
 	async def secrettory(self,ctx):
-		await self.bot.get_
 		await ctx.send(f"The secret tory is {random.choice(ctx.guild.members)}")
 	
 	@commands.command(aliases=["games"])
@@ -98,20 +99,21 @@ class Misc:
 	
 	@commands.command(hidden=True)
 	@commands.bot_has_permissions(kick_members=True)
+	@commands.cooldown(2,60,BucketType.user) 
 	async def roulette(self,ctx):
 		""" Russian Roulette """
-		x = ["click.","click.","click.","click.","click.","ðŸ”« BANG!"]
+		x = ["click.","click.","click.","click.","click.","🔫 BANG!"]
 		outcome = random.choice(x)
-		await ctx.send(outcome)
-		if outcome == "BANG!":
+		if outcome == "🔫 BANG!":
 			await ctx.author.kick(reason="roulette")
-			await ctx.send(f"{ctx.author.mention} was kicked.")
+			await ctx.send(f"🔫 BANG! {ctx.author.mention} was kicked.")
+		else:
+			await ctx.send(outcome)
 			
 	@commands.command(hidden=True,aliases=["flip","coinflip"])
 	async def coin(self,ctx):
 		""" Flip a coin """
-		x = ["Heads","Tails"]
-		await ctx.send(random.choice(x))
+		await ctx.send(random.choice(["Heads","Tails"]))
 	
 	@commands.command(hidden=True)
 	@commands.guild_only()
@@ -120,14 +122,14 @@ class Misc:
 		try:
 			await ctx.author.kick(reason=f"Used {ctx.invoked_with}")
 		except discord.Forbidden:
-			await ctx.send("â›” I can't kick you")
+			await ctx.send("⛔ I can't kick you")
 		except discord.HTTPException:
-			await ctx.send('â” Kicking failed.')
+			await ctx.send('❔ Kicking failed.')
 		else:
-			await ctx.send(f"ðŸ‘¢ {ctx.author.mention} kicked themself")
+			await ctx.send(f"👢 {ctx.author.mention} kicked themself")
 			c = self.bot.config[f"{ctx.guild.id}"]["mod"]["channel"]
 			c = self.bot.get_channel(c)
-			await c.send(f"ðŸ‘¢ {ctx.author.mention} kicked themself")
+			await c.send(f"👢 {ctx.author.mention} kicked themself")
 
 	@commands.command(hidden=True,aliases=["bamme"])
 	@commands.guild_only()
@@ -136,24 +138,24 @@ class Misc:
 		try:
 			await ctx.author.ban(reason="Used .banme",delete_message_days=0)
 		except discord.Forbidden:
-			await ctx.send("â›” I can't ban you")
+			await ctx.send("⛔ I can't ban you")
 		except discord.HTTPException:
-			await ctx.send("â” Banning failed.")
+			await ctx.send("❔ Banning failed.")
 		else:
-			await ctx.send(f"â˜  {ctx.author.mention} banned themself.")
+			await ctx.send(f"☠ {ctx.author.mention} banned themself.")
 			c = self.bot.config[f"{ctx.guild.id}"]["mod"]["channel"]
 			c = self.bot.get_channel(c)
-			await c.send(f"â˜  {ctx.author.mention} banned themself")
+			await c.send(f"☠ {ctx.author.mention} banned themself")
 	
 	@commands.command(hidden=True)
 	@commands.guild_only()
 	async def triggered(self,ctx):
 		""" WEEE WOO SPECIAL SNOWFLAKE DETECTED """
-		trgmsg = await ctx.send("ðŸš¨ ðŸ‡¹ ðŸ‡· ðŸ‡® ðŸ‡¬ ðŸ‡¬ ðŸ‡ª ðŸ‡·  ðŸ‡¼ ðŸ‡¦ ðŸ‡· ðŸ‡³ ðŸ‡® ðŸ‡³ ðŸ‡¬  ðŸš¨")
+		trgmsg = await ctx.send("🚨 🇹 🇷 🇮 🇬 🇬 🇪 🇷  🇼 🇦 🇷 🇳 🇮 🇳 🇬  🚨")
 		for i in range(5):
-			await trgmsg.edit(content="âš  ðŸ‡¹ ðŸ‡· ðŸ‡® ðŸ‡¬ ðŸ‡¬ ðŸ‡ª ðŸ‡·  ðŸ‡¼ ðŸ‡¦ ðŸ‡· ðŸ‡³ ðŸ‡® ðŸ‡³ ðŸ‡¬  âš ")
+			await trgmsg.edit(content="⚠ 🇹 🇷 🇮 🇬 🇬 🇪 🇷  🇼 🇦 🇷 🇳 🇮 🇳 🇬  ⚠")
 			await asyncio.sleep(1)
-			await trgmsg.edit(content="ðŸš¨ ðŸ‡¹ ðŸ‡· ðŸ‡® ðŸ‡¬ ðŸ‡¬ ðŸ‡ª ðŸ‡·  ðŸ‡¼ ðŸ‡¦ ðŸ‡· ðŸ‡³ ðŸ‡® ðŸ‡³ ðŸ‡¬  ðŸš¨")
+			await trgmsg.edit(content="🚨 🇹 🇷 🇮 🇬 🇬 🇪 🇷  🇼 🇦 🇷 🇳 🇮 🇳 🇬  🚨")
 			await asyncio.sleep(1)
 	
 	@commands.command(hidden=True)
@@ -175,9 +177,9 @@ class Misc:
 	@commands.command(hidden=True)
 	@commands.has_permissions(manage_messages=True)
 	@commands.guild_only()
-	async def norafa(self,ctx):
-		""" Remove reactions from last 30 messages """
-		async for message in ctx.channel.history(limit=30):
+	async def norafa(self,ctx,*,msgs=30):
+		""" Remove reactions from last x messages """
+		async for message in ctx.channel.history(limit=msgs):
 			await message.clear_reactions()
 			
 	@commands.command(aliases=["ttj"],hidden=True)
@@ -197,7 +199,7 @@ class Misc:
 		url = f"http://api.urbandictionary.com/v0/define?term={lookup}"
 		async with self.bot.session.get(url) as resp:
 			if resp.status != 200:
-				await ctx.send(f"ðŸš« HTTP Error, code: {resp.status}")
+				await ctx.send(f"🚫 HTTP Error, code: {resp.status}")
 				return
 			json = await resp.json()
 		
@@ -223,13 +225,13 @@ class Misc:
 				un = ctx.author.display_name
 				ic = "http://pix.iemoji.com/twit33/0056.png"
 				footertext = (f"Page {count} of {len(deflist)} ({un}) |"
-							  f"ðŸ‘ðŸ»{i['thumbs_up']} ðŸ‘ŽðŸ»{i['thumbs_down']}")
+							  f"👍🏻{i['thumbs_up']} 👎🏻{i['thumbs_down']}")
 				e.set_footer(icon_url=ic,text=footertext)
 				embeds.append(e)
 				count += 1
 		elif json["result_type"] == "no_results":
 			e = discord.Embed(color=0xFE3511)
-			e.description = f"ðŸš« No results found for {lookup}."
+			e.description = f"🚫 No results found for {lookup}."
 			embeds.append(e)
 		else:
 			await ctx.send(f'DEBUG: result_type = {json["result_type"]}')
@@ -242,15 +244,15 @@ class Misc:
 		# Add reactions
 		if len(embeds) > 1:
 			if len(embeds) > 2: 
-				await m.add_reaction("â®")#first
-			await m.add_reaction("â—€") #prev
-			await m.add_reaction("â–¶") #next
+				await m.add_reaction("⏮")#first
+			await m.add_reaction("◀") #prev
+			await m.add_reaction("▶") #next
 			if len(embeds) > 2: 
-				await m.add_reaction("â­") #last
+				await m.add_reaction("⏭") #last
 		def check(reaction,user):
 			if reaction.message.id == m.id and user == ctx.author:
 				e = str(reaction.emoji)
-				return e.startswith(('â®','â—€','â–¶','â­'))
+				return e.startswith(('⏮','◀','▶','⏭'))
 		while not self.bot.is_closed():
 			try:
 				wf = "reaction_add"
@@ -259,21 +261,21 @@ class Misc:
 				await m.clear_reactions()
 				break
 			res = res[0]
-			if res.emoji == "â®": #first
+			if res.emoji == "⏮": #first
 				page = 0
-				await m.remove_reaction("â®",ctx.author)
-			if res.emoji == "â—€": #prev
+				await m.remove_reaction("⏮",ctx.author)
+			if res.emoji == "◀": #prev
 				if page > 0:
 					page += -1
-				await m.remove_reaction("â—€",ctx.author)
-			if res.emoji == "â–¶": #next	
+				await m.remove_reaction("◀",ctx.author)
+			if res.emoji == "▶": #next	
 				if page < len(embeds) - 1:
 					page += 1
-				await m.remove_reaction("â–¶",ctx.author)
-			if res.emoji == "â­": #last
+				await m.remove_reaction("▶",ctx.author)
+			if res.emoji == "⏭": #last
 				page = len(embeds) - 1
-				await m.remove_reaction("â­",ctx.author)
-			if res.emoji == "â": #eject:
+				await m.remove_reaction("⏭",ctx.author)
+			if res.emoji == "⏏": #eject:
 				await m.clear_reactions()
 				await m.delete()
 			await m.edit(embed=embeds[page])
@@ -290,7 +292,7 @@ class Misc:
 				return
 			posts = html.fromstring(await resp.text())
 			posts = posts.xpath('.//div[contains(@class, "thing")]')
-			table = [("\ðŸ’© r/nufcirclejerk Shitposts of the week roundup."
+			table = [("\💩 r/nufcirclejerk Shitposts of the week roundup."
 					 "\n\n Score | Link | Direct | Author \n--|--|--|--|")]
 			for i in posts:
 				title = i.xpath(".//a[contains(@class, 'title')]/text()")
@@ -320,8 +322,8 @@ class Misc:
 		await ctx.message.delete()
 		
 		string = "".join([f":regional_indicator_{i.lower()}:" if i.isalpha()
-						else f"{i}âƒ£" if i.isdigit() else i for i in string])
+						else f"{i}⃣" if i.isdigit() else i for i in string])
 		await ctx.send(string)
-	
+		
 def setup(bot):
     bot.add_cog(Misc(bot))

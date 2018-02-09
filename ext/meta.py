@@ -26,9 +26,6 @@ class TimeParser:
 				self.seconds += int(seconds)
 		if self.seconds < 0:
 			raise commands.BadArgument("That was in the past mate...")
-
-		if self.seconds > 604800: # 7 days
-			raise commands.BadArgument('> Implying I\'ll still be online in a week.')
 			
 class Meta:
 	"""Commands for utilities related to the Bot itself."""
@@ -41,7 +38,12 @@ class Meta:
 				json.dump(self.bot.config,f,ensure_ascii=True,
 				sort_keys=True,indent=4, separators=(',',':'))
 	
+	@commands.command(aliases=["invite"])
+	async def inviteme(self,ctx):
+		await ctx.send("Use this link to invite me, without moderation accesss. <https://discordapp.com/oauth2/authorize?client_id=250051254783311873&permissions=67488768&scope=bot>")
+	
 	@commands.group()
+	@commands.guild_only()
 	async def prefix(self,ctx):
 		""" Lists the bot prefixes for this server """
 		try:
@@ -128,23 +130,24 @@ class Meta:
 		except ValueError:
 			await ctx.send('The command does not exist or is not disabled.')
 		else:
-			await ctx.send(f'"The {command}" command has been enabled for this server.')
+			await ctx.send(f'The "{command}" command has been enabled for this server.')
 			await self._save()
 	
 	@commands.command()
 	@commands.has_permissions(manage_messages=True)
 	async def clean(self,ctx,number : int = 100):
 		""" Deletes my messages from last x in channel"""
+		preflist = await self.bot.command_prefix(self.bot,ctx.message)
 		def is_me(m):
-			return m.author.id == self.bot.user.id or m.content[0] in self.bot.command_prefix
+			return m.author.id == self.bot.user.id or m.content[0] in preflist
 		mc = self.bot.config[str(ctx.guild.id)]['mod']['channel']
 		mc = self.bot.get_channel(mc)
 		if ctx.channel == mc:
-			await ctx.send("ðŸš« 'Clean' has been disabled for the moderator channel.",delete_after=10)
+			await ctx.send("🚫 'Clean' has been disabled for the moderator channel.",delete_after=10)
 		else:
 			deleted = await ctx.channel.purge(limit=number, check=is_me)
 			s = "s" if len(deleted) > 1 else ""
-			await ctx.send(f'â™»ï¸ {ctx.author.mention}: Deleted {len(deleted)} bot and command messages{s}',delete_after=10)
+			await ctx.send(f'♻️ {ctx.author.mention}: Deleted {len(deleted)} bot and command messages{s}',delete_after=10)
 	
 	@commands.command()
 	async def source(self, ctx, *, command: str = None):
@@ -179,15 +182,18 @@ class Meta:
 	@commands.is_owner()
 	async def version(self,ctx):
 		""" Get Python version """
-		await ctx.send(sys.version)
+		await ctx.send(f"Running on python versino {sys.version}")
 	
 	@commands.command()
 	async def hello(self,ctx):
 		"""Say hello."""
-		await ctx.send(f"Hi {ctx.author.mention}, I'm {ctx.me.display_name}, Painezor coded me to do some shit. Type !help to see my commands.")
+		await ctx.send(f"Hi {ctx.author.mention}, I'm {ctx.me.display_name}, "
+		f"Painezor#8489 coded me to do some football stuff. If you think you've spotted a bug, ping him\n"
+		f"Type {self.bot.config[str(ctx.guild.id)]['prefix'][0]}help to be DM'd a list of my commands."
+		)
 
 	@commands.command(aliases=['reminder','remind','remindme'])
-	async def timer(self, ctx, time : TimeParser, *, message=''):
+	async def timer(self, ctx, time : TimeParser, *, message : commands.clean_content):
 		"""Reminds you of something after a certain amount of time.
 		The time can optionally be specified with units such as 'h'
 		for hours, 'm' for minutes and 's' for seconds. If no unit
@@ -197,16 +203,13 @@ class Meta:
 
 		reminder = None
 		completed = None
-		message = message.replace('@everyone', '@\u200beveryone').replace('@here', '@\u200bhere')
-		
-		human_time = datetime.datetime.utcnow() - datetime.timedelta(seconds=time.seconds)
-		human_time = formats.human_timedelta(human_time)
+		human_time = datetime.datetime.utcnow() + datetime.timedelta(seconds=time.seconds)
 		
 		if not message:
-			reminder = f"Sound {ctx.author.mention}, I'll give you a shout in {human_time.replace(' ago', '')} seconds"
+			reminder = f"Sound {ctx.author.mention}, I'll give you a shout in {human_time}"
 			completed = f"Here, {ctx.author.mention}. You asked is to remind you about summit"
 		else:
-			reminder = f"Areet {ctx.author.mention}, I'll give you a shout about '{message}' in {human_time.replace(' ago', '')}"
+			reminder = f"Areet {ctx.author.mention}, I'll give you a shout about '{message}' at {human_time}"
 			completed = f"Here {ctx.author.mention}, ya asked me to remind you about '{message}' mate"
 				
 		await ctx.send(reminder)
@@ -265,15 +268,37 @@ class Meta:
 		""" Rename the bot """
 		await ctx.me.edit(nick=newname)
 		
+	async def on_socket_response(self, msg):
+		self.bot.socket_stats[msg.get('t')] += 1		
+		
 	@commands.command()
 	@commands.is_owner()
-	async def game(self,ctx,*,game):
-		""" Change what the bot is playing """
-		await self.bot.change_presence(game=discord.Game(name=game))
+	async def playing(self,ctx,*,game):
+		""" Change status to "playing {game}" """
+		await self.bot.change_presence(game=discord.Game(name=game,type=0))
+		await self.ctx.send(f"Set status to playing {game}")
 
-	async def on_socket_response(self, msg):
-		self.bot.socket_stats[msg.get('t')] += 1
-
+	@commands.command()
+	@commands.is_owner()
+	async def streaming(self,ctx,*,game):
+		""" Change status to "streaming {game}" """
+		await self.bot.change_presence(game=discord.Game(name=game,type=1))
+		await self.ctx.send(f"Set status to streaming {game}")
+		
+	@commands.command()
+	@commands.is_owner()
+	async def watching(self,ctx,*,game):
+		""" Change status to "watching {game}" """
+		await self.bot.change_presence(game=discord.Game(name=game,type=3))
+		await self.ctx.send(f"Set status to watching {game}")
+		
+	@commands.command()
+	@commands.is_owner()
+	async def listening(self,ctx,*,game):
+		""" Change status to "listening to {game}" """
+		await self.bot.change_presence(game=discord.Game(name=game,type=2))
+		await self.ctx.send(f"Set status to listening to {game}")
+		
 	@commands.command()
 	@commands.is_owner()
 	async def commandstats(self,ctx):

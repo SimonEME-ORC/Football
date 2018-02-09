@@ -88,8 +88,9 @@ class Fixtures:
 	async def table(self,ctx,*,qry=None):
 		""" Get table for a league """
 		if qry is None:
-			if ctx.guild.id == 332159889587699712:
-				url = "https://www.flashscore.com/soccer/england/premier-league"
+			if ctx.guild is not None:
+				if ctx.guild.id == 332159889587699712:
+					url = "https://www.flashscore.com/soccer/england/premier-league"
 			else:
 				return await ctx.send("Specify a search query.")
 		else:
@@ -127,8 +128,9 @@ class Fixtures:
 			Navigate with reactions.
 		"""
 		if qry is None:
-			if ctx.guild.id == 332159889587699712:
-				url = "https://www.flashscore.com/team/newcastle-utd/p6ahwuwJ"
+			if ctx.guild is not None:
+				if ctx.guild.id == 332159889587699712:
+					url = "https://www.flashscore.com/team/newcastle-utd/p6ahwuwJ"
 			else:
 				return await ctx.send("Specify a search query.")
 		else:
@@ -143,8 +145,9 @@ class Fixtures:
 			Navigate with reactions.
 		"""
 		if qry is None:
-			if ctx.guild.id == 332159889587699712:
-				url = "https://www.flashscore.com/soccer/england/premier-league"
+			if ctx.guild is not None:
+				if ctx.guild.id == 332159889587699712:
+					url = "https://www.flashscore.com/soccer/england/premier-league"
 			else:
 				return await ctx.send("Specify a search query.")
 		else:
@@ -159,8 +162,9 @@ class Fixtures:
 			Navigate with reactions.
 		"""
 		if qry is None:
-			if ctx.guild.id == 332159889587699712:
-				url = "https://www.flashscore.com/team/newcastle-utd/p6ahwuwJ"
+			if ctx.guild is not None:
+				if ctx.guild.id == 332159889587699712:
+					url = "https://www.flashscore.com/team/newcastle-utd/p6ahwuwJ"
 			else:
 				return await ctx.send("Specify a search query.")
 		else:

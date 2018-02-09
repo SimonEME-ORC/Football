@@ -10,6 +10,16 @@ class Info:
 	def __init__(self,bot):
 		self.bot = bot
 
+	@commands.command()
+	async def hackyinfo(self,ctx,*,id):
+		user = await self.bot.get_user_info(id)
+		e = discord.Embed()
+		e.color = 0x7289DA
+		e.set_author(name=str(user))
+		e.description = f"User ID: {user.id}"
+		e.set_thumbnail(url=user.avatar_url)
+		await ctx.send(embed=e)
+		
 	@commands.group(invoke_without_command=True)
 	@commands.guild_only()
 	async def info(self,ctx,*,member: discord.Member = None):
@@ -39,7 +49,6 @@ class Info:
 		e.add_field(name='Servers', value='%s shared' % shared,inline=True)
 		e.add_field(name='Voice', value=voice,inline=True)
 		e.add_field(name="Is bot?",value=member.bot,inline=True)
-		e.add_field(name="Source",value="https://github.com/Painezor/Toonbot",inline=True)
 		if member.game is not None:
 			e.add_field(name='Game',value=member.game,inline=True)
 		e.add_field(name='Created at', value=member.created_at,inline=True)
@@ -84,7 +93,8 @@ class Info:
 		emojis = ""
 		for emoji in guild.emojis:
 			emojis += str(emoji)
-		e.add_field(name="Custom Emojis",value=emojis)
+		if emojis:
+			e.add_field(name="Custom Emojis",value=emojis)
 		e.add_field(name="Region",value=str(guild.region).title())
 		e.add_field(name="Verification Level",value=str(guild.verification_level).title())
 		if guild.icon:

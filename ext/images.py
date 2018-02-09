@@ -13,9 +13,12 @@ from io import BytesIO
 
 class ImageManip:
 	""" Edit images for you """
-	
 	def __init__(self, bot):
 		self.bot = bot
+	
+	def is_ircle(message):
+		if message.guild:
+			return message.channel.id in [332165489285660672,332167049273016320] or message.guild.id is None
 	
 	async def get_faces(self,ctx,target):
 		""" Retrieve face features from Prokect Oxford """
@@ -44,8 +47,7 @@ class ImageManip:
 		# Get target image as file
 		async with session.get(target) as resp:
 			if resp.status != 200:
-				await ctx.send("Something went wrong")
-				print(resp.status)
+				await ctx.send(f"{resp.status} code accessing project oxford.")
 			image = await resp.content.read()
 		return image,respjson
 	
@@ -56,7 +58,7 @@ class ImageManip:
 			names += add1
 			pics += add2
 		names = [x.split('/')[-1].replace('-',' ').title() for x in names] #strip preleading text
-		pick = list((z[0],f"https://www.nufc.co.uk{z[1]}") for z in zip(names,pics))
+		pick = list((z[0],z[1]) for z in zip(names,pics))
 		return random.choice(pick)
 		
 	async def gp(self,source): # get players for page
@@ -69,6 +71,7 @@ class ImageManip:
 		return (players,pictures)
 	
 	@commands.command()
+	@commands.check(is_ircle)
 	async def tinder(self,ctx):
 		""" Find your NUFC lover. """
 		await ctx.trigger_typing()
@@ -347,7 +350,6 @@ class ImageManip:
 					f = ImageFont.truetype('Whitney Medium Regular_0.ttf',
 											 fntsize)
 				fntsize -= 1
-				print(f"fntsize: {fntsize}")
 				f = ImageFont.truetype('Whitney Medium Regular_0.ttf',fntsize)
 				wid = 40
 
@@ -436,17 +438,17 @@ class ImageManip:
 	@commands.command(aliases=["localman","local","ruin"],hidden=True)
 	async def ruins(self,ctx,*,user: discord.User):
 		""" Local man ruins everything """
-		user = await self.bot.get_user_info(int(user.id))
-		await ctx.trigger_typing()
-		if user == None:
-			user = ctx.author
-		av = user.avatar_url_as(format="png",size=256)
-		async with self.bot.session.get(av) as resp:
-			if resp.status != 200:
-				await ctx.send(f"{resp.status} Error getting {user}'s avatar")
-			image = await resp.content.read()
-		df = await self.bot.loop.run_in_executor(None,self.ruin,image)
-		await ctx.send(file=df)
+		with ctx.typing():
+			user = await self.bot.get_user_info(int(user.id))
+			if user == None:
+				user = ctx.author
+			av = user.avatar_url_as(format="png",size=256)
+			async with self.bot.session.get(av) as resp:
+				if resp.status != 200:
+					await ctx.send(f"{resp.status} Error getting {user}'s avatar")
+				image = await resp.content.read()
+			df = await self.bot.loop.run_in_executor(None,self.ruin,image)
+			await ctx.send(file=df)
 		
 	def ruin(self,image):
 		""" Generates the Image """
@@ -534,7 +536,12 @@ class ImageManip:
 	async def butter(self,ctx):
 		""" What is my purpose? """
 		await ctx.send(file=discord.File("butter.png"))
-			
+	
+	@commands.command(hidden=True)
+	async def fixed(self,ctx):
+		""" Fixed! """
+		await ctx.send(file=discord.File("fixed.png"))
+	
 	@commands.command(hidden=True)
 	async def ructions(self,ctx):
 		""" WEW. RUCTIONS. """
@@ -549,9 +556,6 @@ class ImageManip:
 	async def pressf(self,ctx):
 		""" Press F to pay respects """
 		await ctx.send("https://i.imgur.com/zrNE05c.gif")
-	
-	def is_ircle(message):
-		return message.channel.id in [250476915054477322,293901072731209728]
 	
 	@commands.command(aliases=["cat"])
 	async def pussy(self,ctx):
@@ -568,7 +572,7 @@ class ImageManip:
 					cat = await resp.json()
 					async with self.bot.session.get(cat["file"]) as resp:
 						cat = await resp.content.read()
-						await ctx.send('😺 A Cat has been delivered to your DMs, please take care of him!')
+						await ctx.send(f'😺 {ctx.author.mention} A Cat has been delivered to your DMs, please take care of him!',delete_after=5)
 						fp = discord.File(BytesIO(cat),filename="cat.png")
 						await ctx.author.send("Here's your cat:",file=fp)
 					return

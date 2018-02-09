@@ -153,7 +153,6 @@ class Mod:
 			await ctx.send(f"{member.mention} has been renamed.")
 			
 	@commands.command(aliases=["lastmsg","lastonline","lastseen"])
-	@commands.has_permissions(manage_channel=True)
 	async def seen(self,ctx,t : discord.Member = None):
 		""" Find the last message from a user in this channel """
 		if t == None:
@@ -168,7 +167,7 @@ class Mod:
 						f"saying '{msg.content}'")
 					await m.edit(content=c)
 				else:
-					c = (f"{t.mention} last seen in {ctx.channel.mention}"
+					c = (f"{t.mention} last seen in {ctx.channel.mention} "
 						 f"at {msg.created_at} saying '{msg.content}'")
 					await m.edit(content=c)
 				return
@@ -182,12 +181,10 @@ class Mod:
 			await ctx.message.delete()
 			await user.kick(reason=f"{ctx.author.name}: {reason}")
 		except discord.Forbidden:
-			await ctx.send("⛔ I can't kick that member.")
+			await ctx.send(f"⛔ Sorry {ctx.author.name} I can't kick {user.mention}.")
 		except discord.HTTPException:
 			await ctx.send('❔ Kicking failed.')
 		else:
-			c = self.bot.config[f"{ctx.guild.id}"]["mod"]
-			mc = self.bot.get_channel(c["channel"])
 			if reason == "unspecified reason.":
 				await ctx.send(f"👢 {user.mention} was kicked by {ctx.author.display_name}.")
 			else:
@@ -206,11 +203,6 @@ class Mod:
 		except discord.HTTPException:
 			await ctx.send("❔ Banning failed.")
 		else:
-			try:
-				c = self.bot.config[f"{ctx.guild.id}"]["mod"]
-			except KeyError:
-				await ctx.author.send(f'Ban performed, but your servers mod channel has not been set to output to. Please use {ctx.prefix}mod set in your mod channel.')
-			mc = self.bot.get_channel(c["channel"])
 			if reason == "Not specified":
 				await ctx.send(f"☠ {member.mention} was banned by {ctx.author.display_name} (No reason provided)")
 			else:
@@ -223,10 +215,10 @@ class Mod:
 		"""Bans a member via their ID."""
 		for member_id in member_ids:
 			try:
-				await self.bot.http.ban(member_id, ctx.message.server.id)
+				await self.bot.http.ban(member_id, ctx.message.guild.id)
 			except discord.HTTPException:
 				pass
-		await ctx.send('☠ Did some bans. {ctx.author.mention}')
+		await ctx.send(f'☠ Did some bans. Showing new banlist. {ctx.author.mention}')
 		await ctx.invoke(self.banlist)
 	
 	@commands.command()
@@ -262,7 +254,10 @@ class Mod:
 	@commands.command(aliases=['bans'])
 	async def banlist(self,ctx):
 		""" Show the banlist for the server """
-		banlist = await ctx.guild.bans()
+		try:
+			banlist = await ctx.guild.bans()
+		except discord.Forbidden:
+			return await ctx.send('I don\'t have permission to view the banlist on this server.')
 		banned = ""
 		e = discord.Embed(color=0x111)
 		n = f"≡ {ctx.guild.name} discord ban list"
@@ -466,13 +461,10 @@ class Mod:
 								if i in x.reason:
 									return
 						return await c.send(f"👢 **Kick**: {member.mention} by {x.user.mention} for {x.reason}.")
-					else:
-						print(dir(x.action))
-						print(f"Name: {x.action.name}, Category: {x.action.category}, Target Type: {x.action.target_type}, value: {x.action.value}")
+					elif x.action.name == "ban":
+						return await c.send(f"☠ **Ban**: {member.mention} by {x.user.mention} for {x.reason}.")
 				else:
-					print(x.target)
-					print(dir(x))
-			await c.send(f"{member.mention} left the server.")
+					await c.send(f"{member.mention} left the server.")
 	
 	@commands.has_permissions(manage_guild=True)
 	@commands.group(invoke_without_command=True)

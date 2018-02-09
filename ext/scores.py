@@ -10,11 +10,11 @@ import json
 import re
 
 # because fuck it why not.
-timedict = {"0":"ðŸ•›","030":"ðŸ•§","1":"ðŸ•", "130":"ðŸ•œ", "2":"ðŸ•‘", "230":"ðŸ•",
-			"3":"ðŸ•’", "330":"ðŸ•ž", "4":"ðŸ•“", "430":"ðŸ•Ÿ", "5":"ðŸ•”", "530":"ðŸ• ",
-			"6":"ðŸ••", "630":"ðŸ•¡", "7":"ðŸ•–", "730":"ðŸ•¢", "8":"ðŸ•—", "830":"ðŸ•£",
-			"9":"ðŸ•˜", "930":"ðŸ•¤", "10":"ðŸ•™", "1030":"ðŸ•¥", "11":"ðŸ•š", "1130":"ðŸ•¦",
-			"12":"ðŸ•›", "1230":"ðŸ•§"}
+timedict = {"0":"🕛","030":"🕧","1":"🕐", "130":"🕜", "2":"🕑", "230":"🕝",
+			"3":"🕒", "330":"🕞", "4":"🕓", "430":"🕟", "5":"🕔", "530":"🕠",
+			"6":"🕕", "630":"🕡", "7":"🕖", "730":"🕢", "8":"🕗", "830":"🕣",
+			"9":"🕘", "930":"🕤", "10":"🕙", "1030":"🕥", "11":"🕚", "1130":"🕦",
+			"12":"🕛", "1230":"🕧"}
 
 class Live:
 	""" Get live scores for leagues worldwide """
@@ -28,7 +28,6 @@ class Live:
 		self.bot.scorechecker.cancel()
 		self.scoreson = False
 		
-	
 	# Live Scores task.
 	async def ls(self):
 		await self.bot.wait_until_ready()
@@ -49,7 +48,16 @@ class Live:
 						if ch is None:
 							continue
 						sc = self.bot.get_channel(int(ch))
-						await sc.purge()
+						try:
+							await sc.purge()
+						except discord.Forbidden:
+							await sc.send(f"Hey {sc.guild.owner.mention}, I need delete messages permissions in this channel.")
+						except AttributeError:
+							try:
+								print(f"Scores.py - Livescores - {sc.guild.name} channel unset.")
+							except:
+								print(f"{i} guild for scores channel deleted.")
+							continue
 						numservs += 1
 			# Shield from crashes.
 			try:
@@ -61,13 +69,13 @@ class Live:
 						continue
 					tree = html.fromstring(await resp.text())
 			except Exception as e:
-				print(f"Livescore channel: Ignored exception {e}")
 				await asyncio.sleep(60)
 				continue
 			# Get each league parent element
-			sections = tree.xpath('.//div[contains(@class,"gel-layout--center")]/div/div[3]/div/div') 
+			sections = tree.xpath('.//div[contains(@class,"gel-layout--center")]/div/div[3]/div') 
 			outcomps = [f"{today}\n"]
 			self.matchlist = {}
+
 			for i in sections: # for each league on page
 				try:
 					comp = i.xpath('.//h3/text()')[0]
@@ -91,7 +99,7 @@ class Live:
 					time = j.xpath('.//span[contains(@class,"time")]/text()')
 					scor = j.xpath('.//span[contains(@class,"number--home")]/text()|.//span[contains(@class,"number--away")]/text()')
 					if notes:
-						notes = f"`â„¹ {''.join(notes)}`"
+						notes = f"`ℹ {''.join(notes)}`"
 					if len(time) == 1: # Fuck it let's be daft and convert the times to the nearest emoji
 						time = time[0]
 						left,mid,right = time.partition(":")
@@ -113,34 +121,34 @@ class Live:
 						precol = ""
 						midcol = " - ".join(scor)
 						if midcol == "P - P":
-							precol = "`â›”PP`"
+							precol = "`⛔PP`"
 							miodcol = "v"
 					if "ET" in notes:
-						precol = "`âš½ET`"
+						precol = "`⚽ET`"
 						notes.replace("ET","")
 					if notes == "`FT`":
 						notes = ""
-						precol = "`âœ…FT`"
+						precol = "`✅FT`"
 					elif "FT" in notes:
 						notes = notes.replace("FT"," ")
-						precol = "`âœ…FT`"
+						precol = "`✅FT`"
 					elif "AET" in notes:
 						notes = notes.replace("AET"," ")
-						precol = "`âš½AET`"
+						precol = "`⚽AET`"
 					if "HT" in notes:
 						notes = notes.replace("HT","")
-						precol = "`â¸HT`"
+						precol = "`⏸HT`"
 					if "min" in notes:
 						regex = re.search(r"\d+\smins?",notes)
 						notes = notes.replace(regex.group(),"")
-						if "`âš½ET`" in precol:
-							precol = f"`âš½ET {regex.group()}`"
+						if "`⚽ET`" in precol:
+							precol = f"`⚽ET {regex.group()}`"
 						else:
-							precol = f"`âš½{regex.group()}`"
+							precol = f"`⚽{regex.group()}`"
 					if "' +" in notes:
 						regex = re.search(r"\d+\'\s\+\d+",notes)
 						notes = notes.replace(regex.group(),"")
-						precol= f"`âš½{regex.group()}`"
+						precol= f"`⚽{regex.group()}`"
 					if len(notes) < 6:
 						notes = ""
 					self.matchlist[comp][h] = {"timenow":precol,"midcol":midcol,"away":a,
@@ -175,16 +183,20 @@ class Live:
 			# if previous messages exist to edit:
 			if msglist != []:
 				if (len(outlist) * numservs) != len(msglist):
-					print(f"Old: {len(outlist)} New: {len(msglist)}")
 					msglist = []
 					for i in self.bot.config:
-						chan = self.bot.config[i]["scorechannel"]
-						ch = self.bot.get_channel(int(chan))
-						if ch is not None:
+						if "scorechannel" in self.bot.config[i]:
+							ch = self.bot.config[i]["scorechannel"]
+							if ch is None:
+								continue
+							ch = self.bot.get_channel(int(ch))
 							await ch.purge()
 							for j in outlist:
-								m = await ch.send(j)
-								msglist.append(m)
+								try:
+									m = await ch.send(j)
+									msglist.append(m)
+								except:
+									pass
 				else:
 					outlist = outlist * numservs
 					editlist = list(zip(msglist,outlist))
@@ -194,7 +206,6 @@ class Live:
 							try:
 								await i[0].edit(content=i[1])
 							except discord.HTTPException as e:
-								print(f"LS edit failed, {e}")
 								pass
 			else:
 				for j in self.bot.config:
@@ -203,13 +214,15 @@ class Live:
 					id = self.bot.config[j]["scorechannel"]
 					if id is None:
 						continue
-					else:
-						print(id)
 					sc = self.bot.get_channel(int(id))
 					for i in outlist:
 						if sc is not None:
-							m = await sc.send(i)
-							msglist.append(m)
+							try:
+								m = await sc.send(i)
+								msglist.append(m)
+							except:
+								pass
+								
 			await asyncio.sleep(60)
 	
 	# Ticker Task
@@ -237,15 +250,15 @@ class Live:
 		
 		for i in flattened:
 			try:
-				if not flattened[i]["midcol"] == self.matchcache[i]["midcol"]:
-					
+				if not flattened[i]["midcol"] == self.matchcache[i]["midcol"]:	
 					# Avoid re-sending by verifying score increase..
 					os = self.matchcache[i]["midcol"].split("-")
 					ns = flattened[i]["midcol"].split("-")
-										
-					if not os[0].strip() < ns[0].strip() and not os[1].strip() < ns[1].strip():
-						self.matchcache = flattened
-						return
+					
+					# If score reduces for some stupid reason.
+					if "v" not in os and 'v' not in ns:
+						if any([int(os[0]) > int(ns[0]),int(os[1]) > int(ns[1])]):
+							return
 					
 					out = self.bot.get_channel(332163136239173632)
 					e = discord.Embed()
@@ -271,7 +284,6 @@ class Live:
 						e.title = "Full Time"
 						e.color = 	0x00ffff 
 					self.matchcache = flattened
-					print(f"Dispatched Ticker Event: {i} {flattened[i]['midcol']} {flattened[i]['away']}\n{hg}\n{ag}")
 					await out.send(embed=e)
 			except KeyError:
 				self.matchcache = ""
@@ -323,7 +335,7 @@ class Live:
 	@commands.group(invoke_without_command=True,aliases=["ls"])
 	@commands.is_owner()
 	async def livescores(self,ctx):
-		""" Check the status of hte live score channel """
+		""" Check the status of the live score channel. Use ls set """
 		e = discord.Embed(title="Live Score Channel Status")
 		e.set_thumbnail(url=ctx.guild.icon_url)
 		if self.scoreson:
@@ -345,17 +357,17 @@ class Live:
 		if self.bot.is_owner(ctx.author):
 			x =  self.bot.scorechecker._state
 			if x == "PENDING":
-				v = "âœ… Task running."
+				v = "✅ Task running."
 			elif x == "CANCELLED":
 				e.color = 0xff0000
-				v = "âš  Task Cancelled."
+				v = "⚠ Task Cancelled."
 			elif x == "FINISHED":
 				e.color = 0xff0000
 				self.bot.scorechecker.print_stack()
-				v = "â‰ Task Finished"
+				v = "⁉ Task Finished"
 				z = self.bot.scorechecker.exception()
 			else:
-				v = f"â” `{self.bot.scorechecker._state}`"
+				v = f"❔ `{self.bot.scorechecker._state}`"
 			e.add_field(name="Debug Info",value=v,inline=False)
 			try:
 				e.add_field(name="Exception",value=z,inline=False)
@@ -369,13 +381,13 @@ class Live:
 		""" Turn the Live score channel back on """
 		if not self.scoreson:
 			self.scoreson = True
-			await ctx.send("âš½ Live score channel has been enabled.")
+			await ctx.send("⚽ Live score channel has been enabled.")
 			self.bot.scorechecker = bot.loop.create_task(self.ls())
 		elif self.bot.scorechecker._state == ["FINISHED","CANCELLED"]:
-			await ctx.send(f"âš½ Restarting {self.bot.scorechecker._state} task after exception {self.bot.scorechecker.exception()}.")
+			await ctx.send(f"⚽ Restarting {self.bot.scorechecker._state} task after exception {self.bot.scorechecker.exception()}.")
 			self.bot.scorechecker = bot.loop.create_task(self.ls())
 		else:
-			await ctx.send("âš½ Live score channel already enabled.")
+			await ctx.send("⚽ Live score channel already enabled.")
 			
 	@livescores.command(name="off")
 	@commands.has_permissions(manage_messages=True)
@@ -383,9 +395,9 @@ class Live:
 		""" Turn off the live score channel """
 		if self.scoreson:
 			self.scoreson = False
-			await ctx.send("âš½ Live score channel has been disabled.")
+			await ctx.send("⚽ Live score channel has been disabled.")
 		else:
-			await ctx.send("âš½ Live score channel already disabled.")
+			await ctx.send("⚽ Live score channel already disabled.")
 			
 	@livescores.command(name="unset")
 	@commands.has_permissions(manage_channels=True)
@@ -440,7 +452,6 @@ class Live:
 			async with self.bot.session.get(link) as resp:
 				if resp.status != 200:
 					await m.edit(content=f"HTTP Error accessing {link}: {resp.status}")
-					print(resp.status)
 					return None
 				await m.edit(content=f"Fetching lineups from {link}")
 				tree = html.fromstring(await resp.text())
@@ -458,13 +469,13 @@ class Live:
 						infotime = "".join(i.xpath('.//span[2]/i/span/text()'))
 						infotime = infotime.replace('Booked at ','')
 						infotime = infotime.replace('mins','\'')
-						infos = infos.replace('sp-c-booking-card sp-c-booking-card--rotate sp-c-booking-card--yellow gs-u-ml','\ðŸ’›')
-						infos = infos.replace('booking-card booking-card--rotate booking-card--red gel-ml','\ðŸ”´')
+						infos = infos.replace('sp-c-booking-card sp-c-booking-card--rotate sp-c-booking-card--yellow gs-u-ml','\💛')
+						infos = infos.replace('booking-card booking-card--rotate booking-card--red gel-ml','\🔴')
 						subinfo = i.xpath('.//span[3]/span//text()')
 						subbed = subinfo[1] if subinfo else ""
 						subtime = subinfo[3].strip() if subinfo else ""
 						if subbed:
-							subbed = f"\â™» {subbed} {subtime}"
+							subbed = f"\♻ {subbed} {subtime}"
 						if infos:
 							if subbed:
 								thisplayer = f"**{player}** ({infos}{infotime}, {subbed})"
@@ -510,6 +521,8 @@ class Live:
 		""" Get the current stats for a team's game (default is Newcastle) """
 		with ctx.typing():
 			link = await self.fetch_game(ctx,team)
+			if link is None:
+				return await ctx.send(f"Couldn't find live game for {team}")
 			m = await ctx.send(f"Found match: <{link}>, parsing...")
 			async with self.bot.session.get(link) as resp:
 				if resp.status != 200:
@@ -554,24 +567,21 @@ class Live:
 				if homestats:
 					e.add_field(name=home,value=homestats,inline=True)
 				else:
-					print(homestats)
 					e.description += f"\n {home}"
 				if stats:
 					e.add_field(name=score,value=stats,inline=True)
 				else:
-					print(stats)
 					e.description += f" {score} "
 				if awaystats:
 					
 					e.add_field(name=away,value=awaystats,inline=True)
 				else:
-					print(awaystats)
 					e.description += f"{away}"
 				if homegoals:
 					e.add_field(name=f"{home} scorers",value=homegoals,inline=False)
 				if awaygoals:
 					e.add_field(name=f"{away} scorers",value=awaygoals,inline=False)
-				e.set_footer(text=f"âš½ {comp}: {time}")
+				e.set_footer(text=f"⚽ {comp}: {time}")
 				await m.delete()
 				await ctx.send(embed=e)
 			
