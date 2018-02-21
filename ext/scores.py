@@ -205,7 +205,9 @@ class Live:
 						if i[0].content != i[1]:
 							try:
 								await i[0].edit(content=i[1])
-							except discord.HTTPException as e:
+							# BOOOO BARE EXCEPT BOOOO.
+							# because disconnects.
+							except :
 								pass
 			else:
 				for j in self.bot.config:

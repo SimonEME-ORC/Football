@@ -362,8 +362,9 @@ class Mod:
 	
 	async def on_guild_emojis_update(self,guild,before,after):
 		# Check config to see if outputting.
-		j = self.bot.config[f"{guild.id}"]["mod"]["emojis"]
-		if not j:
+		try:
+			j = self.bot.config[f"{guild.id}"]["mod"]["emojis"]
+		except KeyError:
 			return
 		
 		# Get mod Channel
@@ -474,7 +475,7 @@ class Mod:
 			c = self.bot.config[f"{ctx.guild.id}"]["mod"]
 			mc = self.bot.get_channel(c["channel"])	
 		except KeyError:
-			m =f"Mod channel not set, use {self.bot.command_prefix[0]}mod set"
+			m = f"Mod channel not set, use {self.bot.command_prefix[0]}mod set"
 			return await ctx.send(m)
 		try:
 			status = c["emojis"]

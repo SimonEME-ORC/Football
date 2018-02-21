@@ -16,8 +16,8 @@ from selenium import webdriver
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.common.exceptions import NoSuchElementException, WebDriverException
 
-# TV listing site has a better match stats than bbc. Investigate.
-# Also Premier league site does too.
+from PIL import Image, ImageDraw, ImageFont
+from io import BytesIO
 
 class MatchThread:
 	""" MatchThread Bot rewrite."""
@@ -41,9 +41,11 @@ class MatchThread:
 		# Strings.
 		self.discord = "https://discord.gg/tbyUQTV"
 		self.archive = "https://www.reddit.com/r/NUFC/wiki/archive"
-		self.teamurl = "newcastle-united"	
+		
+		# self.teamurl = "newcastle-united"	
+		self.teamurl = "huddersfield-town" # DEBUG
 		self.radio = "[📻 Radio Commentary](https://www.nufc.co.uk/liveAudio.html)"
-		self.bbcheader = f"##MATCH UPDATES (COURTESY OF [](#icon-bbc)[BBC]({self.bbclink}))"
+		self.bbcheader = f"##Match updates (from [](#icon-bbc)[bbc]({self.bbclink}))"
 		self.botdisclaimer = "*beep boop, I am /u/Toon-bot, a bot coded by /u/Painezor. If anything appears to be weird or off, please let him know.*"
 		
 		# Match Data
@@ -57,6 +59,7 @@ class MatchThread:
 		self.matchstats = ""
 		self.homegoals = ""
 		self.awaygoals = ""
+		self.formations = ""
 		self.hometeam = ""
 		self.awayteam = ""
 		self.substituted = set()
@@ -65,9 +68,10 @@ class MatchThread:
 		# Reddit info
 		self.homereddit = ""
 		self.homeicon = ""
-		
 		self.awayreddit = ""
 		self.awayicon = ""
+		self.prematch = ""
+		self.matchthread = ""
 		
 		# TV info
 		self.tvlink = ""
@@ -78,6 +82,10 @@ class MatchThread:
 		self.scheduling = True
 		self.schedtask = self.bot.loop.create_task(self.scheduler())
 		
+		# MT Task
+		self.match_thread_task = ""
+		self.stopmatchthread = False
+		
 	def __unload(self):
 		# Scheduler loop
 		self.schedtask.cancel()
@@ -85,7 +93,7 @@ class MatchThread:
 		# Selenium Scraper
 		try:
 			self.driver.quit()
-		except NameError:
+		except AttributeError:
 			pass
 	
 	# PhantomJS for premier league website scraping.
@@ -126,8 +134,8 @@ class MatchThread:
 		# Bonus data if prem.
 		if "Premier League" in self.competition:
 			await self.bot.loop.run_in_executor(None,self.get_prem_link)
-			
-		
+			await self.bot.loop.run_in_executor(None,self.get_prem_data)
+
 		# Find TV listings.
 		await self.fetch_tv()
 		
@@ -135,7 +143,21 @@ class MatchThread:
 		await self.get_team_reddit_info()
 		
 		# Write Markdown
-		await self.write_markdown()
+		markdown = await self.write_markdown()
+		
+		# Post initial thread.
+		post = await self.bot.loop.run_in_executor(None,self.makepost,threadname,toptext)
+		self.matchthread = post.url
+		
+		# Commence loop.
+		while not self.stopmatchthread:
+			# Scrape new data
+			
+			# Edit post
+			
+			# Repeat
+			await asyncio.sleep(60)
+				
 	
 	# Formatting.
 	async def write_markdown(self):
@@ -180,6 +202,8 @@ class MatchThread:
 			
 		if self.attendance:
 			markdown += f"**Attendance: {self.attendance}\n\n"
+			
+		return markdown
 			
 	# Get Premier League Website data.
 	def get_prem_link(self):
@@ -553,26 +577,76 @@ class MatchThread:
 		
 		
 		# Get Formations
-		z = self.driver.find_elements_by_xpath(".//ul[@class='tablist']/li")[1]
+		z = self.driver.find_element_by_xpath(".//ul[@class='tablist']/li[@class='matchCentreSquadLabelContainer']")
 		z.click()
-		lineup = self.driver.find_elements_by_xpath(".//div[@class='pitchContainer'")
-		
-		location = lineup.location
-		size = lineup.size
+		WebDriverWait(self.driver, 2)
+		self.driver.implicitly_wait(2)
+		lineup = self.driver.find_element_by_xpath(".//div[@class='pitch']")
+		self.driver.save_screenshot('Debug.png')
+
+		# Fuck it we're cropping manually.
 		im = Image.open(BytesIO(lineup.screenshot_as_png))
-		left = location['x']
-		top = location['y']
-		right = location['x'] + size['width']
-		bottom = location['y'] + size['height']
+		left = 867
+		top = 980
+		right = left + 274
+		bottom = top + 561
+		
+		print(left,top,right,bottom)
 		im = im.crop((left, top, right, bottom))
-		output = BytesIO()
-		im.save(output,"PNG")
+		
+		im.save("formations.png")
 		self.driver.save_screenshot('Debug.png')
 		
-		self.formations = self.bot.loop.create_task(upload_formation)
+		# self.formations = self.bot.loop.create_task(self.upload_formation,"formations.png")
 		
 		# Get Match pictures.
-				
+	
+	
+
+	async def upload_formation(self,im):
+		d = {"image":imgurl}
+		h = {'Authorization': self.bot.credentials["Imgur"]["Authorization"]}
+		async with self.bot.session.post("https://api.imgur.com/3/image",data = d,headers=h) as resp:
+			res = await resp.json()
+		return res['data']['link']	
+	
+	# Reddit posting shit.
+	# Make a reddit post.
+	def makepost(self,threadname,toptext):
+		print(f"Entered MakePost: {threadname}")
+		try:
+			post = self.bot.reddit.subreddit(f"{self.subreddit}").submit(threadname,selftext=toptext)
+		except RequestException:
+			post = self.makepost(threadname,toptext)
+		return post
+	
+	# Edit an existing reddit post.
+	def editpost(self,post,newcontent):
+		try:
+			post.edit(newcontent)
+		except:
+			self.editpost(post,newcontent)
+		return	
+	
+	# Debug command - Force Test
+	@commands.command()
+	@commands.is_owner()
+	async def forcemt(self,ctx):
+		m = await ctx.send('DEBUG: Starting a match thread...')
+		post = await self.start_match_thread()
+		await m.edit(content=f'DEBUG: {post.url}')
+		
+	@commands.command()
+	@commands.is_owner()
+	async def killmt(self,ctx):
+		pass
+	
+	# Debug command - fixtures
+	@commands.command()
+	@commands.is_owner()
+	async def formation(self,ctx):
+		
+		await self.upload_formation('formations.png')
 	
 	# Debug command - PL site.
 	@commands.command()
@@ -582,7 +656,7 @@ class MatchThread:
 		self.premlink = "https://www.premierleague.com/match/22600" # Watford vs Chelsea
 		
 		await self.bot.loop.run_in_executor(None,self.get_prem_data)
-		await ctx.send(file=discord.File('Debug.png'))
+		await ctx.send(file=discord.File('formations.png'))
 		
 	# Debug Command
 	@commands.command()

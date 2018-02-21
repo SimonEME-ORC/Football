@@ -16,6 +16,18 @@ class Admin:
 
 	@commands.command()
 	@commands.is_owner()
+	async def guilds(self,ctx):
+		output = []
+		for i in self.bot.config.keys():
+			print(int(i))
+			name = self.bot.get_guild(i)
+			output.append(f"{i}: {name}")
+
+		await ctx.send(", ".join(output))
+			
+		
+	@commands.command()
+	@commands.is_owner()
 	async def memleak(self,ctx):
 		tst = objgraph.show_most_common_types(limit=10)
 		obj = objgraph.by_type('function')[1000]
