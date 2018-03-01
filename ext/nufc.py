@@ -194,6 +194,7 @@ class NUFC:
 				"**r/NUFC FAQ**: https://www.reddit.com/r/NUFC/wiki/faq")
 	
 	@commands.command()
+	@commands.check(nufccheck)
 	async def hot(self,ctx):
 		""" Get the hot posts from r/NUFC """
 		posts = await self.bot.loop.run_in_executor(None,self._hot)
@@ -215,6 +216,7 @@ class NUFC:
 		return self.bot.reddit.subreddit("NUFC").hot(limit=5)
 		
 	@commands.command()
+	@commands.check(nufccheck)
 	async def top(self,ctx,*,time = "all"):
 		""" Get the top posts from r/NUFC (optionally by time period)"""
 		if time not in ["all","hour","day","week","month","year","a","h","d","w","m","y"]:
@@ -243,6 +245,7 @@ class NUFC:
 		await ctx.send(embed=e)
 	
 	@commands.command()
+	@commands.check(nufccheck)
 	async def new(self,ctx):
 		""" Get the newest posts from r/NUFC """
 		posts = await self.bot.loop.run_in_executor(None,self._new)

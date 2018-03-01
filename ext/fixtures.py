@@ -91,8 +91,10 @@ class Fixtures:
 			if ctx.guild is not None:
 				if ctx.guild.id == 332159889587699712:
 					url = "https://www.flashscore.com/soccer/england/premier-league"
+				else:
+					return await ctx.send("Specify a search query.")
 			else:
-				return await ctx.send("Specify a search query.")
+				return await ctx.send("Please specify a search query.")
 		else:
 			m = await ctx.send(f"Searching for {qry}...")
 			url = await self._search(ctx,m,qry)

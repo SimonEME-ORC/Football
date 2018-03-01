@@ -196,7 +196,7 @@ class Transfers:
 				mtleague = "".join(i.xpath('.//td[5]/table//tr[2]/td/a/text()'))
 				mtllink = "".join(i.xpath('.//td[5]/table//tr[2]/td/a/@href'))
 				if mtllink:
-					mtllink = f"https://www.transfermarkt.co.uk{mttlink}"
+					mtllink = f"https://www.transfermarkt.co.uk{mtllink}"
 				mttflag = self.get_flag("".join(i.xpath('.//td[5]/table//tr[2]/td//img/@alt')))
 				mttflag = f"{mttflag} "
 				movedto = f"[{movedtoteam}](https://www.transfermarkt.co.uk{movedtolink}) " \

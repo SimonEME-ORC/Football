@@ -645,7 +645,6 @@ class MatchThread:
 	@commands.command()
 	@commands.is_owner()
 	async def formation(self,ctx):
-		
 		await self.upload_formation('formations.png')
 	
 	# Debug command - PL site.

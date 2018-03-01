@@ -113,9 +113,9 @@ class Info:
 	async def avatar(self,ctx,user:discord.User = None):
 		""" Shows a member's avatar """
 		if user == None:
-			await ctx.send(ctx.author.avatar_url)
+			await ctx.send(ctx.author.avatar_url_as(format="png"))
 		else:
-			await ctx.send(user.avatar_url)
+			await ctx.send(user.avatar_url_as(format="png"))
 		
 def setup(bot):
 	bot.add_cog(Info(bot))

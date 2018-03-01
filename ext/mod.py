@@ -252,6 +252,7 @@ class Mod:
 						await ctx.send(f"🆗 {who} was unbanned")
 		
 	@commands.command(aliases=['bans'])
+	@commands.guild_only()
 	async def banlist(self,ctx):
 		""" Show the banlist for the server """
 		try:
@@ -275,6 +276,7 @@ class Mod:
 		
 	@commands.group(invoke_without_command=True)
 	@commands.has_permissions(manage_guild=True)
+	@commands.guild_only()
 	async def mod(self,ctx):
 		""" Shows the status of various mod tools """
 		try:
