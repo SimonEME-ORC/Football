@@ -338,10 +338,8 @@ class Sidebar:
 					fixtures = await self.bot.loop.run_in_executor(None,self.fixtures)
 				if results == "Retry":
 					results,lastres,lastop = await self.bot.loop.run_in_executor(None,self.results)
-					print(results)
 				if threads == "Retry":
 					threads = await self.bot.loop.run_in_executor(None,self.threads,lastop)
-					print(threads)
 				if "Retry" in [table,fixtures,results]:
 					time.sleep(5)
 			return sb,table,fixtures,results,lastres,threads

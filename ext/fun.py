@@ -45,7 +45,9 @@ class Misc:
 			title = resp["title"].strip().capitalize().rstrip('.?,:')
 			opta  = resp["choicea"].strip().capitalize().rstrip('.?,!').lstrip('.')
 			optb  = resp["choiceb"].strip().capitalize().rstrip('.?,!').lstrip('.')
-			await ctx.send(f"{ctx.author.mention} **{title}...** \n{opta} \n{optb}")
+			m = await ctx.send(f"{ctx.author.mention} **{title}...** \n{opta} \n{optb}")
+			await m.add_reaction('🇦')
+			await m.add_reaction('🇧')
 	
 	@commands.command()
 	@commands.is_owner()

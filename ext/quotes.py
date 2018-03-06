@@ -60,6 +60,65 @@ class quotedb:
 		await ctx.send(embed=e)
 
 	@quote.command()
+	async def search(self,ctx,*,qry):
+		c.execute(f"SELECT rowid, * FROM quotes WHERE quotetext LIKE (?)",(f'%{qry}%',))
+		x = c.fetchall()
+		numquotes = len(x)
+		embeds = []
+		for i in x:
+			y = await self.make_embed(i)
+			embeds.append(y)
+		conn.rollback()	
+		
+		# Do we need to paginate?
+		if numquotes == 0:
+			return await ctx.send(f'No quotes matching {qry} found.')
+		m = await ctx.send(embed=embeds[0])
+		if numquotes == 1:
+			return
+		
+		# Paginate then.
+		page = 0
+		if numquotes > 2:
+			await m.add_reaction("⏮") # first
+		if numquotes > 1:
+			await m.add_reaction("◀") # prev
+		if numquotes > 1:
+			await m.add_reaction("▶") # next
+		if numquotes > 2:
+			await m.add_reaction("⏭") # last
+		
+		def check(reaction,user):
+			if reaction.message.id == m.id and user == ctx.author:
+				e = str(reaction.emoji)
+				return e.startswith(('?','?','?','?','?'))
+					
+		# Reaction Logic Loop.
+		while True:
+			try:
+				res = await self.bot.wait_for("reaction_add",check=check,timeout=30)
+			except asyncio.TimeoutError:
+				await m.clear_reactions()
+				break
+			res = res[0]
+			if res.emoji == "⏮": #first
+				page = 1
+				await m.remove_reaction("⏮",ctx.message.author)
+			elif res.emoji == "◀": #prev
+				await m.remove_reaction("◀",ctx.message.author)
+				if page > 1:
+					page = page - 1
+			elif res.emoji == "▶": #next	
+				await m.remove_reaction("▶",ctx.message.author)
+				if page < numquotes:
+					page = page + 1
+			elif res.emoji == "⏭": #last
+				page = numquotes
+				await m.remove_reaction("⏭",ctx.message.author)	
+			await m.edit(embed=embeds[page - 1])
+			
+		
+	@quote.command()
 	@commands.is_owner()
 	async def export(self,ctx):
 		c.execute("SELECT rowid, * from quotes")

@@ -170,6 +170,8 @@ class Transfers:
 				if firstrun:
 					self.parsed.append(pname)
 					continue
+					
+				print("New transfer detected!")
 				e = discord.Embed(color = 0x1a3151)
 				e.set_author(name=pname)
 				
@@ -207,13 +209,13 @@ class Transfers:
 				movedfromteam = "".join(i.xpath('.//td[4]/table//tr[1]/td/a/text()'))
 				movedfromlink = "".join(i.xpath('.//td[4]/table//tr[1]/td/a/@href'))
 				mfleague = "".join(i.xpath('.//td[4]/table//tr[2]/td/a/text()'))
-				mfleague = "".join(i.xpath('.//td[4]/table//tr[2]/td/a/@href'))
-				if mfleague:
-					mfleague = f"https://www.transfermarkt.co.uk{mfleague}"
+				mfllink = "".join(i.xpath('.//td[4]/table//tr[2]/td/a/@href'))
+				if mfllink:
+					mfllink = f"https://www.transfermarkt.co.uk{mfllink}"
 				mftflag = self.get_flag("".join(i.xpath('.//td[4]/table//tr[2]/td//img/@alt')))
 				mftflag = f"{mftflag} "
 				movedfrom = f"[{movedfromteam}](https://www.transfermarkt.co.uk{movedfromlink}) " \
-							f"([{mflflag}{mfleague}](https://www.transfermarkt.co.uk{mfleague}))"
+							f"([{mftflag}{mfleague}]({mfllink}))"
 				
 				e.description += f"\n**From:** {movedfrom}"
 							
@@ -226,30 +228,45 @@ class Transfers:
 				th = await self.imgurify(th)
 				e.set_thumbnail(url=th)
 				self.parsed.append(pname)
+				print("Transfer Parse succeeded!")
 				for i in self.bot.config:
 					try:
 						ch = self.bot.config[i]["transfers"]["channel"]
 						ch = self.bot.get_channel(ch)
 						if ch is None:
+							print(f"{i}: tf channel set but not found")
 							continue
 					except KeyError:
 						continue
 					try:
 						mode = self.bot.config[i]["transfers"]["mode"]
-					except:
+					except KeyError:
+						print(f'Transfers - Dodgy config for channel {ch}')
 						await ch.send(embed=e)
+						continue
 					if mode == "default":
 						await ch.send(embed=e)
+						print(f"Successfully Sent transfer to {ch} / Default mode")
 					elif mode == "blacklist":
-						blacklist = self.bot.config[i]["transfers"]["blacklist"]
+						try:
+							blacklist = self.bot.config[i]["transfers"]["blacklist"]
+						except:
+							blacklist = ""
+							print(f"{i}: Blacklist mode selected but not populated")
 						if mfleague in blacklist and mtleague in blacklist:
 							continue
 						else:
 							await ch.send(embed=e)
 					elif mode == "whitelist":
-						whitelist = self.bot.config[i]["transfers"]["whitelist"]
-						if mfleague in blacklist or mtleague in whitelist:
+						try:
+							whitelist = self.bot.config[i]["transfers"]["whitelist"]
+						except:
+							whitelist = ""
+							print(f"{i}: Whitelist mode selected but not populated.")
+						if mfleague in whitelist or mtleague in whitelist:
 							await ch.send(embed=e)
+					else:
+						await ch.send(embed=e)
 						
 			firstrun = False
 			# Run every 5 mins
@@ -299,30 +316,6 @@ class Transfers:
 				pass
 		await ctx.send(embed=e)
 	
-	@transferticker.command(name="on")
-	@commands.has_permissions(manage_messages=True)
-	async def transfers_on(self,ctx):
-		""" Turn the transfer ticker channel back on """
-		if not self.transferson:
-			self.transferson = True
-			await ctx.send("? Transfer ticker channel has been enabled.")
-			self.bot.transferticker = self.bot.loop.create_task(self.ls())
-		elif self.bot.scorechecker._state == ["FINISHED","CANCELLED"]:
-			await ctx.send(f"? Restarting {self.bot.transferticker._state} task after exception {self.bot.transferticker.exception()}.")
-			self.bot.transferticker = bot.loop.create_task(self.ls())
-		else:
-			await ctx.send("? Transfer ticker channel has been enabled.")
-	
-	@transferticker.command(name="off")
-	@commands.has_permissions(manage_messages=True)
-	async def transfers_off(self,ctx):	
-		""" Turn off the transfer ticker channel """
-		if self.transferson:
-			self.transferson = False
-			await ctx.send("? Transfer ticker channel has been disabled.")
-		else:
-			await ctx.send("? Transfer ticker channel already disabled.")
-	
 	@transferticker.command(name="mode")
 	@commands.has_permissions(manage_channels=True)
 	async def mode(self,ctx,*,mode=None):
@@ -367,6 +360,7 @@ class Transfers:
 	@transferticker.group(invoke_without_command=True)
 	@commands.has_permissions(manage_channels=True)
 	async def whitelist(self,ctx):
+		""" Check the server's transfers whitelist """
 		# Check we have an active transfers channel.
 		ch = self.bot.config[str(ctx.guild.id)]['transfers']['channel']
 		try:
@@ -390,18 +384,20 @@ class Transfers:
 	@whitelist.command(name="add")
 	@commands.has_permissions(manage_channels=True)
 	async def wl_add(self,ctx,*,item):
+		""" Add an item to the server's transfers whitelist """
 		# Check we have an active transfers channel.
 		ch = self.bot.config[str(ctx.guild.id)]['transfers']['channel']
 		try:
 			chan = self.bot.get_channel(ch).mention
 		except AttributeError:
 			return await ctx.send('Please set your transfers channel first using {ctx.prefix}tf set in your desired transfers channel')
-	
-		if item in self.bot.config[str(ctx.guild.id)]['transfers']['whitelist']:
-			return await ctx.send(f'{item} is already in your transfers whitelist')
-		else:
-			self.bot.config[str(ctx.guild.id)]['transfers']['whitelist'].append(item)
-		
+		try:
+			if item in self.bot.config[str(ctx.guild.id)]['transfers']['whitelist']:
+				return await ctx.send(f'{item} is already in your transfers whitelist')
+			else:
+				self.bot.config[str(ctx.guild.id)]['transfers']['whitelist'].append(item)
+		except:
+			self.bot.config[str(ctx.guild.id)]['transfers'].update({"whitelist":[item]})
 		with await self.bot.configlock:
 			with open('config.json',"w",encoding='utf-8') as f:
 				json.dump(self.bot.config,f,ensure_ascii=True,
@@ -413,6 +409,7 @@ class Transfers:
 	@whitelist.command(name="del")
 	@commands.has_permissions(manage_channels=True)
 	async def wl_del(self,ctx,*,item):
+		""" Remove an item from the server's transfers whitelist """
 		# Check we have an active transfers channel.
 		ch = self.bot.config[str(ctx.guild.id)]['transfers']['channel']
 		try:
@@ -443,6 +440,7 @@ class Transfers:
 	@transferticker.group(invoke_without_command=True)
 	@commands.has_permissions(manage_channels=True)
 	async def blacklist(self,ctx):
+		""" Check the server's transfer channel blacklist """
 		# Check we have an active transfers channel.
 		ch = self.bot.config[str(ctx.guild.id)]['transfers']['channel']
 		try:
@@ -466,6 +464,7 @@ class Transfers:
 	@blacklist.command(name="add")
 	@commands.has_permissions(manage_channels=True)
 	async def bl_add(self,ctx,*,item):
+		""" Add an item to the server's transfer channel blacklist"""
 		# Check we have an active transfers channel.
 		ch = self.bot.config[str(ctx.guild.id)]['transfers']['channel']
 		try:
@@ -489,6 +488,7 @@ class Transfers:
 	@blacklist.command(name="del")
 	@commands.has_permissions(manage_channels=True)
 	async def bl_del(self,ctx,*,item):
+		""" Remove an item from the server's transfer channel blacklist"""
 		# Check we have an active transfers channel.
 		ch = self.bot.config[str(ctx.guild.id)]['transfers']['channel']
 		try:
@@ -640,8 +640,9 @@ class Transfers:
 			return await ctx.send(self.bot.get_channel(332167049273016320).mention)
 		await self.search(ctx,qry,"Transfers",special=True)
 	
-	@commands.command()
+	@commands.command(aliases=["rumors"])
 	async def rumours(self,ctx,*,qry):
+		""" Get the latest transfer rumours for a team """
 		await self.search(ctx,qry,"Rumours",special=True)
 	
 	@commands.command(alises=["bans","suspensions","injured","hurt","banned"])
@@ -1031,6 +1032,30 @@ class Transfers:
 		e.description = output
 			
 		await ctx.send(embed=e)
+
+	@transferticker.command(name="on")
+	@commands.is_owner()
+	async def transfers_on(self,ctx):
+		""" Turn the transfer ticker channel back on """
+		if not self.transferson:
+			self.transferson = True
+			await ctx.send("? Transfer ticker channel has been enabled.")
+			self.bot.transferticker = self.bot.loop.create_task(self.ls())
+		elif self.bot.scorechecker._state == ["FINISHED","CANCELLED"]:
+			await ctx.send(f"? Restarting {self.bot.transferticker._state} task after exception {self.bot.transferticker.exception()}.")
+			self.bot.transferticker = bot.loop.create_task(self.ls())
+		else:
+			await ctx.send("? Transfer ticker channel has been enabled.")
+	
+	@transferticker.command(name="off")
+	@commands.is_owner()
+	async def transfers_off(self,ctx):	
+		"""Turn off the transfer ticker channel """
+		if self.transferson:
+			self.transferson = False
+			await ctx.send("? Transfer ticker channel has been disabled.")
+		else:
+			await ctx.send("? Transfer ticker channel already disabled.")
 		
 def setup(bot):
 	bot.add_cog(Transfers(bot))

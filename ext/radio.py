@@ -56,6 +56,10 @@ class YouTube:
 		self.bot = bot
 		self.bot.loop.create_task(self.next_song())
 
+	def nufccheck(ctx):
+		if ctx.guild:
+			return ctx.guild.id in [238704683340922882,332159889587699712]		
+		
 	async def get_guild_voice_client(self, ctx):
 		voice_client = None
 		try:

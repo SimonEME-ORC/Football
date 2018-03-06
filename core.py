@@ -12,9 +12,9 @@ import sys
 
 load = [	
 	'ext.admin','ext.fixtures','ext.fun','ext.google','ext.images','ext.info',
-	'ext.meta','ext.mod','ext.mtb','ext.nufc','ext.quotes',
+	'ext.meta','ext.mod','ext.mtb-rewrite','ext.nufc','ext.quotes',
 	'ext.reactions','ext.scores', 'ext.sidebar','ext.twitter',
-	'ext.transfers','ext.tv','ext.radio'
+	'ext.transfers','ext.tv'
 	# 'ext.wiki'
 ]
 					
@@ -100,7 +100,6 @@ if __name__ == '__main__':
 	# Cleanup.
 	bot.twitask.cancel()
 	bot.scorechecker.cancel()
-	bot.ticker.cancel()
 	bot.session.close() #Aiohttp ClientSession
 	handlers = log.handlers[:]
 	for hdlr in handlers:

@@ -51,7 +51,10 @@ class Live:
 						try:
 							await sc.purge()
 						except discord.Forbidden:
-							await sc.send(f"Hey {sc.guild.owner.mention}, I need delete messages permissions in this channel.")
+							try:
+								await sc.send(f"Hey {sc.guild.owner.mention}, I need delete messages permissions in this channel.")
+							except:
+								continue
 						except AttributeError:
 							try:
 								print(f"Scores.py - Livescores - {sc.guild.name} channel unset.")

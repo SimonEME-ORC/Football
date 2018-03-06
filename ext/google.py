@@ -100,7 +100,8 @@ class google:
 						"Mostly Cloudy":"☁️️",
 						"Mostly Sunny":"🌤",
 						"Partly Cloudy":"🌤️",
-						"Sunny":"🌞"
+						"Sunny":"🌞",
+						"Snow":"❄"
 						}
 					try:
 						e.description = f"{we[e.description]} {e.description}"
