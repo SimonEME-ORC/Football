@@ -61,22 +61,29 @@ class quotedb:
 
 	@quote.command()
 	async def search(self,ctx,*,qry):
-		c.execute(f"SELECT rowid, * FROM quotes WHERE quotetext LIKE (?)",(f'%{qry}%',))
-		x = c.fetchall()
+		with ctx.typing():
+			m = await ctx.send('Searching...')
+			localconn = sqlite3.connect('quotes.db')
+			lc = localconn.cursor()
+			lc.execute(f"SELECT rowid, * FROM quotes WHERE quotetext LIKE (?)",(f'%{qry}%',))
+			x = lc.fetchall()
+			lc.close()
+			localconn.close()
+		
 		numquotes = len(x)
 		embeds = []
 		for i in x:
 			y = await self.make_embed(i)
 			embeds.append(y)
-		conn.rollback()	
 		
 		# Do we need to paginate?
 		if numquotes == 0:
-			return await ctx.send(f'No quotes matching {qry} found.')
-		m = await ctx.send(embed=embeds[0])
-		if numquotes == 1:
-			return
+			return await m.edit(content = f'No quotes matching {qry} found.')
 		
+		if numquotes == 1:
+			return await m.edit(content=f"{ctx.author.mention}: 1 quote found",embed=embeds[0])
+		else:
+			await m.edit(content=f"{ctx.author.mention}: {numquotes} quotes found",embed=embeds[0])
 		# Paginate then.
 		page = 0
 		if numquotes > 2:
@@ -91,7 +98,7 @@ class quotedb:
 		def check(reaction,user):
 			if reaction.message.id == m.id and user == ctx.author:
 				e = str(reaction.emoji)
-				return e.startswith(('?','?','?','?','?'))
+				return e.startswith(('⏮','◀','▶','⏭'))
 					
 		# Reaction Logic Loop.
 		while True:
@@ -125,7 +132,6 @@ class quotedb:
 		x = c.fetchall()
 		with open("out.txt", "wb") as fp:
 			fp.write("\n".join([f"#{i[0]} @ {i[4]}: <{i[1]}> {i[2]} (Added by: {i[3]})" for i in x]).encode('utf8'))
-			conn.rollback()
 		await ctx.send("Might've worked. Let's find out.",file=discord.File("out.txt","quotes.txt"))
 
 	@quote.command(aliases=["id","fetch"])
@@ -163,7 +169,6 @@ class quotedb:
 		conn.commit()
 		c.execute("SELECT rowid, * FROM quotes ORDER BY rowid DESC")
 		x = c.fetchone()
-		conn.rollback()
 		e = await self.make_embed(x)
 		await n.edit(content=":white_check_mark: Successfully added to database",embed=e)
 	
@@ -182,7 +187,6 @@ class quotedb:
 			if x == None:
 				await ctx.send(f"No quotes found for user {arg.mention}.")
 				return
-		conn.rollback()
 		e = await self.make_embed(x)
 		await ctx.send(embed=e)
 	
@@ -214,7 +218,6 @@ class quotedb:
 			if res.emoji.startswith("👎"):
 				await ctx.send("OK, quote not deleted",delete_after=20)
 			elif res.emoji.startswith("👍"):
-				conn.rollback()
 				c.execute(f"DELETE FROM quotes WHERE rowid = {id}")
 				await ctx.send(f"Quote #{id} has been deleted.")
 				await m.delete()
@@ -228,10 +231,8 @@ class quotedb:
 			arg = ctx.author
 		c.execute(f"SELECT COUNT(*) FROM quotes WHERE quoterid = {arg.id}")
 		y = c.fetchone()[0]
-		conn.rollback()
 		c.execute(f"SELECT COUNT(*) FROM quotes WHERE userid = {arg.id}")
 		x = c.fetchone()[0]
-		conn.rollback()
 		await ctx.send(f"{arg.mention} has been quoted {x} times, and has added {y} quotes")
 		
 def setup(bot):

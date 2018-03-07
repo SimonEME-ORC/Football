@@ -259,20 +259,75 @@ class Mod:
 			banlist = await ctx.guild.bans()
 		except discord.Forbidden:
 			return await ctx.send('I don\'t have permission to view the banlist on this server.')
-		banned = ""
+		banpage = ""
+		banpages = []
+		banembeds = []
 		e = discord.Embed(color=0x111)
 		n = f"≡ {ctx.guild.name} discord ban list"
 		e.set_author(name=n,icon_url=ctx.guild.icon_url)
 		e.set_thumbnail(url="https://b.thumbs.redditmedia.com/iVPl7BnL44HwSnX_aKil_NudzWffKQlPiVCZPJZDh4M.png")
 		if len(banlist) == 0:
-			banned = "☠ No bans found!"
+			banpage = "☠ No bans found!"
 		else:
+			e.title = "User (Reason)"
 			for x in banlist:
 				a = x.user.name
 				b = x.user.discriminator
-				banned += f"\💀 {a}#{b}: {x.reason}\n"
-		e.add_field(name="User (Reason)",value=banned)
-		await ctx.send(embed=e)
+				if len("\💀 {a}#{b}: {x.reason}\n") + len(banpage) > 2048:
+					banpages.append(banpage)
+					banpage = ""
+				banpage += f"\💀 {a}#{b}: {x.reason}\n"
+			banpages.append(banpage)
+		thispage = 1
+		for i in banpages:
+			e.description = i
+			e.set_footer(text=f"Page {thispage} of {len(banpages)}")
+			thispage += 1
+			banembeds.append(e)
+		
+		
+		m = await ctx.send(embed=banembeds[0])
+		if len(banembeds) == 1:
+			return
+		if len(banembeds) > 2:
+			await m.add_reaction("⏮") # first
+		if len(banembeds) > 1:
+			await m.add_reaction("◀") # prev
+		if len(banembeds) > 1:
+			await m.add_reaction("▶") # next
+		if len(banembeds) > 2:
+			await m.add_reaction("⏭") # last
+		
+		def check(reaction,user):
+			if reaction.message.id == m.id and user == ctx.author:
+				e = str(reaction.emoji)
+				return e.startswith(('⏮','◀','▶','⏭'))
+		
+		page = 0			
+		# Reaction Logic Loop.
+		while True:
+			try:
+				res = await self.bot.wait_for("reaction_add",check=check,timeout=30)
+			except asyncio.TimeoutError:
+				await m.clear_reactions()
+				break
+			res = res[0]
+			if res.emoji == "⏮": #first
+				page = 1
+				await m.remove_reaction("⏮",ctx.message.author)
+			elif res.emoji == "◀": #prev
+				await m.remove_reaction("◀",ctx.message.author)
+				if page > 1:
+					page = page - 1
+			elif res.emoji == "▶": #next	
+				await m.remove_reaction("▶",ctx.message.author)
+				if page < len(banembeds):
+					page = page + 1
+			elif res.emoji == "⏭": #last
+				page = len(banembeds)
+				await m.remove_reaction("⏭",ctx.message.author)	
+			await m.edit(embed=banembeds[page - 1])
+		
 		
 	@commands.group(invoke_without_command=True)
 	@commands.has_permissions(manage_guild=True)

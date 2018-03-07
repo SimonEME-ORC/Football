@@ -193,6 +193,8 @@ class Live:
 							if ch is None:
 								continue
 							ch = self.bot.get_channel(int(ch))
+							if ch is None:
+								continue
 							await ch.purge()
 							for j in outlist:
 								try:
