@@ -89,8 +89,14 @@ class Mod:
 	@commands.command()
 	async def mute(self,ctx,member:discord.Member):
 		""" Mutes a user in this channel """
+		modroles = ["Moderators","Chat Mods"]
+		
+		for i in modroles:
+			if i in [i.name for i in member.roles]:
+				return await ctx.send('Cannot mute another moderator, sorry.')
 		ow = discord.PermissionOverwrite()
 		ow.send_messages = False
+		ow.add_reactions = False
 		try:
 			await ctx.channel.set_permissions(member,overwrite=ow)
 		except Exception as e:
@@ -343,7 +349,7 @@ class Mod:
 		e = discord.Embed(color=0x7289DA)
 		e.description = f"Mod Channel: {mc.mention}\n"
 		e.title = f"Config settings for {ctx.guild.name}"
-		for i in ['joins','leaves','bans','unbans']:
+		for i in ['joins','leaves','bans','unbans','emojis']:
 			try:
 				c[i]
 			except KeyError:

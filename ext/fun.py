@@ -97,6 +97,8 @@ class Misc:
 	async def choose(self,ctx,*,choices):
 		""" Make a decision for me (seperate choices with commas)"""
 		x = choices.split(",")
+		if len(x) == 1:
+			return
 		await ctx.send(f"{ctx.author.mention}: {random.choice(x)}")
 	
 	@commands.command(hidden=True)

@@ -557,26 +557,26 @@ class ImageManip:
 		""" Press F to pay respects """
 		await ctx.send("https://i.imgur.com/zrNE05c.gif")
 	
-	@commands.command(aliases=["cat"])
-	async def pussy(self,ctx):
-		""" Get a random cat image (ircle channel only) """
-		await ctx.trigger_typing()
-		retries = 0
-		while retries < 3:
-			async with self.bot.session.get("http://random.cat/meow") as resp:
-				if resp.status != 200:
-					await asyncio.sleep(1)
-					retries += 1
-					continue
-				else:
-					cat = await resp.json()
-					async with self.bot.session.get(cat["file"]) as resp:
-						cat = await resp.content.read()
-						await ctx.send(f'😺 {ctx.author.mention} A Cat has been delivered to your DMs, please take care of him!',delete_after=5)
-						fp = discord.File(BytesIO(cat),filename="cat.png")
-						await ctx.author.send("Here's your cat:",file=fp)
-					return
-		await ctx.author.send("Sorry, can't get a cat.")		
+	# @commands.command(aliases=["cat"])
+	# async def pussy(self,ctx):
+		# """ Get a random cat image (ircle channel only) """
+		# await ctx.trigger_typing()
+		# retries = 0
+		# while retries < 3:
+			# async with self.bot.session.get("http://random.cat/meow") as resp:
+				# if resp.status != 200:
+					# await asyncio.sleep(1)
+					# retries += 1
+					# continue
+				# else:
+					# cat = await resp.json()
+					# async with self.bot.session.get(cat["file"]) as resp:
+						# cat = await resp.content.read()
+						# await ctx.send(f'😺 {ctx.author.mention} A Cat has been delivered to your DMs, please take care of him!',delete_after=5)
+						# fp = discord.File(BytesIO(cat),filename="cat.png")
+						# await ctx.author.send("Here's your cat:",file=fp)
+					# return
+		# await ctx.author.send("Sorry, can't get a cat.")		
 			
 def setup(bot):
 	bot.add_cog(ImageManip(bot))

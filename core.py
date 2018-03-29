@@ -1,14 +1,13 @@
 from discord.ext import commands
 from collections import Counter
 from datetime import datetime
-import traceback
 import aiohttp
 import discord
 import asyncio
 import logging
 import praw
 import json
-import sys
+
 
 load = [	
 	'ext.admin','ext.fixtures','ext.fun','ext.google','ext.images','ext.info',
@@ -29,9 +28,9 @@ description = "Football lookup bot by Painezor#8489"
 
 async def get_prefix(bot, message):
 	if message.guild is None:
-		return ['+','-','.','$','!','?']
+		return ['+','-','.','$','!','?','.tb']
 	if not f"{message.guild.id}" in bot.config:
-		bot.config[f"{message.guild.id}"] = {"prefix":".tb"}
+		bot.config[f"{message.guild.id}"] = {"prefix":[".tb",'-','+','$','!','?']}
 	try:
 		pref = bot.config[f"{message.guild.id}"]["prefix"]
 	except KeyError:
@@ -41,19 +40,6 @@ async def get_prefix(bot, message):
 bot = commands.Bot(command_prefix=get_prefix, description=description,
 				   pm_help=None, )	#help_attrs=help_attrs
 				   
-# Errors and invalid commands outputs
-@bot.event
-async def on_command_error(ctx, error):
-	if isinstance(error, commands.NoPrivateMessage):
-		await ctx.author.send('Command cannot be used in private messages.')
-	elif isinstance(error, commands.DisabledCommand):
-		await ctx.send('Sorry. This command is disabled and cannot be used.')
-	elif isinstance(error, commands.CommandInvokeError):
-		print('In {0.command.qualified_name}:'.format(ctx), file=sys.stderr)
-		traceback.print_tb(error.original.__traceback__)
-		print('{0.__class__.__name__}: {0}'.format(error.original),
-			  file=sys.stderr)
-
 # On Client Ready
 @bot.event
 async def on_ready():
@@ -100,7 +86,7 @@ if __name__ == '__main__':
 	# Cleanup.
 	bot.twitask.cancel()
 	bot.scorechecker.cancel()
-	bot.session.close() #Aiohttp ClientSession
+	self.bot.run_until_complete(bot.session.close()) #Aiohttp ClientSession
 	handlers = log.handlers[:]
 	for hdlr in handlers:
 		hdlr.close()

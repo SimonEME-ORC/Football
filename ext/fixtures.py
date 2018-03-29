@@ -21,11 +21,25 @@ class Fixtures:
 	""" Rewrite of fixture & result lookups. """
 	def __init__(self, bot):
 		self.bot = bot
-		self.driver = webdriver.PhantomJS()
+		self.spawn_phantom()
 
 	def __unload(self):
-		self.driver.quit()
+		if self.driver:
+			self.driver.quit()
 		
+	def spawn_phantom(self):
+		webdriver.DesiredCapabilities.PHANTOMJS['phantomjs.page.settings.userAgent'] = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/48.0.2564.116 Safari/537.36'
+		headers = { 'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+			'Accept-Language':'zh-CN,zh;q=0.8,en-US;q=0.5,en;q=0.3',
+			'User-Agent': 'Mozilla/5.0 (Windows NT 6.2; WOW64; rv:47.0) Gecko/20100101 Firefox/47.0',
+			'Connection': 'keep-alive'
+		}
+
+		for key, value in headers.items():
+			webdriver.DesiredCapabilities.PHANTOMJS['phantomjs.page.customHeaders.{}'.format(key)] = value
+		self.driver = webdriver.PhantomJS()
+	
+	
 	async def _search(self,ctx,m,qry):
 		qryurl = f"https://s.flashscore.com/search/?q={qry}&l=1&s=1&f=1%3B1&pid=2&sid=1"
 		async with self.bot.session.get(qryurl) as resp:
@@ -189,7 +203,14 @@ class Fixtures:
 		return int('%02x%02x%02x' % rgb,16)	
 		
 	def get_html(self,url):
-		self.driver.get(url)
+		if not self.driver:
+			self.spawn_phantom()
+		try:
+			self.driver.get(url)
+		except:
+			self.driver.quit()
+			self.spawn_phantom()
+			self.driver.get(url)
 
 		e = discord.Embed()
 		th = self.driver.find_element_by_xpath(".//div[contains(@class,'logo')]")
@@ -397,7 +418,14 @@ class Fixtures:
 	
 	def parse_table(self,table):
 		table += "/standings/"
-		self.driver.get(table)
+		if not self.driver:
+			self.spawn_phantom()
+		try:
+			self.driver.get(table)
+		except:
+			self.driver.quit()
+			self.spawn_phantom()
+			self.driver.get(table)
 		try:
 			z = self.driver.find_element_by_link_text("Main")
 			z.click()
@@ -424,7 +452,14 @@ class Fixtures:
 		return df
 
 	def parse_bracket(self,bracket):
-		self.driver.get(bracket)
+		if not self.driver:
+			self.spawn_phantom()
+		try:
+			self.driver.get(bracket)
+		except:
+			self.driver.quit()
+			self.spawn_phantom()
+			self.driver.get(bracket)
 		stitches = []
 		totwid = 0
 		xp = './/div[@class="viewport"]'
@@ -508,7 +543,12 @@ class Fixtures:
 			comp = "".join(t.xpath('.//div[@class="tournament-name"]/text()'))
 			e.title = f"≡ Top Scorers for {comp}"
 			# Re-scrape!
-			self.driver.get(url)
+			try:
+				self.driver.get(url)
+			except:
+				self.driver.quit()
+				self.spawn_phantom()
+				self.driver.get(url)
 			WebDriverWait(self.driver, 2)
 			x = self.driver.find_element_by_link_text("Top Scorers")
 			x.click()

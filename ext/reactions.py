@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 import random
 import datetime
+import json
 
 reactdict = {
 			"brighton":["🍼"],
@@ -72,12 +73,17 @@ class Reactions:
 			return
 		if message.author.bot:
 			return
-		for i in message.author.roles:
-			if i.name == "Moderators":
-				return
 		for i in self.bot.config[f"{message.guild.id}"]["prefix"]:
 			if message.content.startswith(i):
 				return
+				
+		# Filter out deleted numbers - Toonbot.
+		try:
+			int(message.content)
+		except ValueError:
+			pass
+		else:
+			return
 		delchan = self.bot.get_channel(id=335816981423063050)
 		e = discord.Embed(title="Deleted Message")
 		e.description = f"'{message.content}'"

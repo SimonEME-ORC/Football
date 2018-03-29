@@ -81,6 +81,7 @@ class YouTube:
 
 	
 	@commands.command()
+	@commands.check(nufccheck)
 	async def play(self, ctx, *, query):
 		"""Plays a file from the local filesystem"""
 		guild_voice_client = await self.get_guild_voice_client(ctx)
@@ -133,6 +134,7 @@ class YouTube:
 		return
 
 	@commands.command()
+	@commands.check(nufccheck)
 	async def volume(self, ctx, volume: int):
 		"""Changes the player's volume"""
 		if ctx.voice_client is None:
@@ -141,6 +143,7 @@ class YouTube:
 		await ctx.send("Changed volume to {}%".format(volume))
 
 	@commands.command()
+	@commands.check(nufccheck)
 	async def stop(self, ctx):
 		"""Stops and disconnects the bot from voice"""
 		await ctx.voice_client.disconnect()

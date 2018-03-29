@@ -4,6 +4,8 @@ import aiohttp
 import inspect
 import objgraph
 import json
+import traceback
+import sys
 
 # to expose to the eval command
 import datetime
@@ -14,6 +16,37 @@ class Admin:
 	def __init__(self, bot):
 		self.bot = bot
 
+	# Error Handler
+	async def on_command_error(self,ctx,error):
+	
+		ignored = (commands.CommandNotFound, commands.UserInputError)
+		# Let local error handling override.
+		if hasattr(ctx.command,'on_error'):
+			return
+		
+		# NoPM
+		elif isinstance(error, commands.NoPrivateMessage):
+			await ctx.author.send('Sorry, this command cannot be used in private messages.')
+			
+		# Ignore these errors.
+		elif isinstance(error,ignored):
+			return
+			
+		elif isinstance(error,discord.Forbidden):
+			try:
+				await ctx.message.add_reaction('⛔')
+			except discord.Forbidden:
+				print(f"Forbidden: {ctx.message.content} ({ctx.author})in {ctx.channel.name} on {ctx.guild.name}")
+		
+		elif isinstance(error,commands.DisabledCommand):
+			await ctx.message.add_reaction('🚫')
+
+		elif isinstance(error, commands.CommandInvokeError):
+			print('In {0.command.qualified_name}:'.format(ctx), file=sys.stderr)
+			traceback.print_tb(error.original.__traceback__)
+			print('{0.__class__.__name__}: {0}'.format(error.original),
+				  file=sys.stderr)	
+		
 	@commands.command()
 	@commands.is_owner()
 	async def guilds(self,ctx):

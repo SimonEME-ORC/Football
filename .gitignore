@@ -116,3 +116,5 @@ Debug.png
 Debug.png
 *.webm
 *.m4a
+*.exe
+out.txt

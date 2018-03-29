@@ -63,6 +63,8 @@ class Twitter:
 				else:
 					continue
 				
+
+				
 				# discard retweets & adverts		
 				if hasattr(t,'retweeted_status') or t.text.startswith(("rt",'ad')):
 					continue
@@ -79,8 +81,10 @@ class Twitter:
 					ents = t.entities
 					txt = htmlc.unescape(t.text)
 				
-				if "coral" in txt:
-					continue
+				# r/FIFA-specific
+				if u.id_str == "105297123":
+					if not any(i in txt.lower() for i in ['potm',"totw","title update"]):
+						continue
 				
 				if "hashtags" in ents:
 					for i in ents["hashtags"]:
@@ -162,6 +166,7 @@ class Twitter:
 		e.set_thumbnail(url="https://i.imgur.com/jSEtorp.png")
 		if self.tweetson:
 			e.description = "```diff\n+ ENABLED```"
+			footer = ""
 		else:
 			e.description = "```diff\n- DISABLED```"
 			e.color = 0xff0000
