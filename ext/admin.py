@@ -149,6 +149,11 @@ class Admin:
 		"""Restarts the bot"""
 		await ctx.send(":gear: Restarting.")
 		await self.bot.logout()
+		
+	@commands.command()
+	@commands.is_owner()
+	async def ownersay(self,ctx,ch:discord.TextChannel,*,text):
+		await ch.send(text)
 
 def setup(bot):
     bot.add_cog(Admin(bot))

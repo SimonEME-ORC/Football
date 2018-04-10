@@ -4,6 +4,8 @@ import discord
 import asyncio
 import json
 
+import urllib
+
 class TimeParser:
 	def __init__(self, argument):
 		compiled = re.compile(r"(?:(?P<hours>\d+)h)?(?:(?P<minutes>\d+)m)?(?:(?P<seconds>\d+)s)?")
@@ -79,7 +81,7 @@ class Mod:
 		await topin.pin()
 		
 	@commands.command()
-	@commands.has_permissions(manage_channels=True)
+	@commands.has_permissions(manage_messages=True)
 	async def topic(self,ctx,*,newtopic):
 		""" Set the topic for the current channel """
 		await ctx.channel.edit(topic=newtopic)
@@ -259,6 +261,7 @@ class Mod:
 		
 	@commands.command(aliases=['bans'])
 	@commands.guild_only()
+	@commands.has_permissions(ban_members=True)
 	async def banlist(self,ctx):
 		""" Show the banlist for the server """
 		try:
@@ -268,24 +271,24 @@ class Mod:
 		banpage = ""
 		banpages = []
 		banembeds = []
-		e = discord.Embed(color=0x111)
-		n = f"≡ {ctx.guild.name} discord ban list"
-		e.set_author(name=n,icon_url=ctx.guild.icon_url)
-		e.set_thumbnail(url="https://b.thumbs.redditmedia.com/iVPl7BnL44HwSnX_aKil_NudzWffKQlPiVCZPJZDh4M.png")
 		if len(banlist) == 0:
 			banpage = "☠ No bans found!"
 		else:
-			e.title = "User (Reason)"
 			for x in banlist:
 				a = x.user.name
 				b = x.user.discriminator
-				if len("\💀 {a}#{b}: {x.reason}\n") + len(banpage) > 2048:
+				if len("\💀 {a}#{b}: {x.reason}\n") + len(banpage) > 1200:
 					banpages.append(banpage)
 					banpage = ""
-				banpage += f"\💀 {a}#{b}: {x.reason}\n"
+				banpage += urllib.parse.unquote(f"\💀 {a}#{b}: {x.reason}\n")
 			banpages.append(banpage)
 		thispage = 1
 		for i in banpages:
+			e = discord.Embed(color=0x111)
+			n = f"≡ {ctx.guild.name} discord ban list"
+			e.set_author(name=n,icon_url=ctx.guild.icon_url)
+			e.set_thumbnail(url="https://i.ytimg.com/vi/eoTDquDWrRI/hqdefault.jpg")
+			e.title = "User (Reason)"
 			e.description = i
 			e.set_footer(text=f"Page {thispage} of {len(banpages)}")
 			thispage += 1
@@ -313,7 +316,7 @@ class Mod:
 		# Reaction Logic Loop.
 		while True:
 			try:
-				res = await self.bot.wait_for("reaction_add",check=check,timeout=30)
+				res = await self.bot.wait_for("reaction_add",check=check,timeout=120)
 			except asyncio.TimeoutError:
 				await m.clear_reactions()
 				break
@@ -331,7 +334,7 @@ class Mod:
 					page = page + 1
 			elif res.emoji == "⏭": #last
 				page = len(banembeds)
-				await m.remove_reaction("⏭",ctx.message.author)	
+				await m.remove_reaction("⏭",ctx.message.author)
 			await m.edit(embed=banembeds[page - 1])
 		
 		

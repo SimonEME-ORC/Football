@@ -11,7 +11,7 @@ import json
 
 load = [	
 	'ext.admin','ext.fixtures','ext.fun','ext.google','ext.images','ext.info',
-	'ext.meta','ext.mod','ext.mtb-rewrite','ext.nufc','ext.quotes',
+	'ext.meta','ext.mod','ext.mtb','ext.nufc','ext.quotes',
 	'ext.reactions','ext.scores', 'ext.sidebar','ext.twitter',
 	'ext.transfers','ext.tv'
 	# 'ext.wiki'

@@ -86,7 +86,11 @@ class Fixtures:
 			if message.author.id == ctx.author.id and message.content in resdict:
 				return True
 		
-		match = await self.bot.wait_for("message",check=check,timeout=30)
+		try:
+			match = await self.bot.wait_for("message",check=check,timeout=30)
+		except TimeoutError:
+			await m.delete()
+			return None
 		try:
 			await m.delete()
 		except:
@@ -114,7 +118,7 @@ class Fixtures:
 			url = await self._search(ctx,m,qry)
 		
 		if url is None:
-			return #rip
+			return
 		m = await ctx.send(f"Grabbing table from {url}...")
 		await ctx.trigger_typing()
 		p = await self.bot.loop.run_in_executor(None,self.parse_table,url)
@@ -152,6 +156,8 @@ class Fixtures:
 		else:
 			m = await ctx.send(f"Searching for {qry}...")
 			url = await self._search(ctx,m,qry)
+		if url is None:
+			return #rip
 		pages = await self.bot.loop.run_in_executor(None,self.parse_fixtures,url,ctx.author.name)
 		await self.paginate(ctx,pages)
 

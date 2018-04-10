@@ -118,3 +118,7 @@ Debug.png
 *.m4a
 *.exe
 out.txt
+*.json
+*.jpg
+*.gif
+ext/fixtures-rw.py

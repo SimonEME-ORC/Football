@@ -65,7 +65,7 @@ class Live:
 			# Shield from crashes.
 			try:
 				c = self.bot.session
-				url = "http://www.bbc.co.uk/sport/football/scores-fixtures"
+				url = f"http://www.bbc.co.uk/sport/football/scores-fixtures/" + datetime.now().strftime('%Y-%m-%d')
 				async with c.get(url) as resp:
 					if resp.status != 200:
 						await asyncio.sleep(60)
@@ -80,12 +80,17 @@ class Live:
 			self.matchlist = {}
 
 			for i in sections: # for each league on page
+				ignoredleagues = ["Women's International Friendlies","Women's Super League 1","Women's Super League 2","Women's Premier North","Women's Premier South"]
+				
 				try:
 					comp = i.xpath('.//h3/text()')[0]
 				except IndexError:
 					comp = prevcomp
 				else:
 					prevcomp = comp
+					
+				if comp in ignoredleagues:
+					continue
 				group = "".join(i.xpath('.//h4/text()'))
 				if group:
 					comp = f"**{comp}** ({group})"
@@ -276,7 +281,7 @@ class Live:
 						e.title = "Goal"
 						e.color = 0x00ff00
 					async with self.bot.session.get(f"http://www.bbc.co.uk{flattened[i]['url']}") as resp:
-						tree = html.fromstring(await resp.text()) # pls fix?
+						tree = html.fromstring(await resp.text(encoding="utf-8"))
 						hg = "".join(tree.xpath('.//ul[contains(@class,"fixture__scorers")][1]//text()'))
 						hg = hg.replace("minutes","").replace(" )",")")
 						ag = "".join(tree.xpath('.//ul[contains(@class,"fixture__scorers")][2]//text()'))

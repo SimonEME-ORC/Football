@@ -11,7 +11,7 @@ class Misc:
 	def __init__(self, bot):
 		self.bot = bot
 	
-	@commands.command(name="8ball",aliases="8")
+	@commands.command(name="8ball",aliases=["8"])
 	async def eightball(self,ctx):
 		res = [ 
 			"Signs point to yes.",

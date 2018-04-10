@@ -23,9 +23,6 @@ class MatchThread:
 	""" MatchThread Bot rewrite."""
 	def __init__(self, bot):
 		self.bot = bot
-		# Debug data
-		# self.prem_link = "https://www.premierleague.com/match/22606"# Man Utd vs NCL
-		# self.prem_link = "https://www.premierleague.com/match/22600"# Watford vs Chelsea
 		
 		# Spawn PhantomJS
 		self.spawn_phantom()
@@ -46,11 +43,10 @@ class MatchThread:
 		self.discord = "[](#icon-discord)[Come chat with us on Discord!](https://discord.gg/tbyUQTV)"
 		self.archive = "https://www.reddit.com/r/NUFC/wiki/archive"
 			
-		self.teamurl = "newcastle-united"	
-		# self.teamurl = "huddersfield-town" # DEBUG
+		self.teamurl = "newcastle-united"
 		self.radio = "[📻 Radio Commentary](https://www.nufc.co.uk/liveAudio.html)"
 		self.tickerheader = ""
-		self.botdisclaimer = "---\n\n(*Beep boop, I am /u/Toon-bot, a bot coded ^badly by /u/Painezor. If anything appears to be weird or off, please let him know.*)"
+		self.botdisclaimer = "---\n\n^(*Beep boop, I am /u/Toon-bot, a bot coded ^badly by /u/Painezor. If anything appears to be weird or off, please let him know.*)"
 		
 		# Match Data
 		self.attendance = ""
@@ -70,12 +66,15 @@ class MatchThread:
 		self.homesubs = ""
 		self.awaysubs = ""
 		self.substituted = set()
+		self.competition = ""
 		self.ticker = []
 		
 		# Bonus
-		self.prem_link = ""
+		# Debug data
+		self.prem_link = "https://www.premierleague.com/match/22667"
 		self.formations = ""
-		self.matchpictures = set()
+		self.matchpictures = []
+		self.matchsummary = ""
 		
 		# Reddit info
 		self.homereddit = ""
@@ -152,19 +151,21 @@ class MatchThread:
 				self.postat = postat
 				# Calculate when to post the next match thread
 				sleepuntil = (postat.days * 86400) + postat.seconds
+				print(f"Posting in: {sleepuntil} seconds")
 				if sleepuntil > 0:
 					await asyncio.sleep(sleepuntil) # Sleep bot until then.
 					await self.bot.loop.create_task(self.start_match_thread())
 					await asyncio.sleep(180)
 				else:
 					await asyncio.sleep(86400)
-
-					# Match Thread Loop
+				
+		
 	async def start_match_thread(self):
 		""" Core function """
 		# Fetch Link from BBC Sport Match Page.
 		await self.get_bbc_link()
 		
+		#DEBUG
 		if self.bbclink.isdigit():
 			return await self.modchannel.send(f"🚫 Match Thread Failed, error, bbclink is {self.bbclink}")
 		
@@ -181,6 +182,7 @@ class MatchThread:
 		if "Premier League" in self.competition:
 			await self.bot.loop.run_in_executor(None,self.get_prem_link)
 			await self.bot.loop.run_in_executor(None,self.get_prem_data)
+			print(f"self.prem_link: {self.prem_link}")
 		else:
 			print(f"Not premier league - {self.competition}")
 
@@ -203,10 +205,14 @@ class MatchThread:
 		# Commence loop.
 		while True:
 			# Scrape new data
-			if "/live/" in self.bbclink:
-				await self.scrape_live()
-			else:
-				await self.scrape_normal()
+			try:
+				if "/live/" in self.bbclink:
+					await self.scrape_live()
+				else:
+					await self.scrape_normal()
+			except:
+				await asyncio.sleep(60)
+				continue
 
 			if self.prem_link:
 				await self.bot.loop.run_in_executor(None,self.get_prem_data)
@@ -241,15 +247,25 @@ class MatchThread:
 	async def write_markdown(self,ispostmatch):
 		markdown = ""
 		
-		homestring = f"{self.homeicon}{self.hometeam}"
 		if self.homereddit:
-			homestring = f"[{homestring}]({self.homereddit})"
-			
-		awaystring = f"{self.awayteam}{self.awayicon}"
+			homestring = f"[{self.hometeam}]({self.homereddit})"
+		else:
+			homestring = self.hometeam
+		if self.homeicon:
+			homestring = f"{self.homeicon}{homestring}"
+		
+		
 		if self.awayreddit:
-			awaystring = f"[{awaystring}]({self.awayreddit})"
-			
-		markdown += f"# {homestring} {self.score} {awaystring}\n\n"
+			awaystring = f"[{self.awayteam}]({self.awayreddit})"
+		else:
+			awaystring = self.awayteam
+		if self.awayicon:
+			awaystring = f"{awaystring}{self.awayicon}"
+		
+		if self.score:
+			markdown += f"# {homestring} {self.score} {awaystring}\n\n"
+		else:
+			markdown += f"# {homestring} vs {awaystring}\n\n"
 		markdown += f"[🕒](#icon-clock)**Kick-Off**: {self.kickoff}\n\n"
 		markdown += f"[](#icon-trophy)**Competition**: {self.competition}\n\n"
 
@@ -298,10 +314,10 @@ class MatchThread:
 			markdown += f"*Subs*: {self.awaysubs}\n\n"
 		
 		if self.formations:
-			markdown += f"[Formations](self.formations)\n\n"
+			markdown += f"[Formations]({self.formations})\n\n"
 		
 		if self.matchstats:
-			markdown += f"{self.matchstats}\n\n"
+			markdown += f"{self.matchstats}\n\n"	
 		
 		if self.homegoals:
 			markdown += f"**{self.homeicon}{self.hometeam} Goals**: {self.homegoals}\n\n"
@@ -309,12 +325,17 @@ class MatchThread:
 			markdown += f"**{self.awayicon}{self.awayteam} Goals**: {self.awaygoals}\n\n"
 		
 		if self.matchpictures:
-			markdown += f"## Match Photos\n\n{self.matchpictures}\n\n"
+			pics = '\n\n* '.join(self.matchpictures)
+			markdown += f"## Match Photos\n\n* {pics}\n\n"
 		
 		ticker = '\n\n'.join(self.ticker)
 		if self.ticker:
 			markdown += f"{self.tickerheader}\n\n---\n\n{ticker}\n\n"
-			
+		
+		if ispostmatch:
+			if self.matchsummary:
+				markdown += "###Match Summary\n\n{self.matchsummary}"
+		
 		markdown += f"^^{self.botdisclaimer}\n\n"
 		
 		return markdown
@@ -328,10 +349,10 @@ class MatchThread:
 		try:
 			self.driver.find_elements_by_xpath("//span[@class='teamName' and contains(text(), 'Newcastle')]")[0].click()
 		except IndexError:
-			return
+			return ""
 		WebDriverWait(self.driver, 5)
 		
-		self.prem_link = self.driver.current_url
+		return self.driver.current_url
 		
 	# Scrape Fixtures to get current match
 	async def get_bbc_link(self):
@@ -415,7 +436,9 @@ class MatchThread:
 			if resp.status != 200:
 				return
 			tree = html.fromstring(await resp.text(encoding="utf-8"))
-						
+			
+			self.competition = "".join(tree.xpath(".//span[@class='fixture__title gel-minion']/text()"))
+			
 			# Date & Time
 			kodate = "".join(tree.xpath('//div[@class="fixture_date-time-wrapper"]/time/text()')).title()
 			try:
@@ -440,14 +463,14 @@ class MatchThread:
 			home = players[:11]
 			away = players[11:]			
 			
-			self.homexi = await self.parse_players(home)
-			self.awayxi = await self.parse_players(away)
+			self.homexi = " ,".join(await self.parse_players(home))
+			self.awayxi = " ,".join(await self.parse_players(away))
 			
 			# Substitutes
 			subs = tree.xpath('//ul[@class="gs-o-list-ui gs-o-list-ui--top-no-border gel-pica"][2]/li/span[2]/abbr/span/text()')
 			sublen = int(len(subs)/2)
-			homesubs = [f"*{i}*" for i in subs[:sublen]]
-			awaysubs = [f"*{i}*" for i in subs[sublen:]]
+			self.homesubs = " ,".join([f"*{i}*" for i in subs[:sublen]])
+			self.awaysubs = " ,".join([f"*{i}*" for i in subs[sublen:]])
 			
 			# Goals
 			self.score = " - ".join(tree.xpath("//section[@class='fixture fixture--live-session-header']//span[@class='fixture__block']//text()")[0:2])
@@ -456,12 +479,13 @@ class MatchThread:
 			
 			# Match Stats
 			statlookup = tree.xpath("//dl[contains(@class,'percentage-row')]")
-			self.matchstats = ""
-			for i in statlookup:
-				stat = "".join(i.xpath('.//dt/text()'))
-				dd1 = "".join(i.xpath('.//dd[1]/span[2]/text()'))
-				dd2 = "".join(i.xpath('.//dd[2]/span[2]/text()'))
-				self.matchstats += f"{dd1} | {stat} | {dd2}\n"
+			if statlookup:
+				self.matchstats = f"\n{self.hometeam}|v|{self.awayteam}\n:--|:--:|--:\n"
+				for i in statlookup:
+					stat = "".join(i.xpath('.//dt/text()'))
+					dd1 = "".join(i.xpath('.//dd[1]/span[2]/text()'))
+					dd2 = "".join(i.xpath('.//dd[2]/span[2]/text()'))
+					self.matchstats += f"{dd1} | {stat} | {dd2}\n"
 			
 			# Ticker (Live is last resort, after premier league.)
 			if not "Premier League" in self.competition:
@@ -482,15 +506,12 @@ class MatchThread:
 					continue
 				else:
 					self.prematchthread = "".join(i.xpath('.//@href'))
-					print(self.prematchthread)
 					return
 	
 	async def fetch_tv(self):
-		print(f"Fetching TV for {self.hometeam}")
 		try:
 			tvurl = f"http://www.livesoccertv.com/teams/england/{self.bot.teams[self.hometeam]['bbcname']}"
 		except KeyError as e:
-			print(f"Key error. {self.hometeam}")
 			return
 		async with self.bot.session.get(tvurl) as resp:
 			if resp.status != 200:
@@ -502,6 +523,11 @@ class MatchThread:
 				# Completed matches are irrelevant.
 				if not "vs" in match:
 					continue
+				
+				date = "".join(i.xpath('.//td[4]//text()')).strip()
+				if "postp." in date.lower():
+					continue
+					
 				tvpage = "".join(i.xpath('.//td[5]//a/@href'))
 				self.tvlink = f"http://www.livesoccertv.com/{tvpage}"
 				break
@@ -584,10 +610,12 @@ class MatchThread:
 		ticker.reverse()
 		for i in ticker:
 			header = "".join(i.xpath('.//h6/text()'))
-			time = "".join(i.xpath('//time/text()'))
+			time = "".join(i.xpath('.//div[@class="cardMeta"]//time/text()'))
 			if time:
 				time += ":"
 			content = "".join(i.xpath('.//p/text()'))
+			
+			print(f"Tickinfo: {time} | {header} | {content}")
 			
 			tick = self.format_tick(header,time,content)
 			if tick not in self.ticker:
@@ -606,8 +634,9 @@ class MatchThread:
 			tick = self.format_tick(header,time,content)
 			
 			# Append to ticker.
-			if tick not in self.ticker:
-				self.ticker.append(tick)
+			if tick:
+				if tick not in self.ticker:
+					self.ticker.append(tick)
 			
 	def format_tick(self,header,time,content):
 		# Swap in icons
@@ -622,6 +651,9 @@ class MatchThread:
 			key = True
 			header = "[⚽](#icon-ball) Kick Off:"
 			content = content.replace('Kick Off ',"")
+			
+		elif "get involved" in header.lower():
+			return ""
 		
 		elif "goal" in header.lower():
 			key = True
@@ -630,7 +662,8 @@ class MatchThread:
 			else:
 				header = "[⚽](#icon-ball) **GOAL**"
 			
-			content = content.replace('Goal! ','').strip()		
+			content = content.replace('Goal! ','')
+			content = content.strip()		
 		
 		elif "substitution" in header.lower():
 			header = f"[🔄](#icon-sub)"
@@ -647,6 +680,10 @@ class MatchThread:
 				header = f"[OFF!](#icon-2yellow) RED CARD"
 			else:
 				header = f"[OFF!](#icon-red) RED CARD"
+		
+		elif "half time" in header.lower() or "half-time" in header.lower():
+			header = "Half Time"
+			key = True
 		
 		elif "full time" in header.lower() or "full-time" in header.lower():
 			self.stopmatchthread = True
@@ -693,8 +730,8 @@ class MatchThread:
 	
 	def get_prem_data(self):
 		if not self.prem_link:
+			print("Prem link not retrieved")
 			return
-		self.spawn_phantom # Delete after testing.
 		self.driver.get(self.prem_link)
 		WebDriverWait(self.driver, 5)
 		
@@ -704,44 +741,52 @@ class MatchThread:
 			self.tickerheader = "##"
 			ticker = tree.xpath('.//ul[@class="commentaryContainer"]/li')
 			ticker = self.parse_ticker_prem(ticker)
+			self.matchsummary = "\n".join(tree.xpath('.//div[@class="matchReportStreamContainer"]/p/text()'))
 		
 		# Get Match pictures.
-		pics = tree.xpath('.//ul[@class="matchPhotoContainer"]')
+		pics = tree.xpath('.//ul[@class="matchPhotoContainer"]/li')
+		self.matchpictures = []
 		for i in pics:
-			url = i.xpath('.//div[@class="thumbnail"]//img/@src')
-			caption = i.xpath('.//span[@class="captionBody"]/text()')
-			thispic = "[{caption}]({url})"
+			url = "".join(i.xpath('.//div[@class="thumbnail"]//img/@src'))
+			caption = "".join(i.xpath('.//span[@class="captionBody"]/text()'))
+			if not url:
+				continue
+			if not caption:
+				continue
+			thispic = f"[{caption}]({url})"
 			if thispic not in self.matchpictures:
 				self.matchpictures.append(thispic)
-		
-		# Get Formations
-		z = self.driver.find_element_by_xpath(".//ul[@class='tablist']/li[@class='matchCentreSquadLabelContainer']")
-		z.click()
-		WebDriverWait(self.driver, 2)
-		self.driver.implicitly_wait(2)
-		lineup = self.driver.find_element_by_xpath(".//div[@class='pitch']")
-		self.driver.save_screenshot('Debug.png')
 
-		# Fuck it we're cropping manually.
-		im = Image.open(BytesIO(lineup.screenshot_as_png))
-		left = 867
-		top = 975
-		right = left + 325
-		bottom = top + 475
-		
-		im = im.crop((left, top, right, bottom))
-		
-		im.save("formations.png")
-		# self.driver.save_screenshot('Debug.png')
-		
-		self.bot.loop.create_task(self.upload_formation())
+		# Get Formations		
+		if not self.formations:
+
+			z = self.driver.find_element_by_xpath(".//ul[@class='tablist']/li[@class='matchCentreSquadLabelContainer']")
+			z.click()
+			WebDriverWait(self.driver, 2)
+			self.driver.implicitly_wait(2)
+			lineup = self.driver.find_element_by_xpath(".//div[@class='pitch']")
+			self.driver.save_screenshot('Debug.png')
+
+			# Fuck it we're cropping manually.
+			im = Image.open(BytesIO(lineup.screenshot_as_png))
+			left = 867
+			top = 975
+			right = left + 325
+			bottom = top + 475
+			
+			im = im.crop((left, top, right, bottom))
+			
+			im.save("formations.png")
 
 	# Post to IMGUR
 	async def upload_formation(self):
 		d = {"image":open("formations.png",'rb')}
 		h = {'Authorization': self.bot.credentials["Imgur"]["Authorization"]}
-		async with self.bot.session.post("https://api.imgur.com/3/image",data = d,headers=h) as resp:
-			res = await resp.json()
+		try:
+			async with self.bot.session.post("https://api.imgur.com/3/image",data = d,headers=h) as resp:
+				res = await resp.json()
+		except:
+			return
 		self.formations = res['data']['link']
 	
 	# Reddit posting shit.
@@ -766,8 +811,8 @@ class MatchThread:
 	@commands.command()
 	@commands.is_owner()
 	async def prem(self,ctx):
-		await self.bot.loop.run_in_executor(None,self.get_prem_link)
-		await self.bot.loop.run_in_executor(None,self.get_prem_data)
+		await ctx.send("trying.")
+		self.prem_link = await self.bot.loop.run_in_executor(None,self.get_prem_link)
 		await ctx.send(self.prem_link)
 	
 	# Debug command - Force Test
@@ -776,13 +821,12 @@ class MatchThread:
 	async def forcemt(self,ctx):
 		m = await ctx.send('DEBUG: Starting a match thread...')
 		post = await self.start_match_thread()
-		await m.edit(content=f'DEBUG: {post.url}')
 	
 	@commands.command()
 	@commands.is_owner()
 	async def checkmtb(self,ctx):
 		await ctx.send(f'Debug; self.nextmatch = {self.nextmatch}')
-		await ctx.send()
+		await ctx.send(f'Debug: self.postat = {self.postat}')
 	
 	@commands.command()
 	@commands.is_owner()
@@ -790,15 +834,6 @@ class MatchThread:
 		m = await ctx.send("Cancelling...")
 		self.stopmatchthread = True
 		await m.edit(content="Match thread ended early.")
-		
-	# Debug Command Live
-	@commands.command()
-	@commands.is_owner()
-	async def dry_live(self,ctx):
-		await ctx.send('Running. Check Console.')
-		self.bbclink = "http://www.bbc.co.uk/sport/live/football/42709993"
-		await self.scrape_live()
-		print("\n".join(self.ticker))
 		
 def setup(bot):
 	bot.add_cog(MatchThread(bot))
