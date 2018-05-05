@@ -12,6 +12,7 @@ class Info:
 
 	@commands.command()
 	async def hackyinfo(self,ctx,*,id):
+		""" Get info about a user """
 		user = await self.bot.get_user_info(id)
 		e = discord.Embed()
 		e.color = 0x7289DA
@@ -49,8 +50,8 @@ class Info:
 		e.add_field(name='Servers', value='%s shared' % shared,inline=True)
 		e.add_field(name='Voice', value=voice,inline=True)
 		e.add_field(name="Is bot?",value=member.bot,inline=True)
-		if member.game is not None:
-			e.add_field(name='Game',value=member.game,inline=True)
+		if member.activity is not None:
+			e.add_field(name='Game',value=member.activity,inline=True)
 		e.add_field(name='Created at', value=member.created_at,inline=True)
 		e.add_field(name='Roles', value=', '.join(roles),inline=True)
 		e.colour = member.colour

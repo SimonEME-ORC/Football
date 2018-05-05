@@ -54,20 +54,20 @@ class Misc:
 	async def secrettory(self,ctx):
 		await ctx.send(f"The secret tory is {random.choice(ctx.guild.members)}")
 	
-	@commands.command(aliases=["games"])
-	async def roleme(self,ctx,*,game):
-		""" Give you the role for a game to allow players to @mention you for a game. """
-		games = ["haxball","cah"]
-		if game.lower in games:
-			grole = discord.utils.get(ctx.guild.roles, name=game)
-			if grole in ctx.author.roles:
-				await ctx.author.remove_roles(grole)
-				await ctx.send(f"{ctx.author.mention} has removed the {game} role.")
-			else:
-				await ctx.author.add_roles(grole,reason="Game role.")
-				await ctx.send(f"{ctx.author.mention} has added the {game} role.")
-		else:
-			await ctx.send("Invalid game specified, valid games are {', '.join(games)}}")
+	# @commands.command(aliases=["games"])
+	# async def roleme(self,ctx,*,game):
+		# """ Give you the role for a game to allow players to @mention you for a game. """
+		# games = ["haxball","cah"]
+		# if game.lower in games:
+			# grole = discord.utils.get(ctx.guild.roles, name=game)
+			# if grole in ctx.author.roles:
+				# await ctx.author.remove_roles(grole)
+				# await ctx.send(f"{ctx.author.mention} has removed the {game} role.")
+			# else:
+				# await ctx.author.add_roles(grole,reason="Game role.")
+				# await ctx.send(f"{ctx.author.mention} has added the {game} role.")
+		# else:
+			# await ctx.send("Invalid game specified, valid games are {', '.join(games)}}")
 			
 	@commands.command(aliases=["colour"],hidden=True)
 	async def color(self,ctx,color):
@@ -78,9 +78,12 @@ class Misc:
 			color.strip('#')
 			color.strip('0x')
 			if len(color) != 6:
-				await ctx.send("6 chars required")
+				await ctx.send("6 character RGB value required. <http://htmlcolorcodes.com/color-picker/>")
 				return
-			rcolor = discord.Colour(int(color,16))
+			try:	
+				rcolor = discord.Colour(int(color,16))
+			except ValueError:
+				return await ctx.send('Not a valid Hex Code. Check <http://htmlcolorcodes.com/color-picker/>')
 			e = discord.Embed(color=rcolor)
 			e.description = f"{ctx.author.mention}'s name colour has been updated."
 			e.set_footer(text="Confused? Go to http://htmlcolorcodes.com/color-picker/ pick a colour, and copy the hex code.")
@@ -131,9 +134,6 @@ class Misc:
 			await ctx.send('❔ Kicking failed.')
 		else:
 			await ctx.send(f"👢 {ctx.author.mention} kicked themself")
-			c = self.bot.config[f"{ctx.guild.id}"]["mod"]["channel"]
-			c = self.bot.get_channel(c)
-			await c.send(f"👢 {ctx.author.mention} kicked themself")
 
 	@commands.command(hidden=True,aliases=["bamme"])
 	@commands.guild_only()
@@ -327,7 +327,7 @@ class Misc:
 		
 		string = "".join([f":regional_indicator_{i.lower()}:" if i.isalpha()
 						else f"{i}⃣" if i.isdigit() else i for i in string])
-		await ctx.send(string)
+		await ctx.send(string)	
 		
 def setup(bot):
     bot.add_cog(Misc(bot))

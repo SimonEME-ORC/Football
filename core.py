@@ -8,23 +8,20 @@ import logging
 import praw
 import json
 
-
+# Startup Modules
 load = [	
 	'ext.admin','ext.fixtures','ext.fun','ext.google','ext.images','ext.info',
 	'ext.meta','ext.mod','ext.mtb','ext.nufc','ext.quotes',
-	'ext.reactions','ext.scores', 'ext.sidebar','ext.twitter',
+	'ext.reactions','ext.scores', 'ext.sidebar','ext.timers','ext.twitter',
 	'ext.transfers','ext.tv'
 	# 'ext.wiki'
 ]
-					
+
 # Enable Logging
 log = logging.getLogger('discord')
 log.setLevel(logging.INFO)
 handler = logging.FileHandler(filename='rewrite.log',encoding='utf-8', mode='w')
 log.addHandler(handler)
-
-description = "Football lookup bot by Painezor#8489"
-#help_attrs = dict(hidden=True)
 
 async def get_prefix(bot, message):
 	if message.guild is None:
@@ -37,8 +34,9 @@ async def get_prefix(bot, message):
 		pref = []
 	return commands.when_mentioned_or(*pref)(bot, message)
 
+description = "Football lookup bot by Painezor#8489"
 bot = commands.Bot(command_prefix=get_prefix, description=description,
-				   pm_help=None, )	#help_attrs=help_attrs
+				   pm_help=None)
 				   
 # On Client Ready
 @bot.event
@@ -54,7 +52,7 @@ async def on_ready():
 		except Exception as e:
 			print(f'Failed to load cog {c}\n{type(e).__name__}: {e}')
 	await asyncio.sleep(5)
-	await bot.change_presence(game=discord.Game(name="Use -help",type=0))
+	await bot.change_presence(activity=discord.Game(name="Use -help"))
 
 # Define command handler
 @bot.event

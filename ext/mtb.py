@@ -71,7 +71,7 @@ class MatchThread:
 		
 		# Bonus
 		# Debug data
-		self.prem_link = "https://www.premierleague.com/match/22667"
+		self.prem_link = ""
 		self.formations = ""
 		self.matchpictures = []
 		self.matchsummary = ""
@@ -123,6 +123,7 @@ class MatchThread:
 		for key, value in headers.items():
 			webdriver.DesiredCapabilities.PHANTOMJS['phantomjs.page.customHeaders.{}'.format(key)] = value
 		self.driver = webdriver.PhantomJS()
+		self.driver.set_window_size(1400,1000)
 	
 	# Loop to check when to post.-
 	async def scheduler(self):
@@ -301,10 +302,11 @@ class MatchThread:
 		if "Newcastle United" in [self.hometeam,self.awayteam]:
 			markdown += f"{self.radio}\n\n"
 		
-		if self.uktv:
-			markdown += f"📺 **Television Coverage** (UK): {self.uktv}\n\n"
-		if self.tvlink:
-			markdown += f"📺🌍 **Television Coverage** (International): {self.tvlink}\n\n"
+		if not ispostmatch:
+			if self.uktv:
+				markdown += f"📺 **Television Coverage** (UK): {self.uktv}\n\n"
+			if self.tvlink:
+				markdown += f"📺🌍 **Television Coverage** (International): {self.tvlink}\n\n"
 			
 		if any([self.homexi,self.awayxi]):
 			markdown += "### Lineups\n\n---\n\n"
@@ -328,9 +330,10 @@ class MatchThread:
 			pics = '\n\n* '.join(self.matchpictures)
 			markdown += f"## Match Photos\n\n* {pics}\n\n"
 		
-		ticker = '\n\n'.join(self.ticker)
-		if self.ticker:
-			markdown += f"{self.tickerheader}\n\n---\n\n{ticker}\n\n"
+		if not ispostmatch:
+			ticker = '\n\n'.join(self.ticker)
+			if self.ticker:
+				markdown += f"{self.tickerheader}\n\n---\n\n{ticker}\n\n"
 		
 		if ispostmatch:
 			if self.matchsummary:
@@ -342,12 +345,13 @@ class MatchThread:
 			
 	# Get Premier League Website data.
 	def get_prem_link(self):
-		self.driver.get("http://www.premierleague.com/fixtures")
+		self.driver.get("http://www.premierleague.com/")
 		WebDriverWait(self.driver, 5)
 		self.driver.implicitly_wait(10)
 		
 		try:
-			self.driver.find_elements_by_xpath("//span[@class='teamName' and contains(text(), 'Newcastle')]")[0].click()
+			z = self.driver.find_element_by_xpath(".//nav//ul[contains(@class,'matchList')]//abbr[contains(text(),'NEW')]")
+			z.click()
 		except IndexError:
 			return ""
 		WebDriverWait(self.driver, 5)
@@ -681,11 +685,16 @@ class MatchThread:
 			else:
 				header = f"[OFF!](#icon-red) RED CARD"
 		
-		elif "half time" in header.lower() or "half-time" in header.lower():
+		elif "half time" in header.lower().replace('-',' '):
 			header = "Half Time"
 			key = True
 		
-		elif "full time" in header.lower() or "full-time" in header.lower():
+		elif "second half" in header.lower().replace('-',' '):
+			header = "Second Half"
+			content = content.replace('Second Half',' ')
+			key = True
+		
+		elif "full time" in header.lower().replace('-',' '):
 			self.stopmatchthread = True
 			header = "# FULL TIME"
 			if self.homeicon:
@@ -741,11 +750,12 @@ class MatchThread:
 			self.tickerheader = "##"
 			ticker = tree.xpath('.//ul[@class="commentaryContainer"]/li')
 			ticker = self.parse_ticker_prem(ticker)
-			self.matchsummary = "\n".join(tree.xpath('.//div[@class="matchReportStreamContainer"]/p/text()'))
+
+		self.matchsummary = "\n".join(tree.xpath('.//div[@class="matchReportStreamContainer"]/p/text()'))
 		
 		# Get Match pictures.
 		pics = tree.xpath('.//ul[@class="matchPhotoContainer"]/li')
-		self.matchpictures = []
+		buffer = []
 		for i in pics:
 			url = "".join(i.xpath('.//div[@class="thumbnail"]//img/@src'))
 			caption = "".join(i.xpath('.//span[@class="captionBody"]/text()'))
@@ -755,28 +765,33 @@ class MatchThread:
 				continue
 			thispic = f"[{caption}]({url})"
 			if thispic not in self.matchpictures:
-				self.matchpictures.append(thispic)
+				buffer.append(thispic)
+		
+		if buffer:
+			self.matchpictures = buffer
 
 		# Get Formations		
 		if not self.formations:
+			try:
+				z = self.driver.find_element_by_xpath(".//ul[@class='tablist']/li[@class='matchCentreSquadLabelContainer']")
+				z.click()
+				WebDriverWait(self.driver, 2)
+				self.driver.implicitly_wait(2)
+				lineup = self.driver.find_element_by_xpath(".//div[@class='pitch']")
+				self.driver.save_screenshot('Debug.png')
 
-			z = self.driver.find_element_by_xpath(".//ul[@class='tablist']/li[@class='matchCentreSquadLabelContainer']")
-			z.click()
-			WebDriverWait(self.driver, 2)
-			self.driver.implicitly_wait(2)
-			lineup = self.driver.find_element_by_xpath(".//div[@class='pitch']")
-			self.driver.save_screenshot('Debug.png')
-
-			# Fuck it we're cropping manually.
-			im = Image.open(BytesIO(lineup.screenshot_as_png))
-			left = 867
-			top = 975
-			right = left + 325
-			bottom = top + 475
-			
-			im = im.crop((left, top, right, bottom))
-			
-			im.save("formations.png")
+				# Fuck it we're cropping manually.
+				im = Image.open(BytesIO(lineup.screenshot_as_png))
+				left = 867
+				top = 975
+				right = left + 325
+				bottom = top + 475
+				
+				im = im.crop((left, top, right, bottom))
+				
+				im.save("formations.png")
+			except:
+				pass
 
 	# Post to IMGUR
 	async def upload_formation(self):
@@ -813,7 +828,8 @@ class MatchThread:
 	async def prem(self,ctx):
 		await ctx.send("trying.")
 		self.prem_link = await self.bot.loop.run_in_executor(None,self.get_prem_link)
-		await ctx.send(self.prem_link)
+		self.driver.save_screenshot('Debug.png')
+		await ctx.send(self.prem_link,file=discord.File('debug.png'))
 	
 	# Debug command - Force Test
 	@commands.command()
@@ -826,7 +842,50 @@ class MatchThread:
 	@commands.is_owner()
 	async def checkmtb(self,ctx):
 		await ctx.send(f'Debug; self.nextmatch = {self.nextmatch}')
-		await ctx.send(f'Debug: self.postat = {self.postat}')
+		await ctx.send(f'Match thread will be posted in: {self.nextmatch - datetime.datetime.now() - datetime.timedelta(minutes=15)}')
+	
+	def get_formation(self):
+		self.driver.get('https://www.premierleague.com/match/22686')
+		z = self.driver.find_element_by_xpath(".//ul[@class='tablist']/li[@class='matchCentreSquadLabelContainer']")
+		z.click()
+		WebDriverWait(self.driver, 5)
+		self.driver.implicitly_wait(5)
+		lineup = self.driver.find_element_by_xpath(".//div[@class='pitch']")
+		loc = lineup.location
+		size = lineup.size
+		self.driver.save_screenshot('Debug.png')
+
+		# Crop
+		im = Image.open(BytesIO(lineup.screenshot_as_png))
+		
+		left = loc['x']
+		top = loc['y']
+		right = loc['x'] + size['width']
+		bottom = loc['y'] + size['height']
+		im = im.crop((left, top, right, bottom))
+		
+		# im = im.crop((left, top, right, bottom))
+		
+		im.save("formations.png")
+
+	@commands.command()
+	@commands.is_owner()
+	async def fm(self,ctx):
+		await ctx.send('Looking...')
+		await self.bot.loop.run_in_executor(None,self.get_formation)
+		await ctx.send('Debug.png',file=discord.File("debug.png"))
+		await ctx.send('formations.png',file=discord.File("formations.png"))
+	
+	@commands.is_owner()
+	@commands.group()
+	async def override(self,ctx,var,*,value):
+		setattr(self,var,value)
+		await ctx.send(f'Setting "{var}" to "{value}"')
+		await ctx.send(f'DEBUG: self.referee is {self.referee}')
+	
+	@commands.is_owner()
+	async def occ(self,ctx):
+		await ctx.send(self.formations)
 	
 	@commands.command()
 	@commands.is_owner()

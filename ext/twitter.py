@@ -204,16 +204,16 @@ class Twitter:
 		""" Turn tweet output on """
 		if not self.tweetson:
 			self.tweetson = True
-			await ctx.send("<:tweet:332196044769198093> Twitter output has been enabled.")
+			await ctx.send("Twitter output has been enabled.")
 			self.bot.twitask = self.bot.loop.create_task(self.twat())
 		elif self.bot.twitask._state in ["FINISHED","CANCELLED"]:
 			e = discord.Embed(color=0x7EB3CD)
-			e.description = f"<:tweet:332196044769198093> Restarting {self.bot.twitask._state}\
+			e.description = f"Restarting {self.bot.twitask._state}\
 							task after exception {self.bot.twitask.exception()}."
 			await ctx.send(embed=e)
 			self.bot.twitask = self.bot.loop.create_task(self.twat())
 		else:
-			await ctx.send("<:tweet:332196044769198093> Twitter output already enabled.")
+			await ctx.send("Twitter output already enabled.")
 		
 	@twitter.command(name="off",aliases=["stop"])
 	@commands.is_owner()
@@ -221,9 +221,9 @@ class Twitter:
 		""" Turn tweet output off """
 		if self.tweetson:
 			self.tweetson = False
-			await ctx.send("<:tweet:332196044769198093> Twitter output has been disabled.")
+			await ctx.send("Twitter output has been disabled.")
 		else:
-			await ctx.send("<:tweet:332196044769198093> Twitter output already disabled.")
+			await ctx.send("Twitter output already disabled.")
 		
 	@twitter.command(name="add")
 	@commands.is_owner()
@@ -241,7 +241,7 @@ class Twitter:
 				await ctx.send("🚫 Couldn't find user with that name.")
 		self.track[username] = {"id":int(id),"channel":ctx.channel.id}
 		await self._save()
-		await ctx.send(f"<:tweet:332196044769198093> {username} will be tracked in {ctx.channel.mention} from next restart.")
+		await ctx.send(f"{username} will be tracked in {ctx.channel.mention} from next restart.")
 		
 	@twitter.command(name="del")
 	@commands.is_owner()

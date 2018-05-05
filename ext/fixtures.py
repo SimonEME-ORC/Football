@@ -88,7 +88,7 @@ class Fixtures:
 		
 		try:
 			match = await self.bot.wait_for("message",check=check,timeout=30)
-		except TimeoutError:
+		except asyncio.TimeoutError:
 			await m.delete()
 			return None
 		try:
@@ -123,8 +123,22 @@ class Fixtures:
 		await ctx.trigger_typing()
 		p = await self.bot.loop.run_in_executor(None,self.parse_table,url)
 		await m.delete()
-		await ctx.send(file=p)
+		if p is not None:
+			await ctx.send(file=p)
+		else:
+			await ctx.send(f'Something went wrong parsing the table from {url}.')
 
+	@commands.command(aliases=['tablewc'])
+	async def wctable(self,ctx,*,qry=None):
+		""" Tables for the group stage of the World Cup """
+		url = "https://www.flashscore.com/soccer/world/world-cup"
+		await ctx.trigger_typing()
+		p = await self.bot.loop.run_in_executor(None,self.parse_table,url)
+		if p is not None:
+			await ctx.send(file=p)
+		else:
+			await ctx.send(f'Something went wrong parsing the table from {url}.')		
+			
 	@commands.command()
 	async def bracket(self,ctx,*,qry=None):
 		""" Get btacket for a tournament """
@@ -151,6 +165,8 @@ class Fixtures:
 			if ctx.guild is not None:
 				if ctx.guild.id == 332159889587699712:
 					url = "https://www.flashscore.com/team/newcastle-utd/p6ahwuwJ"
+				else:
+					return await ctx.send("Specify a search query.")
 			else:
 				return await ctx.send("Specify a search query.")
 		else:
@@ -158,9 +174,18 @@ class Fixtures:
 			url = await self._search(ctx,m,qry)
 		if url is None:
 			return #rip
+		await ctx.trigger_typing()	
 		pages = await self.bot.loop.run_in_executor(None,self.parse_fixtures,url,ctx.author.name)
 		await self.paginate(ctx,pages)
 
+	@commands.command(aliases=['wcfx','fxwc','worldcupfx'])
+	async def wcfixtures(self,ctx):
+		""" Displays fixtures for the world cup """
+		await ctx.trigger_typing()
+		url = "https://www.flashscore.com/soccer/world/world-cup"
+		pages = await self.bot.loop.run_in_executor(None,self.parse_fixtures,url,ctx.author.name)
+		await self.paginate(ctx,pages)
+		
 	@commands.command(aliases=['sc'])
 	async def scorers(self,ctx,*,qry=None):
 		""" Displays top scorers for a team or league.
@@ -170,11 +195,16 @@ class Fixtures:
 			if ctx.guild is not None:
 				if ctx.guild.id == 332159889587699712:
 					url = "https://www.flashscore.com/soccer/england/premier-league"
+				else:
+					return await ctx.send("Specify a search query.")
 			else:
 				return await ctx.send("Specify a search query.")
 		else:
 			m = await ctx.send(f"Searching for {qry}...")
 			url = await self._search(ctx,m,qry)
+		if url is None:
+			return #rip
+		await ctx.trigger_typing()
 		pages = await self.bot.loop.run_in_executor(None,self.parse_scorers,url,ctx.author.name)
 		await self.paginate(ctx,pages)		
 		
@@ -195,7 +225,7 @@ class Fixtures:
 		
 		if url is None:
 			return #rip
-		
+		await ctx.trigger_typing()
 		pages = await self.bot.loop.run_in_executor(None,self.parse_results,url,ctx.author.name)
 		await self.paginate(ctx,pages)	
 		
@@ -442,7 +472,11 @@ class Fixtures:
 			tbl = self.driver.find_element_by_xpath(xp)
 		except NoSuchElementException:
 			WebDriverWait(self.driver, 2)
-			tbl = self.driver.find_element_by_xpath(xp)
+			try:
+				tbl = self.driver.find_element_by_xpath(xp)
+			except NoSuchElementException:
+				print(f'Error finding table on {table}')
+				return None
 		location = tbl.location
 		size = tbl.size
 		im = Image.open(BytesIO(tbl.screenshot_as_png))
@@ -522,26 +556,42 @@ class Fixtures:
 		
 		if "team" in url:
 			# For individual Team
-			scorerdict = {}
+			scorers = []
 			team = "".join(t.xpath('.//div[@class="team-name"]/text()'))
 			e.title = f"≡ Top Scorers for {team}"
 			players = t.xpath('.//table[contains(@class,"squad-table")]/tbody/tr')
 			for i in players:
+				# Player name
 				p = "".join(i.xpath('.//td[contains(@class,"player-name")]/a/text()'))
-				
 				if not p:
-					continue	
+					continue
+				p = ' '.join(p.split(' ')[::-1])
+					
+				# Num Goals
 				g = "".join(i.xpath('.//td[5]/text()'))
 				if g == "0" or not g:
 					continue
+					
+				# Player Link
 				l = "".join(i.xpath('.//td[contains(@class,"player-name")]/a/@href'))
-				if g in scorerdict.keys():
-					scorerdict[g].append(f"[{' '.join(p.split(' ')[::-1])}](http://www.flashscore.com{l})")
-				else:
-					scorerdict.update({g:[f"[{' '.join(p.split(' ')[::-1])}](http://www.flashscore.com{l})"]})
-			sclist = [[f"{k} : {i}" for i in v] for k,v in scorerdict.items()]
-			sclist = [i for sublist in sclist for i in sublist]
-			tmlist = [f"[{team}]({url})" for i in sclist]
+				
+				scorers.append(f"{g} : [{p}](http://www.flashscore.com{l})")
+
+			scorers = sorted(scorers)[::-1]
+			
+			embeds = []
+			p = [scorers[i:i+10] for i in range(0, len(scorers), 10)]
+			pages = len(p)
+			count = 1
+			
+			for i in p:
+				e.add_field(name="Goals / Player",value="\n".join(i),inline=True)
+				iu = "http://pix.iemoji.com/twit33/0056.png"
+				e.set_footer(text=f"Page {count} of {pages} ({au})",icon_url=iu)
+				te = deepcopy(e)
+				embeds.append(te)
+				e.clear_fields()
+				count += 1			
 		else:
 			# For cross-league.
 			sclist = []
@@ -555,7 +605,7 @@ class Fixtures:
 				self.driver.quit()
 				self.spawn_phantom()
 				self.driver.get(url)
-			WebDriverWait(self.driver, 2)
+			WebDriverWait(self.driver, 5)
 			x = self.driver.find_element_by_link_text("Top Scorers")
 			x.click()
 			players = self.driver.find_element_by_id("table-type-10")
@@ -579,23 +629,25 @@ class Fixtures:
 				tml = f"http://www.flashscore.com{tml}"
 				sclist.append(f"{g} [{p}]({pl})")
 				tmlist.append(f"[{tm}]({tml})")
-		z = list(zip(sclist,tmlist))
-		# Make Embeds.
-		embeds = []
-		p = [z[i:i+10] for i in range(0, len(z), 10)]
-		pages = len(p)
-		count = 1
-		for i in p:
-			j = "\n".join([j for j,k in i])
-			k = "\n".join([k for j,k in i])
-			e.add_field(name="Goals / Player",value=j,inline=True)
-			e.add_field(name="Team",value=k,inline=True)
-			iu = "http://pix.iemoji.com/twit33/0056.png"
-			e.set_footer(text=f"Page {count} of {pages} ({au})",icon_url=iu)
-			te = deepcopy(e)
-			embeds.append(te)
-			e.clear_fields()
-			count += 1
+		
+			z = list(zip(sclist,tmlist))
+			
+			# Make Embeds.
+			embeds = []
+			p = [z[i:i+10] for i in range(0, len(z), 10)]
+			pages = len(p)
+			count = 1
+			for i in p:
+				j = "\n".join([j for j,k in i])
+				k = "\n".join([k for j,k in i])
+				e.add_field(name="Goals / Player",value=j,inline=True)
+				e.add_field(name="Team",value=k,inline=True)
+				iu = "http://pix.iemoji.com/twit33/0056.png"
+				e.set_footer(text=f"Page {count} of {pages} ({au})",icon_url=iu)
+				te = deepcopy(e)
+				embeds.append(te)
+				e.clear_fields()
+				count += 1
 
 		return embeds	
 	

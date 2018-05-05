@@ -52,7 +52,7 @@ class NUFC:
 				return await ctx.send("Nobody has added any streams yet.")
 		except KeyError:
 			self.bot.streams[f"{ctx.guild.id}"] = []
-			return await ctx.send("Nobody has added any streams yet.")
+			return await ctx.send("Nobody has added any streams yet. Try r/soccerstreams")
 		output = "**Streams: **\n"
 		for c,v in enumerate(self.bot.streams[f"{ctx.guild.id}"],1):
 			output += f"{c}: {v}\n"
@@ -61,6 +61,8 @@ class NUFC:
 	@streams.command(name="add")
 	async def stream_add(self,ctx,*,stream):
 		""" Add a stream to the stream list. """
+		if not "://" in stream or len(stream) > 100:
+			return await ctx.send('That doesn\'t look like a stream.')
 		# Hide link preview.
 		if "http" in stream:
 			stream = f"<{stream}>"
@@ -81,14 +83,15 @@ class NUFC:
 		""" Delete a stream from the stream list """
 		num = num - 1
 		if not ctx.author.name in self.bot.streams[f"{ctx.guild.id}"][num]:
-			return await ctx.send("You didn't add that stream",delete_after=5)
+			if not ctx.author.permissions_in(ctx.channel).manage_messages:
+				return await ctx.send("You didn't add that stream",delete_after=5)
 		removed = self.bot.streams[f"{ctx.guild.id}"].pop(num)
 		await ctx.send(f"{removed} removed from streams list.")
 		
 	@streams.command(name="clear")
 	@commands.has_permissions(manage_messages=True)
 	async def stream_clear(self,ctx):
-		self.bot.streams[f"{ctx.guild.id}"] = [stream]
+		self.bot.streams[f"{ctx.guild.id}"] = []
 		await ctx.send("Streams cleared.")
 	
 	@commands.command()

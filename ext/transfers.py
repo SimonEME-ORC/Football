@@ -45,7 +45,7 @@ ctrydict = {
     "Russia": "ru",
     "Scotland": "gb",
     "Sint Maarten": "sx",
-    "St. Kitts &Nevis": "kn",
+    "St. Kitts & Nevis": "kn",
     "St. Louis": "lc",
     "St. Vincent & Grenadinen": "vc",
     "Tahiti": "fp",
@@ -228,7 +228,7 @@ class Transfers:
 				th = await self.imgurify(th)
 				e.set_thumbnail(url=th)
 				self.parsed.append(pname)
-				print("Transfer Parse succeeded!")
+				print(f"Transfer found - {pname}")
 				for i in self.bot.config:
 					try:
 						ch = self.bot.config[i]["transfers"]["channel"]
@@ -236,17 +236,19 @@ class Transfers:
 						if ch is None:
 							print(f"{i}: tf channel set but not found")
 							continue
+						else:
+							print(f'{i}: tf Channel found')
 					except KeyError:
+						print(f'Key Error for {i} in transfers')
 						continue
 					try:
 						mode = self.bot.config[i]["transfers"]["mode"]
 					except KeyError:
-						print(f'Transfers - Dodgy config for channel {ch}')
 						await ch.send(embed=e)
 						continue
+					print(f"{i}: {mode}")
 					if mode == "default":
 						await ch.send(embed=e)
-						print(f"Successfully Sent transfer to {ch} / Default mode")
 					elif mode == "blacklist":
 						try:
 							blacklist = self.bot.config[i]["transfers"]["blacklist"]
@@ -323,7 +325,7 @@ class Transfers:
 		try:
 			ch = self.bot.config[str(ctx.guild.id)]['transfers']['channel']
 			chan = self.bot.get_channel(ch).mention
-		except AttributeError:
+		except KeyError:
 			return await ctx.send(f"Please set your transfers channel first using {ctx.prefix}tf set in your desired transfers channel")
 		
 		if not mode:

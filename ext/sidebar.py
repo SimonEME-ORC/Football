@@ -95,7 +95,6 @@ class Sidebar:
 		bufferlen = len(pr)
 		outblocks = []
 		count = 0
-		print('---')
 		for i in res:
 			if count % 20 == 0:
 				bufferlen += len(pr)
@@ -110,7 +109,6 @@ class Sidebar:
 		blocklen = math.ceil(len(outblocks)/numblocks)
 		
 		reswhead = []
-		print(blocklen)
 		for i in range(0, len(outblocks), blocklen):
 			reswhead.append(outblocks[i:i+blocklen])
 		

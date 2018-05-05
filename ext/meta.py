@@ -4,29 +4,6 @@ from collections import OrderedDict, deque, Counter
 from discord.ext import commands
 import json
 
-class TimeParser:
-	def __init__(self, argument):
-		compiled = re.compile(r"(?:(?P<hours>\d+)h)?(?:(?P<minutes>\d+)m)?(?:(?P<seconds>\d+)s)?")
-		self.original = argument
-		try:
-			self.seconds = int(argument)
-		except ValueError as e:
-			match = compiled.match(argument)
-			if match is None or not match.group(0):
-				raise commands.BadArgument('Failed to parse time.') from e
-			self.seconds = 0
-			hours = match.group('hours')
-			if hours is not None:
-				self.seconds += int(hours) * 3600
-			minutes = match.group('minutes')
-			if minutes is not None:
-				self.seconds += int(minutes) * 60
-			seconds = match.group('seconds')
-			if seconds is not None:
-				self.seconds += int(seconds)
-		if self.seconds < 0:
-			raise commands.BadArgument("That was in the past mate...")
-			
 class Meta:
 	"""Commands for utilities related to the Bot itself."""
 	def __init__(self, bot):
@@ -37,6 +14,37 @@ class Meta:
 			with open('config.json',"w",encoding='utf-8') as f:
 				json.dump(self.bot.config,f,ensure_ascii=True,
 				sort_keys=True,indent=4, separators=(',',':'))
+	
+	@commands.command(aliases=['botstats',"uptime"])
+	async def about(self,ctx):
+		"""Tells you information about the bot itself."""
+		e = discord.Embed(colour = 0x111111,timestamp = self.bot.user.created_at)
+
+		owner = self.bot.get_user((await self.bot.application_info()).owner.id)
+		e.set_author(name=f"Owner: {owner}", icon_url=owner.avatar_url)
+		
+		# statistics
+		total_members = sum(len(s.members) for s in self.bot.guilds)
+		total_online  = sum(1 for m in self.bot.get_all_members() if m.status != discord.Status.offline)
+		voice = sum(len(g.text_channels) for g in self.bot.guilds)
+		text = sum(len(g.voice_channels) for g in self.bot.guilds)
+		memory_usage = psutil.Process().memory_full_info().uss / 1024**2
+		
+		members = f"{total_members} Members\n{total_online} Online\n{len(self.bot.users)} unique"
+		e.add_field(name='Members', value=members)
+		e.add_field(name='Channels', value=f'{text + voice} total\n{text} text\n{voice} voice')
+		e.add_field(name='Servers', value=len(self.bot.guilds))
+		e.add_field(name='Uptime', value=self.get_bot_uptime(),inline=False)
+		e.add_field(name='Commands Run', value=sum(self.bot.commands_used.values()))
+		e.add_field(name='Memory Usage', value='{:.2f} MiB'.format(memory_usage))
+		e.add_field(name='Python Version',value=sys.version)
+		e.set_footer(text='Made with discord.py', icon_url='http://i.imgur.com/5BFecvA.png')
+
+		m = await ctx.send(embed=e)
+		await m.edit(content=" ",embed=e)
+		time = f"{str((m.edited_at - m.created_at).microseconds)[:3]}ms"
+		e.add_field(name="Ping",value=time)
+		await m.edit(content=None,embed=e)
 	
 	@commands.command(aliases=["invite"])
 	async def inviteme(self,ctx):
@@ -140,8 +148,11 @@ class Meta:
 		preflist = await self.bot.command_prefix(self.bot,ctx.message)
 		def is_me(m):
 			return m.author.id == self.bot.user.id or m.content[0] in preflist
-		mc = self.bot.config[str(ctx.guild.id)]['mod']['channel']
-		mc = self.bot.get_channel(mc)
+		try:
+			mc = self.bot.config[str(ctx.guild.id)]['mod']['channel']
+			mc = self.bot.get_channel(mc)
+		except KeyError:
+			mc = "N/A"
 		if ctx.channel == mc:
 			await ctx.send("🚫 'Clean' has been disabled for the moderator channel.",delete_after=10)
 		else:
@@ -192,35 +203,6 @@ class Meta:
 		f"Type {self.bot.config[str(ctx.guild.id)]['prefix'][0]}help to be DM'd a list of my commands."
 		)
 
-	@commands.command(aliases=['reminder','remind','remindme'])
-	async def timer(self, ctx, time : TimeParser, *, message : commands.clean_content):
-		"""Reminds you of something after a certain amount of time.
-		The time can optionally be specified with units such as 'h'
-		for hours, 'm' for minutes and 's' for seconds. If no unit
-		is given then it is assumed to be seconds. You can also combine
-		multiple units together, e.g. 2h4m10s.
-		"""
-
-		reminder = None
-		completed = None
-		human_time = datetime.datetime.utcnow() + datetime.timedelta(seconds=time.seconds)
-		
-		if not message:
-			reminder = f"Sound {ctx.author.mention}, I'll give you a shout in {human_time}"
-			completed = f"Here, {ctx.author.mention}. You asked is to remind you about summit"
-		else:
-			reminder = f"Areet {ctx.author.mention}, I'll give you a shout about '{message}' at {human_time}"
-			completed = f"Here {ctx.author.mention}, ya asked me to remind you about '{message}' mate"
-				
-		await ctx.send(reminder)
-		await asyncio.sleep(time.seconds)
-		await ctx.send(completed)
-
-	@timer.error
-	async def timer_error(self, error, ctx):
-		if type(error) is commands.BadArgument:
-			await ctx.send(str(error))
-
 	async def say_permissions(self, ctx, member, channel):
 		permissions = channel.permissions_for(member)
 		await formats.entry_to_code(ctx, permissions)
@@ -262,7 +244,7 @@ class Meta:
 		member = ctx.me
 		await self.say_permissions(ctx, member, channel)
 		
-	@commands.command()
+	@commands.command(aliases=['nick'])
 	@commands.has_permissions(manage_nicknames=True)
 	async def name(self,ctx,*,newname: str):
 		""" Rename the bot """
@@ -298,33 +280,6 @@ class Meta:
 		""" Change status to "listening to {game}" """
 		await self.bot.change_presence(game=discord.Game(name=game,type=2))
 		await self.ctx.send(f"Set status to listening to {game}")
-		
-	@commands.command()
-	@commands.is_owner()
-	async def commandstats(self,ctx):
-		p = commands.Paginator()
-		counter = self.bot.commands_used
-		width = len(max(counter, key=len))
-		total = sum(counter.values())
-
-		fmt = '{0:<{width}}: {1}'
-		p.add_line(fmt.format('Total', total, width=width))
-		for key, count in counter.most_common():
-			p.add_line(fmt.format(key, count, width=width))
-
-		for page in p.pages:
-			await ctx.send(page)
-
-	@commands.command()
-	@commands.is_owner()
-	async def socketstats(self,ctx):
-		delta = datetime.datetime.utcnow() - self.bot.uptime
-		minutes = delta.total_seconds() / 60
-		total = sum(self.bot.socket_stats.values())
-		cpm = total / minutes
-
-		fmt = '%s socket events observed (%.2f/minute):\n%s'
-		await ctx.send(fmt % (total, cpm, self.bot.socket_stats))
 
 	def get_bot_uptime(self):
 		delta = datetime.datetime.utcnow() - self.bot.uptime
@@ -337,37 +292,6 @@ class Meta:
 			fmt = f'{d}d {fmt}'
 
 		return fmt
-
-	@commands.command(aliases=['botstats',"uptime"])
-	async def about(self,ctx):
-		"""Tells you information about the bot itself."""
-		e = discord.Embed(colour = 0x111111,timestamp = self.bot.user.created_at)
-
-		owner = self.bot.get_user((await self.bot.application_info()).owner.id)
-		e.set_author(name=f"Owner: {owner}", icon_url=owner.avatar_url)
-		
-		# statistics
-		total_members = sum(len(s.members) for s in self.bot.guilds)
-		total_online  = sum(1 for m in self.bot.get_all_members() if m.status != discord.Status.offline)
-		voice = sum(len(g.text_channels) for g in self.bot.guilds)
-		text = sum(len(g.voice_channels) for g in self.bot.guilds)
-		memory_usage = psutil.Process().memory_full_info().uss / 1024**2
-		
-		members = f"{total_members} Members\n{total_online} Online\n{len(self.bot.users)} unique"
-		e.add_field(name='Members', value=members)
-		e.add_field(name='Channels', value=f'{text + voice} total\n{text} text\n{voice} voice')
-		e.add_field(name='Servers', value=len(self.bot.guilds))
-		e.add_field(name='Uptime', value=self.get_bot_uptime(),inline=False)
-		e.add_field(name='Commands Run', value=sum(self.bot.commands_used.values()))
-		e.add_field(name='Memory Usage', value='{:.2f} MiB'.format(memory_usage))
-		e.add_field(name='Python Version',value=sys.version)
-		e.set_footer(text='Made with discord.py', icon_url='http://i.imgur.com/5BFecvA.png')
-
-		m = await ctx.send(embed=e)
-		await m.edit(content=" ",embed=e)
-		time = f"{str((m.edited_at - m.created_at).microseconds)[:3]}ms"
-		e.add_field(name="Ping",value=time)
-		await m.edit(content=None,embed=e)
 		
 def setup(bot):
 	bot.commands_used = Counter()

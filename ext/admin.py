@@ -2,7 +2,6 @@ from discord.ext import commands
 import discord, asyncio
 import aiohttp
 import inspect
-import objgraph
 import json
 import traceback
 import sys
@@ -46,25 +45,6 @@ class Admin:
 			traceback.print_tb(error.original.__traceback__)
 			print('{0.__class__.__name__}: {0}'.format(error.original),
 				  file=sys.stderr)	
-		
-	@commands.command()
-	@commands.is_owner()
-	async def guilds(self,ctx):
-		output = []
-		for i in self.bot.config.keys():
-			print(int(i))
-			name = self.bot.get_guild(i)
-			output.append(f"{i}: {name}")
-
-		await ctx.send(", ".join(output))
-			
-		
-	@commands.command()
-	@commands.is_owner()
-	async def memleak(self,ctx):
-		tst = objgraph.show_most_common_types(limit=10)
-		obj = objgraph.by_type('function')[1000]
-		objgraph.show_backrefs(obj, max_depth=10)
 		
 	@commands.command()
 	@commands.is_owner()
@@ -142,7 +122,34 @@ class Admin:
 									   f"{resp.url}")
 		else:
 			await ctx.send(f"```py\n{result}```")
+		
+	@commands.command()
+	@commands.is_owner()
+	async def commandstats(self,ctx):
+		p = commands.Paginator()
+		counter = self.bot.commands_used
+		width = len(max(counter, key=len))
+		total = sum(counter.values())
 
+		fmt = '{0:<{width}}: {1}'
+		p.add_line(fmt.format('Total', total, width=width))
+		for key, count in counter.most_common():
+			p.add_line(fmt.format(key, count, width=width))
+
+		for page in p.pages:
+			await ctx.send(page)
+
+	@commands.command()
+	@commands.is_owner()
+	async def socketstats(self,ctx):
+		delta = datetime.datetime.utcnow() - self.bot.uptime
+		minutes = delta.total_seconds() / 60
+		total = sum(self.bot.socket_stats.values())
+		cpm = total / minutes
+
+		fmt = '%s socket events observed (%.2f/minute):\n%s'
+		await ctx.send(fmt % (total, cpm, self.bot.socket_stats))
+		
 	@commands.command(aliases=['logout','restart'])
 	@commands.is_owner()
 	async def kill(self,ctx):

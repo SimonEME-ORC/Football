@@ -5,13 +5,14 @@ import datetime
 import json
 
 reactdict = {
-			"brighton":["🍼"],
 			"digi":[":digi:332195917157629953"],
 			"gamez":["✝"],
 			"gayle":[":windmill:332195722864885761"],
 			"mackem":["💩"],
 			"mbemba":[":mbemba:332196308825931777"],
+			"nobby":["🎺"],
 			"shola":["🚴🏿","🍏"],
+			"solano":["🎺"],
 			"sunderland":["💩"],
 			"yedlin":["🇺🇸"],
 			}

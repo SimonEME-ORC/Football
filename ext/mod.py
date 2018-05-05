@@ -40,11 +40,11 @@ class Mod:
 				json.dump(self.bot.config,f,ensure_ascii=True,
 				sort_keys=True,indent=4, separators=(',',':'))
 				
-	@commands.command()
-	@commands.has_permissions(ban_members=True)
-	async def tempban(self,ctx,time : TimeParser, *, reason=''):
-		""" Temporarily Ban a user """
-		pass
+	# @commands.command()
+	# @commands.has_permissions(ban_members=True)
+	# async def tempban(self,ctx,time : TimeParser, *, reason=''):
+		# """ Temporarily Ban a user """
+		# pass
 		
 	@commands.group(invoke_without_command=True)
 	@commands.has_permissions(view_audit_logs=True)
@@ -663,7 +663,18 @@ class Mod:
 				json.dump(self.bot.ignored,f,ensure_ascii=True,
 				sort_keys=True,indent=4, separators=(',',':'))
 			await ctx.send(f"Ignoring commands from {user.mention}.")
-		
+	
+	@commands.command()
+	@commands.is_owner()
+	async def delete_empty_roles(self,ctx):
+		count = 0
+		for i in ctx.guild.roles:
+			if i.members == []:
+				print(f"Empty role: {i.name}")
+				count += 1
+				await i.delete()
+		await ctx.send(f'Found and deleted {count} empty roles.')
+	
 	@commands.command()
 	@commands.is_owner()
 	async def unignore(self,ctx,user : discord.Member,*,reason="Unspecified"):
