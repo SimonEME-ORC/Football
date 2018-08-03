@@ -71,7 +71,7 @@ class MatchThread:
 		
 		# Bonus
 		# Debug data
-		self.prem_link = ""
+		self.premlink = ""
 		self.formations = ""
 		self.matchpictures = []
 		self.matchsummary = ""
@@ -131,7 +131,7 @@ class MatchThread:
 		print("Scheduler Started.")
 		while self.scheduling:
 			# Scrape the next kickoff date & time from the fixtures list on r/NUFC
-			async with self.bot.session.get("https://www.reddit.com/r/NUFC/") as resp: 
+			async with self.bot.session.get("https://old.reddit.com/r/NUFC/") as resp: 
 				if resp.status != 200:
 					print(f'{resp.status} error in scheduler.')
 					await asycio.sleep(10)
@@ -181,9 +181,9 @@ class MatchThread:
 		
 		# Bonus data if prem.
 		if "Premier League" in self.competition:
-			await self.bot.loop.run_in_executor(None,self.get_prem_link)
+			await self.bot.loop.run_in_executor(None,self.get_premlink)
 			await self.bot.loop.run_in_executor(None,self.get_prem_data)
-			print(f"self.prem_link: {self.prem_link}")
+			print(f"self.premlink: {self.premlink}")
 		else:
 			print(f"Not premier league - {self.competition}")
 
@@ -215,7 +215,7 @@ class MatchThread:
 				await asyncio.sleep(60)
 				continue
 
-			if self.prem_link:
+			if self.premlink:
 				await self.bot.loop.run_in_executor(None,self.get_prem_data)
 			# Rebuild markdown
 			markdown = await self.write_markdown(False)
@@ -235,7 +235,7 @@ class MatchThread:
 			await self.scrape_live()
 		else:
 			await self.scrape_normal()
-		if self.prem_link:
+		if self.premlink:
 			await self.bot.loop.run_in_executor(None,self.get_prem_data)
 		
 		# Rebuild markdown
@@ -344,7 +344,7 @@ class MatchThread:
 		return markdown
 			
 	# Get Premier League Website data.
-	def get_prem_link(self):
+	def get_premlink(self):
 		self.driver.get("http://www.premierleague.com/")
 		WebDriverWait(self.driver, 5)
 		self.driver.implicitly_wait(10)
@@ -353,6 +353,7 @@ class MatchThread:
 			z = self.driver.find_element_by_xpath(".//nav//ul[contains(@class,'matchList')]//abbr[contains(text(),'NEW')]")
 			z.click()
 		except IndexError:
+			print("get_premlink error; try manually.")
 			return ""
 		WebDriverWait(self.driver, 5)
 		
@@ -738,10 +739,10 @@ class MatchThread:
 				self.reflink = f"http://www.transfermarkt.co.uk/{self.reflink}"
 	
 	def get_prem_data(self):
-		if not self.prem_link:
+		if not self.premlink:
 			print("Prem link not retrieved")
 			return
-		self.driver.get(self.prem_link)
+		self.driver.get(self.premlink)
 		WebDriverWait(self.driver, 5)
 		
 		tree = html.fromstring(self.driver.page_source)
@@ -827,9 +828,9 @@ class MatchThread:
 	@commands.is_owner()
 	async def prem(self,ctx):
 		await ctx.send("trying.")
-		self.prem_link = await self.bot.loop.run_in_executor(None,self.get_prem_link)
+		self.premlink = await self.bot.loop.run_in_executor(None,self.get_premlink)
 		self.driver.save_screenshot('Debug.png')
-		await ctx.send(self.prem_link,file=discord.File('debug.png'))
+		await ctx.send(self.premlink,file=discord.File('debug.png'))
 	
 	# Debug command - Force Test
 	@commands.command()
@@ -881,7 +882,6 @@ class MatchThread:
 	async def override(self,ctx,var,*,value):
 		setattr(self,var,value)
 		await ctx.send(f'Setting "{var}" to "{value}"')
-		await ctx.send(f'DEBUG: self.referee is {self.referee}')
 	
 	@commands.is_owner()
 	async def occ(self,ctx):

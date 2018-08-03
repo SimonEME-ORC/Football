@@ -1,6 +1,7 @@
 from discord.ext.commands.cooldowns import BucketType
 from discord.ext import commands
 from lxml import html
+import datetime
 import asyncio
 import discord
 import random
@@ -11,31 +12,84 @@ class Misc:
 	def __init__(self, bot):
 		self.bot = bot
 	
+	
+	@commands.command(hidden=True)
+	async def itscominghome(self,ctx):
+		""" Football's coming home """
+		await ctx.send("No it's fucking not.")
+	
 	@commands.command(name="8ball",aliases=["8"])
 	async def eightball(self,ctx):
+		""" Magic Geordie 8ball """
 		res = [ 
-			"Signs point to yes.",
-			"Yes.",
-			"Reply hazy, try again.",
-			"Without a doubt.",
-			"My sources say no.",
-			"As I see it, yes.",
-			"You may rely on it.",
-			"Concentrate and ask again.",
-			"Outlook not so good.",
-			"It is decidedly so.",
-			"Better not tell you now.",
-			"Very doubtful.",
-			"Yes - definitely.",
-			"It is certain.",
-			"Cannot predict now.",
-			"Most likely.",
-			"Ask again later.",
-			"My reply is no.",
-			"Outlook good.",
-			"Don't count on it."
+			# Affirmative
+			"probably",
+			"Aye",
+			"aye mate",
+			"wey aye.",
+			"aye trust is pal.",
+			"Deffo m8",
+			"fuckin aye.",
+			"fucking rights",
+			"think so",
+			# Negative
+			"me pal says nar.",
+			"divn't think so",
+			"probs not like.",
+			"nar pal soz",
+			"fuck no",
+			"deffo not.",
+			"nar",
+			"wey nar",
+			"fuck off ya daftie",
+			
+			# later
+			"am not sure av just had a bucket",
+			"al tel you later",
+			"giz a minute to figure it out",
+			"mebbe like",
+			"dain't bet on it like"
 		]
 		await ctx.send(f":8ball: {ctx.author.mention} {random.choice(res)}")
+	
+	@commands.command(aliases=["horo"],hidden=True)
+	async def horoscope(self,ctx,*,sign):
+		""" Find out your horoscope for this week """
+		sign = sign.title()
+		horos = {
+			"Aquarius":"♒",
+			"Aries":"♈",
+			"Cancer":"♋",
+			"Capricorn":"♑",
+			"Gemini":"♊",
+			"Leo":"♌",
+			"Libra":"♎",
+			"Scorpius":"♏",
+			"Scorpio":"♏",
+			"Sagittarius":"♐",
+			"Pisces":"♓",
+			"Taurus":"♉",
+			"Virgo":"♍",
+		}
+		
+		if sign not in horos:
+			return
+		
+		# Get Sunday Just Gone.
+		sun = datetime.datetime.now().date() - datetime.timedelta(days=datetime.datetime.now().weekday() + 1)
+		# Get Saturday Coming
+		sat = sun + datetime.timedelta(days=6)
+		
+		sunstring = sun.strftime('%a %d %B %Y')
+		satstring = sat.strftime('%a %d %B %Y')
+		
+		e = discord.Embed()
+		e.color = 0x7289DA
+		e.description = "*\"The stars and planets will not affect your life in any way\"*"
+		e.title = f"{horos[sign]} {sign}"
+		ftstr = f"Horoscope for {sunstring} - {satstring}"
+		e.set_footer(text=ftstr)
+		await ctx.send(embed=e)
 	
 	@commands.command(aliases=["rather"])
 	async def wyr(self,ctx):
@@ -69,33 +123,6 @@ class Misc:
 		# else:
 			# await ctx.send("Invalid game specified, valid games are {', '.join(games)}}")
 			
-	@commands.command(aliases=["colour"],hidden=True)
-	async def color(self,ctx,color):
-		""" Gives you a colour """
-		if not ctx.channel.id == 332167049273016320:
-			return await ctx.send("Wrong channel.",delete_after=2)
-		else:
-			color.strip('#')
-			color.strip('0x')
-			if len(color) != 6:
-				await ctx.send("6 character RGB value required. <http://htmlcolorcodes.com/color-picker/>")
-				return
-			try:	
-				rcolor = discord.Colour(int(color,16))
-			except ValueError:
-				return await ctx.send('Not a valid Hex Code. Check <http://htmlcolorcodes.com/color-picker/>')
-			e = discord.Embed(color=rcolor)
-			e.description = f"{ctx.author.mention}'s name colour has been updated."
-			e.set_footer(text="Confused? Go to http://htmlcolorcodes.com/color-picker/ pick a colour, and copy the hex code.")
-			if discord.utils.get(ctx.guild.roles, name=ctx.author.name) is None:
-				nrole = await ctx.guild.create_role(name=ctx.author.name,reason="coloured names are still cancer",color=rcolor)
-				await ctx.author.add_roles(nrole,reason="Colours are cancer")
-			else:
-				orole = discord.utils.get(ctx.guild.roles, name=ctx.author.name)
-				await orole.edit(color=rcolor)
-				await ctx.author.add_roles(orole,reason="Colours are cancer")
-			await ctx.send(embed=e)
-	
 	@commands.command(aliases=["choice","pick","select"])
 	async def choose(self,ctx,*,choices):
 		""" Make a decision for me (seperate choices with commas)"""
@@ -147,9 +174,6 @@ class Misc:
 			await ctx.send("❔ Banning failed.")
 		else:
 			await ctx.send(f"☠ {ctx.author.mention} banned themself.")
-			c = self.bot.config[f"{ctx.guild.id}"]["mod"]["channel"]
-			c = self.bot.get_channel(c)
-			await c.send(f"☠ {ctx.author.mention} banned themself")
 	
 	@commands.command(hidden=True)
 	@commands.guild_only()

@@ -163,6 +163,8 @@ class quotedb:
 		if m is None:
 			await ctx.send(f":no_entry_sign: Could not find message with id {target}")
 			return
+		if m.author.id == ctx.author.id:
+			return await ctx.send('You can\'t quote yourself you virgin.')
 		n = await ctx.send("Attempting to add quote to db...")
 		insert_tuple = (m.author.id,m.clean_content,m.channel.id,m.created_at,ctx.author.id)
 		c.execute("INSERT INTO quotes VALUES (?,?,?,?,?)",insert_tuple)

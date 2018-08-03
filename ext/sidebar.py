@@ -87,7 +87,7 @@ class Sidebar:
 		await m.edit(content="Got data. Converting to markup.")
 		
 		# Get length, iterate results to max length.
-		dc = "\n\n[](https://discord.gg/R6mG76J)"
+		dc = "\n\n[](https://discord.gg/tbyUQTV)"
 		sb += "* Previous Results\n"
 		pr = "\n W|Home|-|Away\n--:|--:|:--:|:--\n"
 		
@@ -402,7 +402,11 @@ class Sidebar:
 			ga = p[8]        # Goals Against
 			gd = p[9]        # GoalDiff
 			pts = p[10]      # Points
-			form = p[11]
+			
+			try:
+				form = p[11]
+			except IndexError:
+				pass
 			table += f"{r} {m}|{t}|{pd}|{w}|{d}|{l}|{gd}|{pts}\n"
 		return table
 
@@ -461,7 +465,7 @@ class Sidebar:
 					at = at.split(" (")[0]
 				ic = "[](#icon-home)" if "Newcastle" in ht else "[](#icon-away)"
 				op = ht if "Newcastle" in at else at
-				op = "Preston North End" if op == "Preston (Eng)" else op
+
 				try:
 					op = f"{self.bot.teams[op]['icon']}{self.bot.teams[op]['shortname']}"
 				except KeyError:
@@ -473,7 +477,10 @@ class Sidebar:
 		
 		numblocks = (len(fixblock) // 20) + 1
 		blocklen = math.ceil(len(fixblock)/numblocks)
-		chunks = [fixblock[i:i+blocklen] for i in range(0, len(fixblock), blocklen)]
+		try:
+			chunks = [fixblock[i:i+blocklen] for i in range(0, len(fixblock), blocklen)]
+		except ValueError:
+			return ""
 		chunks.reverse()
 		for i in chunks:
 			if len(i) < blocklen:
@@ -539,7 +546,10 @@ class Sidebar:
 						img = frame.find_element_by_xpath(".//img").get_attribute('src')
 						self.bot.loop.create_task(self.fetch_badge(img))
 						badgegetter.close()						
-						
+					
+					ht = "Newcastle" if ht == "Newcastle (Eng)" else ht
+					at = "Newcastle" if at == "Newcastle (Eng)" else at
+					
 					lastop = at if "Newcastle" in ht else ht
 					if at in self.bot.teams.keys():
 						lasta = (f"[{self.bot.teams[at]['shortname']}]"
@@ -554,7 +564,8 @@ class Sidebar:
 					else:
 						get_badge(lnk,"home")
 						lasth = F"[{ht}](#temp)"
-					lastres = f"> {lasth} {sc} {lasta}"
+					lastres = f"> {lasth.replace(' (Eng)','')} {sc} {lasta.replace(' (Eng)','')}"
+
 				if ht in self.bot.teams.keys():
 					ht = (f"{self.bot.teams[ht]['icon']}"
 						f"{self.bot.teams[ht]['shortname']}")

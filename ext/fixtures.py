@@ -343,7 +343,7 @@ class Fixtures:
 		games = []
 		if "team" in url:
 			team = "".join(t.xpath('.//div[@class="team-name"]/text()'))
-			e.title = f"≡ Fixtures for {team}"
+			e.title = f"≡ Fixtures for {team} | Times are UTC	"
 			for i in fxtb:
 				d = "".join(i.xpath('.//td[contains(@class,"time")]//text()'))
 				# Skip header rows.

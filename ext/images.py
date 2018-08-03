@@ -556,6 +556,11 @@ class ImageManip:
 	async def pressf(self,ctx):
 		""" Press F to pay respects """
 		await ctx.send("https://i.imgur.com/zrNE05c.gif")
+		
+	@commands.command(hidden=True)
+	async def goala(self,ctx):
+		""" Party on Garth """
+		await ctx.send(file=discord.File('goala.gif'))
 	
 	# @commands.command(aliases=["cat"])
 	# async def pussy(self,ctx):

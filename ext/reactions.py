@@ -10,6 +10,7 @@ reactdict = {
 			"gayle":[":windmill:332195722864885761"],
 			"mackem":["💩"],
 			"mbemba":[":mbemba:332196308825931777"],
+			"ki ":["🔑","👃","👀"],
 			"nobby":["🎺"],
 			"shola":["🚴🏿","🍏"],
 			"solano":["🎺"],
@@ -35,6 +36,48 @@ class GlobalChecks:
 		except:
 			self.bot.config[f"{ctx.guild.id}"] = {"disabled":[]}
 			return not str(ctx.command) in self.bot.config[f"{ctx.guild.id}"]["disabled"]
+
+# class RoleReactor:
+	# def __init__(self,bot):
+		# self.bot = bot
+
+		# # "🇦🇧c🇩🇪🇫🇬🇭🇮🇯🇰🇱🇲🇳🇴🇵🇶🇷🇸🇹🇺🇻🇼🇽🇾🇿"
+		# roledict = {"🇷🇺" : "Russia",
+					# "🇺🇾" : "Uruguay",
+					# "🇪🇬" : "Egypt",
+					# "🇸🇦" : "Saudi Arabia",
+					# "🇵🇹" : "Portugal",
+					# "🇪🇸" : "Spain",
+					# "🇲c" : "Morocco",
+					# "Iran" :flag_ir: IR
+					# "France" :flag_fr: FR
+					# "Denmark" :flag_dk: DK
+					# "Peru" :flag_pe: PE
+					# "Australia" :flag_au: AU
+					# "Croatia" :flag_hr: HR (What the fuck?)
+					# "Iceland" :flag_is:  IS
+					# "Argentina" :flag_ar: AR
+					# "Nigeria" :flag_ng: NG
+					# "Switzerland" :flag_ch: CH (Wtf? 2)
+					# "Serbia" :flag_rs: RS (fucking...)
+					# "Brazil" :flag_br: BR
+					# "Costa Rica" :flag_cr: CR
+					# "Sweden" :flag_SE: SE
+					# "Germany" :flag_de: DE
+					# "Mexico" :flag_mx: MX
+					# "South Korea" :flag_kr: KR
+					# "Belgium" :flag_be: BE
+					# "England" :flag_gb: GB <-- This triggers me.
+					# "Tunisia" :flag_tn: TN
+					# "Panama" :flag_pa: PA
+					# "Poland" :flag_pl: PL
+					# "Columbia" :flag_co:  CO
+					# "Senegal" :flag_sn: SN
+					# "Japan" :flag_jp: JP
+					# }
+							
+		
+	
 	
 class Reactions:
 	def __init__(self, bot):
@@ -115,9 +158,9 @@ class Reactions:
 		if str(m.author.id) in self.bot.ignored:
 			return
 		# Emoji reactions
+		if "toon toon" in c:
+			await m.channel.send("**Black and white army.**")
 		if m.guild and m.guild.id == 332159889587699712:
-			if "toon toon" in c:
-				await m.channel.send("**Black and white army.**")
 			for string,reactions in reactdict.items():
 				if string in c:
 					for emoji in reactions:
@@ -140,3 +183,4 @@ class Reactions:
 def setup(bot):
 	bot.add_cog(Reactions(bot))
 	bot.add_cog(GlobalChecks(bot))
+	# bot.add_cog(RoleReactor(bot))

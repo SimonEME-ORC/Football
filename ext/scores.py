@@ -278,6 +278,8 @@ class Live:
 						e.title = "Kick Off"
 						e.color = 0x00ffff
 					else:
+						if "v" in ns:
+							return
 						e.title = "Goal"
 						e.color = 0x00ff00
 					async with self.bot.session.get(f"http://www.bbc.co.uk{flattened[i]['url']}") as resp:
@@ -434,7 +436,8 @@ class Live:
 		await ctx.send(f"Live score channel for {ctx.guild.name} set to {ctx.channel.mention}")
 	
 	async def fetch_game(self,ctx,team):
-		async with self.bot.session.get("http://www.bbc.co.uk/sport/football/scores-fixtures") as resp:
+		url = f"http://www.bbc.co.uk/sport/football/scores-fixtures/" + datetime.now().strftime('%Y-%m-%d')
+		async with self.bot.session.get(url) as resp:
 			if resp.status != 200:
 				await m.edit(content=f"HTTP Error: {resp.status}")
 				return None

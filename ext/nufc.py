@@ -13,7 +13,36 @@ class NUFC:
 	def nufccheck(ctx):
 		if ctx.guild:
 			return ctx.guild.id in [238704683340922882,332159889587699712]
+
+	@commands.command(aliases=["colour"],hidden=True)
+	@commands.check(nufccheck)
+	async def color(self,ctx,color):
+		""" Gives you a colour """
+		if not ctx.channel.id == 332167049273016320:
+			return await ctx.send("Wrong channel.",delete_after=2)
+		else:
+			color.strip('#')
+			color.strip('0x')
+			if len(color) != 6:
+				await ctx.send("6 character RGB value required. <http://htmlcolorcodes.com/color-picker/>")
+				return
+			try:	
+				rcolor = discord.Colour(int(color,16))
+			except ValueError:
+				return await ctx.send('Not a valid Hex Code. Check <http://htmlcolorcodes.com/color-picker/>')
+			e = discord.Embed(color=rcolor)
+			e.description = f"{ctx.author.mention}'s name colour has been updated."
+			e.set_footer(text="Confused? Go to http://htmlcolorcodes.com/color-picker/ pick a colour, and copy the hex code.")
+			if discord.utils.get(ctx.guild.roles, name=ctx.author.name) is None:
+				nrole = await ctx.guild.create_role(name=ctx.author.name,reason="coloured names are still cancer",color=rcolor)
+				await ctx.author.add_roles(nrole,reason="Colours are cancer")
+			else:
+				orole = discord.utils.get(ctx.guild.roles, name=ctx.author.name)
+				await orole.edit(color=rcolor)
+				await ctx.author.add_roles(orole,reason="Colours are cancer")
+			await ctx.send(embed=e)
 	
+			
 	@commands.check(nufccheck)
 	@commands.command()
 	async def steam(self,ctx):

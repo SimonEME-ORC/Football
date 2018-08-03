@@ -161,6 +161,14 @@ class Admin:
 	@commands.is_owner()
 	async def ownersay(self,ctx,ch:discord.TextChannel,*,text):
 		await ch.send(text)
+		
+	@commands.command()
+	@commands.is_owner()
+	async def emojitest(self,ctx):
+		e = discord.Embed()
+		e.description = "<:badge:332195611195605003>"
+		m = await ctx.send("<:badge:332195611195605003>",embed=e)
+		await m.add_reaction(":badge:332195611195605003")
 
 def setup(bot):
     bot.add_cog(Admin(bot))

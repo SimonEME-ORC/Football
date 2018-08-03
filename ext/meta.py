@@ -200,12 +200,8 @@ class Meta:
 		"""Say hello."""
 		await ctx.send(f"Hi {ctx.author.mention}, I'm {ctx.me.display_name}, "
 		f"Painezor#8489 coded me to do some football stuff. If you think you've spotted a bug, ping him\n"
-		f"Type {self.bot.config[str(ctx.guild.id)]['prefix'][0]}help to be DM'd a list of my commands."
+		f"Type {ctx.prefix}help to be DM'd a list of my commands."
 		)
-
-	async def say_permissions(self, ctx, member, channel):
-		permissions = channel.permissions_for(member)
-		await formats.entry_to_code(ctx, permissions)
 
 	@commands.command(aliases=['setavatar'])
 	@commands.is_owner()
@@ -228,21 +224,6 @@ class Meta:
 		permissions = ctx.channel.permissions_for(member)
 		permissions = "\n".join([f"{i[0]} : {i[1]}" for i in permissions])
 		await ctx.send(f"```py\n{permissions}```")
-		
-		
-	@commands.command()
-	@commands.has_permissions(manage_roles=True)
-	@commands.bot_has_permissions(manage_roles=True)
-	async def botpermissions(self, ctx):
-		"""Shows the bot's permissions.
-		This is a good way of checking if the bot has the permissions needed
-		to execute the commands it wants to execute.
-		To execute this command you must have Manage Roles permissions or
-		have the Bot Admin role. You cannot use this in private messages.
-		"""
-		channel = ctx.channel
-		member = ctx.me
-		await self.say_permissions(ctx, member, channel)
 		
 	@commands.command(aliases=['nick'])
 	@commands.has_permissions(manage_nicknames=True)

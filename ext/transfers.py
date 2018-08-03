@@ -546,7 +546,7 @@ class Transfers:
 		p = {"query":target} # html encode.
 		async with self.bot.session.post(f"http://www.transfermarkt.co.uk/schnellsuche/ergebnis/schnellsuche",params=p) as resp:
 			if resp.status != 200:
-				return await ctx.send(f"HTTP Error connecting to transfernarkt: {resp.status}")
+				return await ctx.send(f"HTTP Error connecting to transfermarkt: {resp.status}")
 			tree = html.fromstring(await resp.text())
 		
 		replacelist = ["🇦","🇧",'🇨','🇩','🇪','🇫','🇬']

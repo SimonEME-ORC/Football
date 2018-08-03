@@ -55,16 +55,19 @@ class Timers:
 		is given then it is assumed to be seconds. You can also combine
 		multiple units together, e.g. 2h4m10s.
 		"""
+		await ctx.send('Fired')
 		reminder = None
 		completed = None
 		human_time = datetime.datetime.now() + datetime.timedelta(seconds=time.seconds)
+		human_time = datetime.datetime.strftime(" on %a %d %b")
 		
+		await ctx.send(human_time)
 		if not message:
 			reminder = f"Sound {ctx.author.mention}, I'll give you a shout in {human_time}"
-			completed = f"Here, {ctx.author.mention}. You asked is to remind you about summit"
+			completed = f"Here, {ctx.author.mention}. You asked is to remind you about summit {time} ago"
 		else:
 			reminder = f"Areet {ctx.author.mention}, I'll give you a shout about '{message}' at {human_time}"
-			completed = f"Here {ctx.author.mention}, ya asked me to remind you about '{message}' mate"
+			completed = f"Here {ctx.author.mention}, ya asked me to remind you about '{message}' {time} ago mate"
 				
 		await ctx.send(reminder)
 		await asyncio.sleep(time.seconds)
