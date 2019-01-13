@@ -195,7 +195,10 @@ class ImageManip:
 		df = await self.bot.loop.run_in_executor(None,self.draw_knob,image,
 												 respjson)
 		await ctx.send(ctx.author.mention,file=df)
-		await ctx.message.delete()
+		try:
+			await ctx.message.delete()
+		except discord.Forbidden:
+			pass
 		
 	def draw_knob(self,image,respjson):
 		im = Image.open(BytesIO(image)).convert(mode="RGBA")
@@ -234,7 +237,10 @@ class ImageManip:
 		df = await self.bot.loop.run_in_executor(None,self.draw_eyes,
 													image,respjson)
 		await ctx.send(ctx.author.mention,file=df)
-		await ctx.message.delete()
+		try:
+			await ctx.message.delete()
+		except:
+			pass
 			
 	def draw_eyes(self,image,respjson):
 		""" Draws the eyes """
@@ -468,7 +474,6 @@ class ImageManip:
 		return df
 		
 	@commands.is_owner()
-	@commands.command()
 	async def autism(self,ctx):
 		await ctx.trigger_typing()
 		autists = [210581854758109184,178631560650686465,141665281683488768,202780724078575616]

@@ -17,6 +17,10 @@ class quotedb:
 	def __unload(bot):	
 		conn.close()
 	
+	def nufccheck(ctx):
+		if ctx.guild:
+			return ctx.guild.id in [238704683340922882,332159889587699712]
+	
 	async def make_embed(self,data):
 		# Get data from ids
 		# Stored by [id,content,channelid,timestamp,submitterid]
@@ -132,7 +136,7 @@ class quotedb:
 		x = c.fetchall()
 		with open("out.txt", "wb") as fp:
 			fp.write("\n".join([f"#{i[0]} @ {i[4]}: <{i[1]}> {i[2]} (Added by: {i[3]})" for i in x]).encode('utf8'))
-		await ctx.send("Might've worked. Let's find out.",file=discord.File("out.txt","quotes.txt"))
+		await ctx.send("Quotes exported.",file=discord.File("out.txt","quotes.txt"))
 
 	@quote.command(aliases=["id","fetch"])
 	async def get(self,ctx,number):
@@ -147,6 +151,7 @@ class quotedb:
 		await ctx.send(embed=e)
 				
 	@quote.command(invoke_without_command=True)
+	@commands.check(nufccheck)
 	async def add(self,ctx,target):
 		""" Add a quote, either by message ID or grabs the last message a user sent """
 		if ctx.message.mentions:
@@ -194,6 +199,7 @@ class quotedb:
 	
 	@quote.command(name="del")
 	@commands.has_permissions(manage_messages=True)
+	@commands.check(nufccheck)
 	async def _del(self,ctx,id):
 		""" Delete quote by quote ID """
 		if not id.isdigit():

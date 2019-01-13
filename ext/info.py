@@ -12,7 +12,7 @@ class Info:
 
 	@commands.command()
 	async def hackyinfo(self,ctx,*,id):
-		""" Get info about a user """
+		""" Get info about a user by their ID #"""
 		user = await self.bot.get_user_info(id)
 		e = discord.Embed()
 		e.color = 0x7289DA
@@ -57,7 +57,25 @@ class Info:
 		e.colour = member.colour
 		if member.avatar:
 			e.set_thumbnail(url=member.avatar_url)
-		await ctx.send(embed=e)
+		try:
+			await ctx.send(embed=e)
+		except discord.Forbidden:
+			outstr = "```"
+			outstr = f"Member: {str(member)}\n"
+			outstr += f"Avatar URL: {member.avatar_url}\n"
+			outstr += f"Joined: {member.joined_at}\n"
+			outstr += f"Created: {member.created_at}"
+			outstr += f"User ID: {member.id}\n"
+			outstr += f"Mutual Servers with bot: {shared}\n"
+			if member.bot:
+				outstr += "User is a bot.\n"
+			if member.activity is not None:
+				outstr += f"Activity: {member.activity}\n"
+			if voice:
+				outstr == f"Voice Status: {voice}\n"
+			outstr += f"User Roles: {', '.join(roles)}"
+			outstr += "```"
+			await ctx.send(outstr)
 
 	@info.command(name='guild', aliases=["server"])
 	@commands.guild_only()
@@ -93,7 +111,8 @@ class Info:
 		e.add_field(name="Owner ID",value=guild.owner.id)
 		emojis = ""
 		for emoji in guild.emojis:
-			emojis += str(emoji)
+			if len(emojis) + len(str(emoji)) < 1024:
+				emojis += str(emoji)
 		if emojis:
 			e.add_field(name="Custom Emojis",value=emojis)
 		e.add_field(name="Region",value=str(guild.region).title())

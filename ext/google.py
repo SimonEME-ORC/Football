@@ -12,6 +12,41 @@ class google:
 		self.bot = bot
 	
 	@commands.command()
+	async def yt(self,ctx,*,qstr:str):
+		""" Search Youtube """
+		p = {"q":qstr,"key":self.bot.credentials["YouTube"]["key"],"part":"snippet","maxResults":"5"}
+		h = {'User-Agent':'Mozilla/5.0 (Windows NT 6.3; Win64; x64)'}
+		cs = self.bot.session
+		
+		async with cs.get("https://www.googleapis.com/youtube/v3/search",params=p,headers=h) as resp:
+			if resp.status != 200:
+				err = f"🚫 YouTube responded with status code {resp.status}"
+				return await ctx.send(err)
+			else:
+				res = await resp.json()
+			
+			for i in res["items"]:
+				if i["id"]["kind"] != "youtube#video":
+					continue
+				return await ctx.send("http://www.youtube.com/watch?v=" + i["id"]["videoId"])
+			
+			# Format results
+			# channels = {}
+			# videos = {}
+			# for i in res["items"]:
+				# if not channels:
+					# if i["id"]["kind"] == "youtube#channel":
+						# chemb = discord.Embed()
+						# chemb.color = 0xFFFFFF
+						# chemb.title i["snippet"]["title"]
+						# chemb.description = i["snippet"]["description"]
+						# chemb.set_thumbnail(url=i["snippet"]["thumbnails"]["high"])
+						
+				
+				# await ctx.send(embed=chemb)
+			
+		
+	@commands.command()
 	async def g(self,ctx,*,qstr:str):
 		""" Perform a google search """
 		p = {"q":qstr,"safe":"on"}
@@ -155,12 +190,16 @@ class google:
 				e.title = res[0][1]
 				e.url = res[0][0]
 				e.description = res[0][2]
-				more = f"[{res[1][1]}]({res[1][0]})\n[{res[2][1]}]({res[2][0]})"
+				try:
+					more = f"[{res[1][1]}]({res[1][0]})\n[{res[2][1]}]({res[2][0]})"
+				except IndexError:
+					more = ""
 			else:
 				more = (f"[{res[0][1]}]({res[0][0]})\n"
 						f"[{res[1][1]}]({res[1][0]})\n"
 						f"[{res[2][1]}]({res[2][0]})")
-			e.add_field(name="More Results",value=more)
+			if more:
+				e.add_field(name="More Results",value=more)
 			await ctx.send(embed=e)
 			
 def setup(bot):

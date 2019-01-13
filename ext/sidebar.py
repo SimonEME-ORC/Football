@@ -11,9 +11,14 @@ import math
 import praw
 import json
 import re
+import os
 
 from selenium import webdriver
 from selenium.webdriver.support.ui import WebDriverWait
+from selenium.common.exceptions import NoSuchElementException, WebDriverException
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
+from selenium.common.exceptions import TimeoutException
 
 class Sidebar:
 	def __init__(self, bot):
@@ -31,6 +36,21 @@ class Sidebar:
 	
 	def nufccheck(message):
 		return message.guild.id in [238704683340922882,250252535699341312,306552425144385536,332159889587699712]
+	
+	def spawn_chrome(self):
+		caps = DesiredCapabilities().CHROME
+		caps["pageLoadStrategy"] = "normal"  #  complete
+		chrome_options = Options()
+		chrome_options.add_argument('log-level=3')
+		chrome_options.add_argument("--headless")
+		chrome_options.add_argument("--window-size=1920x1200")
+		chrome_options.add_argument('--no-proxy-server')
+		
+		driver_path = os.getcwd() +"\\chromedriver.exe"
+		prefs = {'profile.default_content_setting_values': {'images': 2, 'javascript': 2}}
+		chrome_options.add_experimental_option('prefs', prefs)
+		self.driver = webdriver.Chrome(desired_capabilities=caps,chrome_options=chrome_options, executable_path=driver_path)
+		self.driver.set_page_load_timeout(20)
 	
 	@commands.group(invoke_without_command=True)
 	@commands.has_permissions(manage_messages=True)
@@ -87,7 +107,7 @@ class Sidebar:
 		await m.edit(content="Got data. Converting to markup.")
 		
 		# Get length, iterate results to max length.
-		dc = "\n\n[](https://discord.gg/tbyUQTV)"
+		dc = "\n\n[](https://discord.gg/TuuJgrA)"
 		sb += "* Previous Results\n"
 		pr = "\n W|Home|-|Away\n--:|--:|:--:|:--\n"
 		
@@ -109,8 +129,9 @@ class Sidebar:
 		blocklen = math.ceil(len(outblocks)/numblocks)
 		
 		reswhead = []
-		for i in range(0, len(outblocks), blocklen):
-			reswhead.append(outblocks[i:i+blocklen])
+		if blocklen:
+			for i in range(0, len(outblocks), blocklen):
+				reswhead.append(outblocks[i:i+blocklen])
 		
 		reswhead.reverse()
 
@@ -184,7 +205,7 @@ class Sidebar:
 			ts = f"\n#####Sidebar auto-updated {thetime}\n"
 			
 			# Get length, iterate results to max length.
-			dc = "\n\n[](https://discord.gg/R6mG76J)"
+			dc = "\n\n[](https://discord.gg/TuuJgrA)"
 			sb += "* Previous Results\n"
 			pr = "\n W|Home|-|Away\n--:|--:|:--:|:--\n"
 			
@@ -434,13 +455,13 @@ class Sidebar:
 			
 	def fixtures(self):	
 		fixblock = []
-		driver = webdriver.PhantomJS()
-		driver.get("http://www.flashscore.com/team/newcastle-utd/p6ahwuwJ/fixtures/")
-		driver.implicitly_wait(2)
+		self.spawn_chrome()
+		self.driver.get("http://www.flashscore.com/team/newcastle-utd/p6ahwuwJ/fixtures/")
+
 		url = "http://www.livesoccertv.com/teams/england/newcastle-united/"
 
 		xp = ".//div[@id='fs-fixtures']/table"
-		tables = driver.find_elements_by_xpath(xp)
+		tables = self.driver.find_elements_by_xpath(xp)	
 		for table in tables:
 			comp = './/span[@class="tournament_part"]'
 			comp = table.find_element_by_xpath(comp).text
@@ -487,17 +508,16 @@ class Sidebar:
 				i.append("|||||")
 		chunks = ["".join(i) for i in chunks]
 		chunks = fixmainhead + fixhead + fixhead.join(chunks)
-		driver.close()
+		self.driver.close()
 		return chunks
 			
 	def results(self):
-		driver = webdriver.PhantomJS()
-		driver.get("http://www.flashscore.com/team/newcastle-utd/"
+		self.spawn_chrome()
+		self.driver.get("http://www.flashscore.com/team/newcastle-utd/"
 			   "p6ahwuwJ/results/")
-		driver.implicitly_wait(2)
 			
 		xp = ".//div[@id='fs-results']/table"
-		scores = driver.find_elements_by_xpath(xp)
+		scores = self.driver.find_elements_by_xpath(xp)
 		resultlist = []
 		lastres = ""
 		lastop = ""
@@ -539,13 +559,11 @@ class Sidebar:
 				if not lastop:
 					# Fetch badge if required
 					def get_badge(link,team):
-						badgegetter = webdriver.PhantomJS()
-						badgegetter.get(link)
-						badgegetter.implicitly_wait(2)
-						frame = badgegetter.find_element_by_class_name(f"tlogo-{team}")
+						self.driver.get(link)
+
+						frame = self.driver.find_element_by_class_name(f"tlogo-{team}")
 						img = frame.find_element_by_xpath(".//img").get_attribute('src')
-						self.bot.loop.create_task(self.fetch_badge(img))
-						badgegetter.close()						
+						self.bot.loop.create_task(self.fetch_badge(img))					
 					
 					ht = "Newcastle" if ht == "Newcastle (Eng)" else ht
 					at = "Newcastle" if at == "Newcastle (Eng)" else at
@@ -588,7 +606,7 @@ class Sidebar:
 						resultlist.append(f"[D](#icon-draw)|{ht}|{sc}|{at}\n")
 					else:
 						resultlist.append(f"[W](#icon-win)|{ht}|{sc}|{at}\n")
-		driver.close()
+		self.driver.close()
 		return resultlist,lastres,lastop
 	
 	async def fetch_badge(self,src):

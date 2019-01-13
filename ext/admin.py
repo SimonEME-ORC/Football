@@ -45,6 +45,9 @@ class Admin:
 			traceback.print_tb(error.original.__traceback__)
 			print('{0.__class__.__name__}: {0}'.format(error.original),
 				  file=sys.stderr)	
+				  
+		else:
+			print(f"Error: {ctx.message.content} ({ctx.author.name} on {ctx.guild.name})\n {error}")
 		
 	@commands.command()
 	@commands.is_owner()

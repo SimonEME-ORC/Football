@@ -40,11 +40,16 @@ class Mod:
 				json.dump(self.bot.config,f,ensure_ascii=True,
 				sort_keys=True,indent=4, separators=(',',':'))
 				
-	# @commands.command()
-	# @commands.has_permissions(ban_members=True)
-	# async def tempban(self,ctx,time : TimeParser, *, reason=''):
-		# """ Temporarily Ban a user """
-		# pass
+	async def on_channel_create(self,channel):
+		try:
+			muted = discord.utils.get(channel.guild.roles, name='Muted')
+			moverwrite = PermissionOverwrite()
+			moverwrite.add_reactions = False
+			moverwrite.send_messages = False
+			await channel.set_permissions(mrole,overwrite=moverwrite)
+		except:
+			return
+		
 		
 	@commands.group(invoke_without_command=True)
 	@commands.has_permissions(view_audit_logs=True)
@@ -89,23 +94,68 @@ class Mod:
 	
 	@commands.has_permissions(manage_messages=True)
 	@commands.command()
-	async def mute(self,ctx,member:discord.Member):
-		""" Mutes a user in this channel """
-		modroles = ["Moderators","Chat Mods"]
+	async def mute(self,ctx,member:discord.Member,*,reason="No reason given."):
+		""" Gives a user the "Muted" role."""
+		print("Command fired.")
+		mrole = discord.utils.get(ctx.guild.roles, name='Muted')
 		
-		for i in modroles:
-			if i in [i.name for i in member.roles]:
-				return await ctx.send('Cannot mute another moderator, sorry.')
-		ow = discord.PermissionOverwrite()
-		ow.send_messages = False
-		ow.add_reactions = False
+		if not mrole:
+			m = await ctx.send("Could not find a 'Muted' Role. Create one now?")
+			for i in ['✅','❌']:
+				await m.add_reaction(i)
+			
+			try:
+				def check(r,u):
+					if r.message.id == m.id and u == ctx.author:
+						e = str(r.emoji)
+						return e in ['✅','❌']		
+				wf = "reaction_add"
+				r = await self.bot.wait_for(wf,check=check,timeout=120)
+			except asyncio.TimeoutError:
+				try:
+					await m.clear_reactions()
+				except discord.Forbidden:
+					pass
+				
+			r = r[0]
+			if r.emoji == "✅": #Check
+				mrole = await ctx.guild.create_role(name="Muted") # Read Messages / Read mesasge history.
+				await mrole.edit(position=ctx.me.top_role.position + 1) # Move the role to the highest position under the bot, to override everything else.
+				
+				moverwrite = discord.PermissionOverwrite()
+				moverwrite.add_reactions = False
+				moverwrite.send_messages = False
+				
+				print("Setting permissions.")
+				for i in ctx.guild.text_channels:
+					print("Attempting to add role override...")
+					await i.set_permissions(mrole,overwrite=moverwrite)
+					
+			if r.emoji == "❌": #Cross
+				return await m.edit(f"Could not mute {member.mention}, \"Muted\" role does not exist and creation was cancelled.")
+		
+		await member.add_roles(mrole)
+
+		await ctx.send(f"{member.mention} was Muted.")
 		try:
-			await ctx.channel.set_permissions(member,overwrite=ow)
-		except Exception as e:
-			await ctx.send(f"Error: {e}")
-		else:
-			await ctx.send(f"{member.mention} has been muted in " 
-						   f"{ctx.channel.mention}")
+			if self.bot.config[f"{ctx.guild.id}"]["mod"]["mutes"] == "On":
+				await self.bot.get_channel(c["channel"]).send(f"{member.mention} was muted by {ctx.author}: {reason}")
+		except KeyError:
+			self.bot.config[f"{ctx.guild.id}"]["mod"]["mutes"] == "Off"
+			
+	@commands.has_permissions(manage_messages=True)
+	@commands.command()
+	async def unmute(self,ctx,member:discord.Member):
+		""" Removes the "Muted" role from a user."""		
+		try:
+			mrole = discord.utils.get(ctx.guild.roles, name='Muted')
+		except:
+			return await ctx.send("Could not find server 'muted' role.")
+		
+		await member.remove_roles(mrole)
+		await ctx.send(f"{member.mention} was unmuted.")
+		if self.bot.config[f"{ctx.guild.id}"]["mod"]["mutes"] == "On":
+			await self.bot.get_channel(c["channel"]).send(f"{member.mention} was unmuted by {ctx.author}")		
 
 	@commands.has_permissions(kick_members=True)
 	@commands.command()
@@ -130,7 +180,7 @@ class Mod:
 			await ctx.send(m)
 			
 	@commands.has_permissions(kick_members=True)
-	@commands.command(aliases=["unmute"])
+	@commands.command(aliases=[])
 	async def unblock(self,ctx,member:discord.Member):
 		""" Unblocks a user from this channel """
 		# Get Members who have overwrites set.
@@ -233,7 +283,17 @@ class Mod:
 	@commands.has_permissions(ban_members=True)
 	@commands.bot_has_permissions(ban_members=True)
 	async def unban(self,ctx,*,who):
-		""" Unbans a user from the server """
+		""" Unbans a user from the server (use name#discrim or userid)"""
+		if who.isdigit():
+			who = self.bot.get_user(int(who))
+			try:
+				await self.bot.http.unban(who.id, ctx.guild.id)
+			except discord.Forbidden:
+				await ctx.send("⛔ I cab't unban that user.")
+			except discord.HTTPException:
+				await ctx.send("❔ Unban failed.")
+			else:
+				await ctx.send(f"🆗 {who} was unbanned")			
 		try:
 			un,discrim = who.split('#')
 			for i in await ctx.guild.bans():
@@ -347,7 +407,7 @@ class Mod:
 			c = self.bot.config[f"{ctx.guild.id}"]["mod"]
 			mc = self.bot.get_channel(c["channel"])
 		except KeyError:
-			m = f"Mod channel not set, use {self.bot.command_prefix[0]}mod set"
+			m = f"Mod channel not set, use {ctx.prefix}mod set"
 			return await ctx.send(m)
 		e = discord.Embed(color=0x7289DA)
 		e.description = f"Mod Channel: {mc.mention}\n"
@@ -361,7 +421,8 @@ class Mod:
 		e.description += f"Leaves: `{c['leaves']}`\n"
 		e.description += f"Bans: `{c['bans']}`\n"
 		e.description += f"Unbans: `{c['unbans']}`\n"
-		e.description += f"Emojis: `{c['emojis']}`"
+		e.description += f"Emojis: `{c['emojis']}`\n"
+		e.description += f"Mutes: `{c['mutes']}`"
 		e.set_thumbnail(url=ctx.guild.icon_url)
 		await ctx.send(embed=e)
 		
@@ -378,6 +439,42 @@ class Mod:
 			cf = f"Mod Channel for {ctx.guild.name} set to {ctx.channel.mention}"
 		await ctx.send(cf)
 		await self._save()
+
+	@commands.has_permissions(manage_guild=True)
+	@commands.group(invoke_without_command=True)
+	async def mutes(self,ctx):
+		""" Show or hide member mutings. On|Off>"""
+		try:
+			c = self.bot.config[f"{ctx.guild.id}"]["mod"]
+			mc = self.bot.get_channel(c["channel"])
+		except KeyError:
+			m =f"Mod channel not set, use {self.bot.command_prefix[0]}mod set"
+			return await ctx.send(m)
+		try:
+			status = c["mutes"]
+		except KeyError:
+			c["mutes"] = "On"
+		await ctx.send(f"Mute messages are currently set to `{status}`")
+		
+	@mutes.command(name="on")
+	@commands.has_permissions(manage_guild=True)
+	async def mutes_on(self,ctx):
+		""" Announce in moderator channel when a member is muted/unmuted"""
+		c = self.bot.config[f"{ctx.guild.id}"]["mod"]
+		j = c["mutes"] = "On"
+		ch = self.bot.get_channel(c['channel']).mention
+		await ctx.send(f"Member muting/unmutings will be output to {ch}")
+		await self._save()
+		
+	@mutes.command(name="off")
+	@commands.has_permissions(manage_guild=True)
+	async def mutes_off(self,ctx):
+		""" Turn off announcing in moderator channel when a member is muted/unmuted"""
+		c = self.bot.config[f"{ctx.guild.id}"]["mod"]
+		j = c["mutes"] = "Off"
+		ch = self.bot.get_channel(c['channel']).mention
+		await ctx.send(f"Member muting/unmutings will be output to {ch}")
+		await self._save()		
 		
 	@commands.has_permissions(manage_guild=True)
 	@commands.group(invoke_without_command=True)

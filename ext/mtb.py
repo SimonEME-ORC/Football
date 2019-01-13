@@ -11,10 +11,16 @@ from lxml import html
 from discord.ext import commands
 import discord
 import datetime
+import os
 
 from selenium import webdriver
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.common.exceptions import NoSuchElementException, WebDriverException
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By	
+from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
+from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.support import expected_conditions as EC
 
 from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
@@ -23,30 +29,27 @@ class MatchThread:
 	""" MatchThread Bot rewrite."""
 	def __init__(self, bot):
 		self.bot = bot
-		
-		# Spawn PhantomJS
-		self.spawn_phantom()
-		
+		self.driver = None
 		# Discord and Subreddit
 		# r/NUFC 
-		self.subreddit = "NUFC"
+		self.subreddit = "nufc"
 		self.modchannel = self.bot.get_channel(332167195339522048)
 		
-		# Painezor's Test Server/Subreddit.
+		# Test channel/Subreddit.
 		# self.subreddit = "themagpiescss"
-		# self.modchannel = self.bot.get_channel(250252535699341312)
+		# self.modchannel = self.bot.get_channel(332167049273016320)
 		
 		# URLs
 		self.bbclink = ""
 		
 		# Strings.
-		self.discord = "[](#icon-discord)[Come chat with us on Discord!](https://discord.gg/tbyUQTV)"
+		self.discord = "[](#icon-discord)[Come chat with us on Discord!](https://discord.gg/TuuJgrA)"
 		self.archive = "https://www.reddit.com/r/NUFC/wiki/archive"
 			
 		self.teamurl = "newcastle-united"
 		self.radio = "[📻 Radio Commentary](https://www.nufc.co.uk/liveAudio.html)"
 		self.tickerheader = ""
-		self.botdisclaimer = "---\n\n^(*Beep boop, I am /u/Toon-bot, a bot coded ^badly by /u/Painezor. If anything appears to be weird or off, please let him know.*)"
+		self.botdisclaimer = "\n\n---\n\n^(*Beep boop, I am /u/Toon-bot, a bot coded ^badly by /u/Painezor. If anything appears to be weird or off, please let him know.*)"
 		
 		# Match Data
 		self.attendance = ""
@@ -70,7 +73,6 @@ class MatchThread:
 		self.ticker = []
 		
 		# Bonus
-		# Debug data
 		self.premlink = ""
 		self.formations = ""
 		self.matchpictures = []
@@ -104,31 +106,32 @@ class MatchThread:
 	def __unload(self):
 		# Cancel Scheduler loop
 		self.schedtask.cancel()
+		self.stopmatchthread = True
 		
 		# Exit Selenium Scraper
-		try:
+		if self.driver:
 			self.driver.quit()
-		except AttributeError:
-			pass
 	
-	# PhantomJS for premier league website scraping.
-	def spawn_phantom(self):
-		webdriver.DesiredCapabilities.PHANTOMJS['phantomjs.page.settings.userAgent'] = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/48.0.2564.116 Safari/537.36'
-		headers = { 'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-			'Accept-Language':'zh-CN,zh;q=0.8,en-US;q=0.5,en;q=0.3',
-			'User-Agent': 'Mozilla/5.0 (Windows NT 6.2; WOW64; rv:47.0) Gecko/20100101 Firefox/47.0',
-			'Connection': 'keep-alive'
-		}
-
-		for key, value in headers.items():
-			webdriver.DesiredCapabilities.PHANTOMJS['phantomjs.page.customHeaders.{}'.format(key)] = value
-		self.driver = webdriver.PhantomJS()
-		self.driver.set_window_size(1400,1000)
+	# Spawn an instance of headerless chrome.
+	def spawn_chrome(self):
+		caps = DesiredCapabilities().CHROME
+		caps["pageLoadStrategy"] = "normal"  #  complete
+		chrome_options = Options()
+		chrome_options.add_argument('log-level=3')
+		chrome_options.add_argument("--headless")
+		chrome_options.add_argument("--window-size=1920x1200")
+		chrome_options.add_argument('--no-proxy-server')
+		
+		driver_path = os.getcwd() +"\\chromedriver.exe"
+		prefs = {'profile.default_content_setting_values': {'images': 2, 'javascript': 2}}
+		chrome_options.add_experimental_option('prefs', prefs)
+		self.driver = webdriver.Chrome(desired_capabilities=caps,chrome_options=chrome_options, executable_path=driver_path)
+		self.driver.set_page_load_timeout(20)
+		self.driver.implicitly_wait(10)
 	
 	# Loop to check when to post.-
 	async def scheduler(self):
 		""" This is the bit that determines when to run a match thread """
-		print("Scheduler Started.")
 		while self.scheduling:
 			# Scrape the next kickoff date & time from the fixtures list on r/NUFC
 			async with self.bot.session.get("https://old.reddit.com/r/NUFC/") as resp: 
@@ -137,7 +140,6 @@ class MatchThread:
 					await asycio.sleep(10)
 					continue
 				tree = html.fromstring(await resp.text())
-				print("Scheduler parsing.")
 				fixture = tree.xpath('.//div[@class="titlebox"]//div[@class="md"]//li[5]//table/tbody/tr[1]/td[1]//text()')[-1]
 				next = datetime.datetime.strptime(fixture,'%a %d %b %H:%M').replace(year=datetime.datetime.now().year)
 				if not next:
@@ -152,10 +154,11 @@ class MatchThread:
 				self.postat = postat
 				# Calculate when to post the next match thread
 				sleepuntil = (postat.days * 86400) + postat.seconds
-				print(f"Posting in: {sleepuntil} seconds")
+				
 				if sleepuntil > 0:
+					print(f"The next match thread will be posted in: {sleepuntil} seconds")
 					await asyncio.sleep(sleepuntil) # Sleep bot until then.
-					await self.bot.loop.create_task(self.start_match_thread())
+					await self.start_match_thread()
 					await asyncio.sleep(180)
 				else:
 					await asyncio.sleep(86400)
@@ -201,7 +204,13 @@ class MatchThread:
 		post = await self.bot.loop.run_in_executor(None,self.makepost,threadname,markdown)
 		self.matchthread = post.url
 		
-		await self.modchannel.send(f"Match Thread Created: {post.url}")
+		e = discord.Embed(color=0xff4500)
+		th = ("http://vignette2.wikia.nocookie.net/valkyriecrusade/images"
+			  "/b/b5/Reddit-The-Official-App-Icon.png")
+		e.set_author(icon_url=th,name="Match Thread Bot")
+		e.description = (f"[{post.title}]({post.url}) created.")
+		e.timestamp = datetime.datetime.now()
+		await self.modchannel.send(embed=e)
 		
 		# Commence loop.
 		while True:
@@ -242,7 +251,9 @@ class MatchThread:
 		markdown = await self.write_markdown(True)	
 		threadname = f"Post-Match Thread: {self.hometeam} {self.score} {self.awayteam}"
 		post = await self.bot.loop.run_in_executor(None,self.makepost,threadname,markdown)
-		await self.modchannel.send(f"Post-Match Thread Created: {post.url}")
+		e.description = (f"[{post.title}]({post.url}) created.")
+		await self.modchannel.send(embed=e)	
+		return post.url
 		
 	# Formatting.
 	async def write_markdown(self,ispostmatch):
@@ -345,19 +356,14 @@ class MatchThread:
 			
 	# Get Premier League Website data.
 	def get_premlink(self):
-		self.driver.get("http://www.premierleague.com/")
-		WebDriverWait(self.driver, 5)
-		self.driver.implicitly_wait(10)
+		self.spawn_chrome()
+		self.driver.get("https://www.premierleague.com/")	
+
+		src = self.driver.page_source
+		tree = html.fromstring(src)
 		
-		try:
-			z = self.driver.find_element_by_xpath(".//nav//ul[contains(@class,'matchList')]//abbr[contains(text(),'NEW')]")
-			z.click()
-		except IndexError:
-			print("get_premlink error; try manually.")
-			return ""
-		WebDriverWait(self.driver, 5)
-		
-		return self.driver.current_url
+		self.premlink = "https://www.premierleague.com/" + tree.xpath('.//nav[@class="mcNav"]//a[.//abbr[@title="Newcastle United"]]')[0].attrib["href"]
+		return self.driver.quit()	
 		
 	# Scrape Fixtures to get current match
 	async def get_bbc_link(self):
@@ -528,11 +534,18 @@ class MatchThread:
 				# Completed matches are irrelevant.
 				if not "vs" in match:
 					continue
+				if "U21" in match:
+					continue 
+				else:
+					live = "".join(i.xpath('.//td[1]//text()')).strip()
+					print(f"TV: {live}")
+					if "FT" in live:
+						continue
 				
 				date = "".join(i.xpath('.//td[4]//text()')).strip()
 				if "postp." in date.lower():
 					continue
-					
+				
 				tvpage = "".join(i.xpath('.//td[5]//a/@href'))
 				self.tvlink = f"http://www.livesoccertv.com/{tvpage}"
 				break
@@ -742,8 +755,8 @@ class MatchThread:
 		if not self.premlink:
 			print("Prem link not retrieved")
 			return
+		self.spawn_chrome()
 		self.driver.get(self.premlink)
-		WebDriverWait(self.driver, 5)
 		
 		tree = html.fromstring(self.driver.page_source)
 		# Get ticker
@@ -777,7 +790,6 @@ class MatchThread:
 				z = self.driver.find_element_by_xpath(".//ul[@class='tablist']/li[@class='matchCentreSquadLabelContainer']")
 				z.click()
 				WebDriverWait(self.driver, 2)
-				self.driver.implicitly_wait(2)
 				lineup = self.driver.find_element_by_xpath(".//div[@class='pitch']")
 				self.driver.save_screenshot('Debug.png')
 
@@ -793,6 +805,8 @@ class MatchThread:
 				im.save("formations.png")
 			except:
 				pass
+		
+		self.driver.quit()
 
 	# Post to IMGUR
 	async def upload_formation(self):
@@ -823,21 +837,17 @@ class MatchThread:
 			self.editpost(post,markdown)
 		return
 	
-	# Debug command - Get Prem info
-	@commands.command()
-	@commands.is_owner()
-	async def prem(self,ctx):
-		await ctx.send("trying.")
-		self.premlink = await self.bot.loop.run_in_executor(None,self.get_premlink)
-		self.driver.save_screenshot('Debug.png')
-		await ctx.send(self.premlink,file=discord.File('debug.png'))
-	
 	# Debug command - Force Test
 	@commands.command()
 	@commands.is_owner()
 	async def forcemt(self,ctx):
 		m = await ctx.send('DEBUG: Starting a match thread...')
-		post = await self.start_match_thread()
+		try:
+			post = await self.start_match_thread()
+		except:
+			await ctx.send(file=discord.File('PLDebug.png'))
+		else:
+			await ctx.send(post)
 	
 	@commands.command()
 	@commands.is_owner()
@@ -845,12 +855,26 @@ class MatchThread:
 		await ctx.send(f'Debug; self.nextmatch = {self.nextmatch}')
 		await ctx.send(f'Match thread will be posted in: {self.nextmatch - datetime.datetime.now() - datetime.timedelta(minutes=15)}')
 	
+	@commands.command()
+	@commands.is_owner()
+	async def killmt(self,ctx):
+		self.stopmatchthread = True
+		await ctx.send('Killing.')
+	
+	@commands.is_owner()
+	@commands.group()
+	async def override(self,ctx,var,*,value):
+		setattr(self,var,value)
+		await ctx.send(f'Setting "{var}" to "{value}"')
+		
+		
 	def get_formation(self):
-		self.driver.get('https://www.premierleague.com/match/22686')
+		self.spawn_chrome()
+		self.driver.get(self.premlink)
+		WebDriverWait(self.driver, 2)
 		z = self.driver.find_element_by_xpath(".//ul[@class='tablist']/li[@class='matchCentreSquadLabelContainer']")
 		z.click()
-		WebDriverWait(self.driver, 5)
-		self.driver.implicitly_wait(5)
+
 		lineup = self.driver.find_element_by_xpath(".//div[@class='pitch']")
 		loc = lineup.location
 		size = lineup.size
@@ -868,31 +892,7 @@ class MatchThread:
 		# im = im.crop((left, top, right, bottom))
 		
 		im.save("formations.png")
-
-	@commands.command()
-	@commands.is_owner()
-	async def fm(self,ctx):
-		await ctx.send('Looking...')
-		await self.bot.loop.run_in_executor(None,self.get_formation)
-		await ctx.send('Debug.png',file=discord.File("debug.png"))
-		await ctx.send('formations.png',file=discord.File("formations.png"))
+		return self.driver.quit()
 	
-	@commands.is_owner()
-	@commands.group()
-	async def override(self,ctx,var,*,value):
-		setattr(self,var,value)
-		await ctx.send(f'Setting "{var}" to "{value}"')
-	
-	@commands.is_owner()
-	async def occ(self,ctx):
-		await ctx.send(self.formations)
-	
-	@commands.command()
-	@commands.is_owner()
-	async def killmt(self,ctx):
-		m = await ctx.send("Cancelling...")
-		self.stopmatchthread = True
-		await m.edit(content="Match thread ended early.")
-		
 def setup(bot):
 	bot.add_cog(MatchThread(bot))

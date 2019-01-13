@@ -171,7 +171,6 @@ class Transfers:
 					self.parsed.append(pname)
 					continue
 					
-				print("New transfer detected!")
 				e = discord.Embed(color = 0x1a3151)
 				e.set_author(name=pname)
 				
@@ -234,12 +233,8 @@ class Transfers:
 						ch = self.bot.config[i]["transfers"]["channel"]
 						ch = self.bot.get_channel(ch)
 						if ch is None:
-							print(f"{i}: tf channel set but not found")
 							continue
-						else:
-							print(f'{i}: tf Channel found')
 					except KeyError:
-						print(f'Key Error for {i} in transfers')
 						continue
 					try:
 						mode = self.bot.config[i]["transfers"]["mode"]
@@ -254,7 +249,6 @@ class Transfers:
 							blacklist = self.bot.config[i]["transfers"]["blacklist"]
 						except:
 							blacklist = ""
-							print(f"{i}: Blacklist mode selected but not populated")
 						if mfleague in blacklist and mtleague in blacklist:
 							continue
 						else:
@@ -264,7 +258,6 @@ class Transfers:
 							whitelist = self.bot.config[i]["transfers"]["whitelist"]
 						except:
 							whitelist = ""
-							print(f"{i}: Whitelist mode selected but not populated.")
 						if mfleague in whitelist or mtleague in whitelist:
 							await ch.send(embed=e)
 					else:

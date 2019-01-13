@@ -33,6 +33,7 @@ class Live:
 		await self.bot.wait_until_ready()
 		msglist = []
 		numservs = 0
+		self.matchlist = {}
 		while self.scoreson:
 			# Get date string
 			tf = "Fixtures, results, and live scores for "
@@ -331,12 +332,16 @@ class Live:
 				else:
 					outlist.append(newchunk)
 					newchunk = i
-		outlist.append(newchunk)
+		if newchunk:
+			outlist.append(newchunk)
 		if outlist:
 			for i in outlist:
-				await ctx.send(i)
+				try:
+					await ctx.send(i)
+				except:
+					pass
 		else:
-			await ctx.send(f"Couldn't find scores for {league}")
+			await ctx.send(f"Couldn't find any live scores for {league}.")
 	
 	@scores.command(name="reload")
 	@commands.has_permissions(manage_guild=True)

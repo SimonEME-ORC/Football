@@ -31,7 +31,7 @@ async def get_prefix(bot, message):
 	try:
 		pref = bot.config[f"{message.guild.id}"]["prefix"]
 	except KeyError:
-		pref = []
+		pref = ['+','-','.','$','!','?','.tb']
 	return commands.when_mentioned_or(*pref)(bot, message)
 
 description = "Football lookup bot by Painezor#8489"

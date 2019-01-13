@@ -42,10 +42,11 @@ class Timers:
 		except:
 			return await ctx.send('Banning failed.')
 		await ctx.send(f'Banned {member.mention} for {time}')
-		unbanned = await bot.get_user_info(id)
+		unbanned = await bot.get_user(id)
 		await asyncio.sleep(time.seconds)
-		await self.bot.unban(unbanned)
-		await ctx.send('{member.mention} was unbanned after {time}')
+		await self.bot.http.unban(who.id, ctx.guild.id)
+		
+		await ctx.send(f'{member.mention} was unbanned after {time}')
 	
 	@commands.command(aliases=['reminder','remind','remindme'])
 	async def timer(self, ctx, time : TimeParser, *, message : commands.clean_content):
@@ -55,20 +56,19 @@ class Timers:
 		is given then it is assumed to be seconds. You can also combine
 		multiple units together, e.g. 2h4m10s.
 		"""
-		await ctx.send('Fired')
 		reminder = None
 		completed = None
-		human_time = datetime.datetime.now() + datetime.timedelta(seconds=time.seconds)
-		human_time = datetime.datetime.strftime(" on %a %d %b")
+		remindat = datetime.datetime.now() + datetime.timedelta(seconds=time.seconds)
 		
-		await ctx.send(human_time)
+		human_time = datetime.datetime.strftime(remindat,"%H:%M:%S on %a %d %b")
+		
 		if not message:
-			reminder = f"Sound {ctx.author.mention}, I'll give you a shout in {human_time}"
-			completed = f"Here, {ctx.author.mention}. You asked is to remind you about summit {time} ago"
+			reminder = f"Sound {ctx.author.mention}, I'll give you a shout at {human_time}"
+			completed = f"Here, {ctx.author.mention}. You asked me for a reminder."
 		else:
 			reminder = f"Areet {ctx.author.mention}, I'll give you a shout about '{message}' at {human_time}"
-			completed = f"Here {ctx.author.mention}, ya asked me to remind you about '{message}' {time} ago mate"
-				
+			completed = f"Here {ctx.author.mention}, ya asked me to remind you about '{message}'"
+		
 		await ctx.send(reminder)
 		await asyncio.sleep(time.seconds)
 		await ctx.send(completed)

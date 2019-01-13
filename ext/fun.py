@@ -52,6 +52,13 @@ class Misc:
 		]
 		await ctx.send(f":8ball: {ctx.author.mention} {random.choice(res)}")
 	
+	@commands.command()
+	async def lenny(self,ctx):
+		""" ( ͡° ͜ʖ ͡°) """
+		lennys = ['( ͡° ͜ʖ ͡°)','(ᴗ ͜ʖ ᴗ)','(⟃ ͜ʖ ⟄) ','(͠≖ ͜ʖ͠≖)','ʕ ͡° ʖ̯ ͡°ʔ','( ͠° ͟ʖ ͡°)','( ͡~ ͜ʖ ͡°)','( ͡◉ ͜ʖ ͡◉)','( ͡° ͜V ͡°)','( ͡ᵔ ͜ʖ ͡ᵔ )',
+		'(☭ ͜ʖ ☭)','( ° ͜ʖ °)','( ‾ ʖ̫ ‾)','( ͡° ʖ̯ ͡°)','( ͡° ل͜ ͡°)','( ͠° ͟ʖ ͠°)','( ͡o ͜ʖ ͡o)','( ͡☉ ͜ʖ ͡☉)','ʕ ͡° ͜ʖ ͡°ʔ','( ͡° ͜ʖ ͡ °)']
+		await ctx.send(random.choice(lennys))
+	
 	@commands.command(aliases=["horo"],hidden=True)
 	async def horoscope(self,ctx,*,sign):
 		""" Find out your horoscope for this week """
@@ -91,18 +98,81 @@ class Misc:
 		e.set_footer(text=ftstr)
 		await ctx.send(embed=e)
 	
+	@commands.command()
+	async def poll(self,ctx,*,arg):
+		""" Thumbs up / Thumbs Down """
+		try:
+			await ctx.message.delete()
+		except:
+			pass
+		e = discord.Embed(color=0x7289DA)
+		e.title = f"Poll"
+		e.description = arg
+		e.set_footer(text=f"Poll created by {ctx.author.name}")
+		
+		m = await ctx.send(embed=e)
+		await m.add_reaction('👍')
+		await m.add_reaction('👎')
+		
+	
 	@commands.command(aliases=["rather"])
 	async def wyr(self,ctx):
 		""" Would you rather... """
-		async with self.bot.session.get("http://www.rrrather.com/botapi") as resp:
-			resp = await resp.json()
+		async def fetch():
+			async with self.bot.session.get("http://www.rrrather.com/botapi") as resp:
+				resp = await resp.json()
+				return resp
+		
+		# Reduce dupes.
+		cache = []
+		tries = 0
+		while tries < 20:
+			resp = await fetch()
+			# Skip stupid shit.
+			if resp["choicea"] == resp["choiceb"]:
+				continue
+			if resp in cache:
+				tries += 1
+				continue
+			else:
+				cache += resp
+				break
+		
+		async def write(resp):
 			title = resp["title"].strip().capitalize().rstrip('.?,:')
 			opta  = resp["choicea"].strip().capitalize().rstrip('.?,!').lstrip('.')
 			optb  = resp["choiceb"].strip().capitalize().rstrip('.?,!').lstrip('.')
-			m = await ctx.send(f"{ctx.author.mention} **{title}...** \n{opta} \n{optb}")
+			mc = f"{ctx.author.mention} **{title}...** \n{opta} \n{optb}"
+			return mc
+			
+		async def react(m):
 			await m.add_reaction('🇦')
 			await m.add_reaction('🇧')
-	
+			await m.add_reaction('🎲')
+		
+		m = await ctx.send(await write(resp))
+		await react(m)
+		
+		# Reroller
+		def check(reaction,user):
+			if reaction.message.id == m.id and user == ctx.author:
+				e = str(reaction.emoji)
+				return e == '🎲'
+		
+		while True:
+			try:
+				rea = await self.bot.wait_for("reaction_add",check=check,timeout=120)
+			except asyncio.TimeoutError:
+				await m.remove_reaction('🎲',ctx.message.author)
+				break
+			rea = rea[0]
+			if rea.emoji == '🎲':
+				resp = await fetch()
+				await m.clear_reactions()
+				await m.edit(content=await write(resp))
+				await react(m)
+			
+			
 	@commands.command()
 	@commands.is_owner()
 	async def secrettory(self,ctx):
@@ -147,6 +217,7 @@ class Misc:
 	@commands.command(hidden=True,aliases=["flip","coinflip"])
 	async def coin(self,ctx):
 		""" Flip a coin """
+		print(ctx.guild.name)
 		await ctx.send(random.choice(["Heads","Tails"]))
 	
 	@commands.command(hidden=True)
@@ -235,10 +306,11 @@ class Misc:
 			  "apple-touch-icon-2f29e978facd8324960a335075aa9aa3.png")
 	
 		embeds = []
-		if json["result_type"] == "exact":
-			deflist = json["list"]
-			# Populate Embed, add to list
-			count = 1
+
+		deflist = json["list"]
+		# Populate Embed, add to list
+		count = 1
+		if deflist:
 			for i in deflist:
 				e = discord.Embed(color=0xFE3511)
 				auth = f"Urban Dictionary"
@@ -257,13 +329,10 @@ class Misc:
 				e.set_footer(icon_url=ic,text=footertext)
 				embeds.append(e)
 				count += 1
-		elif json["result_type"] == "no_results":
-			e = discord.Embed(color=0xFE3511)
-			e.description = f"🚫 No results found for {lookup}."
-			embeds.append(e)
 		else:
-			await ctx.send(f'DEBUG: result_type = {json["result_type"]}')
-			await ctx.send(json)
+				e = discord.Embed(color=0xFE3511)
+				e.description = f"🚫 No results found for {lookup}."
+				embeds.append(e)
 		
 		# Paginator
 		page = 0
