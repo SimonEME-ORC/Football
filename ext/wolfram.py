@@ -2,7 +2,7 @@ from discord.ext import commands
 import discord, asyncio
 import aiohttp
 
-class WolframAlpha:
+class WolframAlpha(commands.Cog):
 	def __init__(self,bot):
 		self.bot = bot
 		

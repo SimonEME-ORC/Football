@@ -16,7 +16,7 @@ timedict = {"0":"🕛","030":"🕧","1":"🕐", "130":"🕜", "2":"🕑", "230":
 			"9":"🕘", "930":"🕤", "10":"🕙", "1030":"🕥", "11":"🕚", "1130":"🕦",
 			"12":"🕛", "1230":"🕧"}
 
-class Live:
+class Scores(commands.Cog):
 	""" Get live scores for leagues worldwide """
 	def __init__(self,bot):
 		self.bot = bot
@@ -72,6 +72,7 @@ class Live:
 						await asyncio.sleep(60)
 						continue
 					tree = html.fromstring(await resp.text())
+
 			except Exception as e:
 				await asyncio.sleep(60)
 				continue
@@ -81,7 +82,16 @@ class Live:
 			self.matchlist = {}
 
 			for i in sections: # for each league on page
-				ignoredleagues = ["Women's International Friendlies","Women's Super League 1","Women's Super League 2","Women's Premier North","Women's Premier South"]
+				ignoredleagues = [
+					"Women's International Friendlies",
+					"Women's Super League 1",
+					"Women's Super League 2",
+					"Women's Premier North",
+					"Women's Premier South",
+					"The FA Women's Championship",
+					"The FA Women’s National League - Northern Premier Division",
+					"The FA Women’s National League - Southern Premier Division"
+					]
 				
 				try:
 					comp = i.xpath('.//h3/text()')[0]
@@ -393,30 +403,6 @@ class Live:
 			except NameError:
 				pass
 		await ctx.send(embed=e)
-		
-	@livescores.command(name="on")
-	@commands.has_permissions(manage_messages=True)
-	async def scores_on(self,ctx):
-		""" Turn the Live score channel back on """
-		if not self.scoreson:
-			self.scoreson = True
-			await ctx.send("⚽ Live score channel has been enabled.")
-			self.bot.scorechecker = bot.loop.create_task(self.ls())
-		elif self.bot.scorechecker._state == ["FINISHED","CANCELLED"]:
-			await ctx.send(f"⚽ Restarting {self.bot.scorechecker._state} task after exception {self.bot.scorechecker.exception()}.")
-			self.bot.scorechecker = bot.loop.create_task(self.ls())
-		else:
-			await ctx.send("⚽ Live score channel already enabled.")
-			
-	@livescores.command(name="off")
-	@commands.has_permissions(manage_messages=True)
-	async def scores_off(self,ctx):	
-		""" Turn off the live score channel """
-		if self.scoreson:
-			self.scoreson = False
-			await ctx.send("⚽ Live score channel has been disabled.")
-		else:
-			await ctx.send("⚽ Live score channel already disabled.")
 			
 	@livescores.command(name="unset")
 	@commands.has_permissions(manage_channels=True)
@@ -433,12 +419,41 @@ class Live:
 	@commands.has_permissions(manage_channels=True)
 	async def _set(self,ctx):
 		""" Sets the live score channel for this server """
-		self.bot.config[f"{ctx.guild.id}"].update({"scorechannel":ctx.channel.id})
-		with await self.bot.configlock:
-			with open('config.json',"w",encoding='utf-8') as f:
-				json.dump(self.bot.config,f,ensure_ascii=True,
-				sort_keys=True,indent=4, separators=(',',':'))
-		await ctx.send(f"Live score channel for {ctx.guild.name} set to {ctx.channel.mention}")
+		await ctx.send("⚠ **Warning**: Please make sure you are **NOT** using this command in a discussion channel.")
+		await ctx.send(f"All messages in {ctx.channel.mention} will be permanently deleted if this action is performed.")
+		await ctx.send("Make sure you have created a new channel for the live scores tracker.\n\n")
+		m = await ctx.send("Are you sure you wish to continue?")
+		await asyncio.sleep(5)
+		await m.add_reaction('✅')
+		await m.add_reaction('⛔')
+		
+		def check(reaction,user):
+			if reaction.message.id == m.id and user == ctx.author:
+				e = str(reaction.emoji)
+				return e in ['✅','⛔']
+		
+		# Wait for appropriate reaction
+		
+		try:
+			rea = await self.bot.wait_for("reaction_add",check=check,timeout=30)
+		except asyncio.TimeoutError:
+			return await m.clear_reactions()		
+			await ctx.send('Request timed out, live score channel note set.')
+		
+		rea = rea[0]
+		if rea.emoji == "✅": 
+			self.bot.config[f"{ctx.guild.id}"].update({"scorechannel":ctx.channel.id})
+			with await self.bot.configlock:
+				with open('config.json',"w",encoding='utf-8') as f:
+					json.dump(self.bot.config,f,ensure_ascii=True,
+					sort_keys=True,indent=4, separators=(',',':'))
+			await ctx.send(f"Live score channel for {ctx.guild.name} set to {ctx.channel.mention}")
+			
+			#restart loop for new additions.
+			self.bot.scorechecker.cancel()
+			self.bot.scorechecker = self.bot.loop.create_task(self.ls())
+		else:
+			await ctx.send('Request cancelled, live score channel note set.')
 	
 	async def fetch_game(self,ctx,team):
 		url = f"http://www.bbc.co.uk/sport/football/scores-fixtures/" + datetime.now().strftime('%Y-%m-%d')
@@ -606,4 +621,4 @@ class Live:
 				await ctx.send(embed=e)
 			
 def setup(bot):
-	bot.add_cog(Live(bot))
+	bot.add_cog(Scores(bot))

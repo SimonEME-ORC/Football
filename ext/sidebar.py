@@ -7,7 +7,7 @@ from prawcore.exceptions import RequestException
 import aiohttp
 import asyncio
 import discord
-import math
+import math	
 import praw
 import json
 import re
@@ -20,13 +20,14 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 from selenium.common.exceptions import TimeoutException
 
-class Sidebar:
+class Sidebar(commands.Cog):
 	def __init__(self, bot):
 		self.bot = bot
 		self.sidebaron = True
 		self.nextrun = "Not defined"
 		self.subreddit = "NUFC"
 		self.sidetask = bot.loop.create_task(self.looptask())
+		self.driver = None
 		with open('teams.json') as f:
 			self.bot.teams = json.load(f)
 		
@@ -345,6 +346,7 @@ class Sidebar:
 				self.post_sidebar(sidebar)
 				
 	async def get_data(self):
+		self.spawn_chrome()
 		if self.sidebaron:
 			table=fixtures=results=threads="Retry"
 			sb = await self.bot.loop.run_in_executor(None,self.get_sidebar)
@@ -364,6 +366,8 @@ class Sidebar:
 			return sb,table,fixtures,results,lastres,threads
 		else:
 			return None
+		self.driver.close()
+		self.driver = None
 	
 	def threads(self,lastop):
 		trds = []
@@ -455,7 +459,6 @@ class Sidebar:
 			
 	def fixtures(self):	
 		fixblock = []
-		self.spawn_chrome()
 		self.driver.get("http://www.flashscore.com/team/newcastle-utd/p6ahwuwJ/fixtures/")
 
 		url = "http://www.livesoccertv.com/teams/england/newcastle-united/"
@@ -464,7 +467,10 @@ class Sidebar:
 		tables = self.driver.find_elements_by_xpath(xp)	
 		for table in tables:
 			comp = './/span[@class="tournament_part"]'
-			comp = table.find_element_by_xpath(comp).text
+			try:
+				comp = table.find_element_by_xpath(comp).text
+			except:
+				comp = ""
 			comp = "PL" if comp == "Premier League" else comp
 			comp = "*FRDLY*" if comp == "Club Friendly" else comp
 			comp = "CHSP" if comp == "Championship" else comp
@@ -508,15 +514,13 @@ class Sidebar:
 				i.append("|||||")
 		chunks = ["".join(i) for i in chunks]
 		chunks = fixmainhead + fixhead + fixhead.join(chunks)
-		self.driver.close()
 		return chunks
 			
 	def results(self):
-		self.spawn_chrome()
 		self.driver.get("http://www.flashscore.com/team/newcastle-utd/"
 			   "p6ahwuwJ/results/")
 			
-		xp = ".//div[@id='fs-results']/table"
+		xp = ".//div[@id='fs-results']/table"	
 		scores = self.driver.find_elements_by_xpath(xp)
 		resultlist = []
 		lastres = ""
@@ -524,14 +528,16 @@ class Sidebar:
 		for table in scores:
 			comp = './/span[@class="tournament_part"]'
 			# Fetch Competition Name & Shorten
-			comp = table.find_element_by_xpath(comp).text
+			try:
+				comp = table.find_element_by_xpath(comp).text
+			except:
+				comp = ""
 			comp = "PL" if comp == "Premier League" else comp
 			comp = "FRDLY" if comp == "Club Friendly" else comp
 			comp = "CHSP" if comp == "Championship" else comp
 			
 			# Fetch all match rows.
-			matches = './/tbody/tr'
-			matches = table.find_elements_by_xpath(matches)
+			matches = table.find_elements_by_xpath('.//tbody/tr')
 			for match in matches:
 				matchid = match.get_attribute("id").split("_")[2]
 				
@@ -606,7 +612,6 @@ class Sidebar:
 						resultlist.append(f"[D](#icon-draw)|{ht}|{sc}|{at}\n")
 					else:
 						resultlist.append(f"[W](#icon-win)|{ht}|{sc}|{at}\n")
-		self.driver.close()
 		return resultlist,lastres,lastop
 	
 	async def fetch_badge(self,src):

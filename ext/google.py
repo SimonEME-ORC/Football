@@ -5,7 +5,7 @@ import asyncio
 import discord
 
 
-class google:
+class google(commands.Cog):
 
 	""" Google search """
 	def __init__(self,bot):

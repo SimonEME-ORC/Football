@@ -122,3 +122,6 @@ out.txt
 *.jpg
 *.gif
 ext/fixtures-rw.py
+fulldump-trollingchannel.txt
+testfile.txt
+ext/wolfram.py

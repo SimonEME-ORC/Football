@@ -11,7 +11,7 @@ import json
 from io import BytesIO
 
 
-class ImageManip:
+class ImageManip(commands.Cog):
 	""" Edit images for you """
 	def __init__(self, bot):
 		self.bot = bot
@@ -57,6 +57,7 @@ class ImageManip:
 			add1,add2 = await self.gp(f"https://www.nufc.co.uk/teams/{i}")
 			names += add1
 			pics += add2
+		print(names)
 		names = [x.split('/')[-1].replace('-',' ').title() for x in names] #strip preleading text
 		pick = list((z[0],z[1]) for z in zip(names,pics))
 		return random.choice(pick)
@@ -304,7 +305,7 @@ class ImageManip:
 			if ctx.message.mentions:
 				target = ctx.message.mentions[0]
 			elif target.isdigit():
-				target = await self.bot.get_user_info(target)
+				target = await self.bot.fetch_user(target)
 			if target.id == 210582977493598208:
 				target = ctx.author
 				quote = "I think I'm smarter than Painezor"
@@ -445,7 +446,7 @@ class ImageManip:
 	async def ruins(self,ctx,*,user: discord.User):
 		""" Local man ruins everything """
 		with ctx.typing():
-			user = await self.bot.get_user_info(int(user.id))
+			user = await self.bot.fetch_user(int(user.id))
 			if user == None:
 				user = ctx.author
 			av = user.avatar_url_as(format="png",size=256)

@@ -9,7 +9,7 @@ import sqlite3
 conn = sqlite3.connect('quotes.db')
 c = conn.cursor()
 
-class quotedb:
+class quotedb(commands.Cog):
 	""" Quote Database module """
 	def __init__(self,bot):
 		self.bot = bot
@@ -24,9 +24,9 @@ class quotedb:
 	async def make_embed(self,data):
 		# Get data from ids
 		# Stored by [id,content,channelid,timestamp,submitterid]
-		author = await self.bot.get_user_info(data[1])
+		author = await self.bot.fetch_user(data[1])
 		channel = self.bot.get_channel(data[3])
-		submitter = await self.bot.get_user_info(data[5])
+		submitter = await self.bot.fetch_user(data[5])
 		submittern = submitter.display_name if submitter is not None else "deleted user"
 		
 		e = discord.Embed(color=0x7289DA,description=data[2])

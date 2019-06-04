@@ -20,7 +20,7 @@ from io import BytesIO
 import os
 import json
 
-class Fixtures:
+class Fixtures(commands.Cog):
 	""" Rewrite of fixture & result lookups. """
 	def __init__(self, bot):
 		self.bot = bot
@@ -32,6 +32,8 @@ class Fixtures:
 	
 	# Spawn an instance of headerless chrome.
 	def spawn_chrome(self):
+		if self.driver:
+			self.driver.quit()
 		caps = DesiredCapabilities().CHROME
 		caps["pageLoadStrategy"] = "normal"  #  complete
 		chrome_options = Options()
@@ -248,19 +250,25 @@ class Fixtures:
 		return int('%02x%02x%02x' % rgb,16)	
 		
 	def get_html(self,url):
-		if self.driver is None:
-			self.spawn_chrome()		
+		self.spawn_chrome()		
 		try:
 			self.driver.get(url)
 		except TimeoutException:
 			self.driver.execute_script("window.stop();")
+		except ConnectionAbortedError: 
+			self.driver.quit()
+			self.spawn_chrome()
 			 
 		e = discord.Embed()
-		th = self.driver.find_element_by_xpath(".//div[contains(@class,'logo')]")
-		th = th.value_of_css_property('background-image')
-		th = th.strip("url(").strip(")")
-		e.set_thumbnail(url=th.strip('"'))
-		e.color = self.get_color(th)
+		try:
+			th = self.driver.find_element_by_xpath(".//div[contains(@class,'logo')]")
+			th = th.value_of_css_property('background-image')
+			th = th.strip("url(").strip(")")
+			e.set_thumbnail(url=th.strip('"'))
+			e.color = self.get_color(th)
+		except:
+			pass
+		
 		e.url = url
 		
 		t = html.fromstring(self.driver.page_source)
@@ -319,9 +327,9 @@ class Fixtures:
 				# Skip header rows.
 				if not d:
 					continue
-				d = datetime.strptime(d,"%d.%m. %H:%M")
+				d = datetime.datetime.strptime(d,"%d.%m. %H:%M")
 				d = d.replace(year=now.year)
-				d = datetime.strftime(d,"%a %d %b: %H:%M")
+				d = datetime.datetime.strftime(d,"%a %d %b: %H:%M")
 				dates.append(f"`{d}`")
 				sc = i.xpath('.//td[contains(@class,"score")]/text()')
 				sc = "".join(sc).replace('\xa0','').split(':')
@@ -349,11 +357,13 @@ class Fixtures:
 				
 		dates = []
 		games = []
+		print("fx / POF / A ")
 		if "team" in url:
 			team = "".join(t.xpath('.//div[@class="team-name"]/text()')).strip()
 			e.title = f"≡ Fixtures for {team}"
+			print("fx / POF / B 1")
 			for i in fxtb:
-				d = "".join(i.xpath('.//td[contains(@class,"time")]//text()'))
+				d = "".join(i.xpath('.//td[contains(@class,"time") and not(contains(@class,"canceled"))]//text()'))
 				# Skip header rows.
 				if not d:
 					continue
@@ -375,6 +385,7 @@ class Fixtures:
 					wh = "H"
 				games.append(f"`{wh}: {op}`{tv}")
 		else:
+			print("fx / POF / B 2 ")
 			comp = "".join(t.xpath('.//div[@class="tournament-name"]/text()'))
 			e.title = f"≡ Fixtures for {comp}"
 			for i in fxtb:
@@ -395,7 +406,7 @@ class Fixtures:
 				h = "".join(i.xpath('.//span[@class="padr"]/text()'))
 				a = "".join(i.xpath('.//span[@class="padl"]/text()'))
 				games.append(f"`{h} v {a}`")
-
+		print("fx / POF / C ")
 		if not games:
 			return # Rip
 		z = list(zip(dates,games))

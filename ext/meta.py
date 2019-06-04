@@ -4,7 +4,7 @@ from collections import OrderedDict, deque, Counter
 from discord.ext import commands
 import json
 
-class Meta:
+class Meta(commands.Cog):
 	"""Commands for utilities related to the Bot itself."""
 	def __init__(self, bot):
 		self.bot = bot
@@ -50,8 +50,8 @@ class Meta:
 	async def inviteme(self,ctx):
 		await ctx.send("Use this link to invite me, without moderation accesss. <https://discordapp.com/oauth2/authorize?client_id=250051254783311873&permissions=67488768&scope=bot>")
 	
-	@commands.group()
-	@commands.guild_only()
+	@commands.group(invoke_without_command=True)
+	@commands.guild_only()	
 	async def prefix(self,ctx):
 		""" Lists the bot prefixes for this server """
 		try:
@@ -76,7 +76,8 @@ class Meta:
 		else:
 			self.bot.config[f"{ctx.guild.id}"]["prefix"].append(prefix)
 			await self._save()
-			return await ctx.send(f"{prefix} added to prefix list.")
+			prefixes = self.bot.config[f"{ctx.guild.id}"]["prefix"]
+			return await ctx.send(f"{prefix} added to prefix list. New prefix list: ```{prefixes}```")
 			
 	@prefix.command(name="remove",aliases=["del"])
 	@commands.has_permissions(manage_guild=True)
@@ -88,7 +89,10 @@ class Meta:
 		if prefix in prefixes:
 			self.bot.config[f"{ctx.guild.id}"]["prefix"].remove(prefix)
 			await self._save()
-			return await ctx.send(f"{prefix} removed from prefix list.")
+			prefixes = self.bot.config[f"{ctx.guild.id}"]["prefix"]
+			if not prefixes:
+				return await ctx.send(f"No prefixes found for this server, use {ctx.me.mention} prefix add <your prefix> to add one.")
+			return await ctx.send(f"{prefix} removed from prefix list. New prefix list: ```{prefixes}```")			
 		else:
 			return await ctx.send(f"{prefix} was not in the existing prefix list.")
 	

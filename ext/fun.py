@@ -7,7 +7,7 @@ import discord
 import random
 import json
 
-class Misc:
+class Misc(commands.Cog):
 	""" Miscellaneous things. """
 	def __init__(self, bot):
 		self.bot = bot
@@ -32,6 +32,7 @@ class Misc:
 			"fuckin aye.",
 			"fucking rights",
 			"think so",
+			"absofuckinlutely",
 			# Negative
 			"me pal says nar.",
 			"divn't think so",
@@ -42,6 +43,7 @@ class Misc:
 			"nar",
 			"wey nar",
 			"fuck off ya daftie",
+			"absofuckinlutely not",
 			
 			# later
 			"am not sure av just had a bucket",
@@ -108,7 +110,7 @@ class Misc:
 		e = discord.Embed(color=0x7289DA)
 		e.title = f"Poll"
 		e.description = arg
-		e.set_footer(text=f"Poll created by {ctx.author.name}")
+		e.set_footer(text=f"Poll created by {ctx.author.mention}")
 		
 		m = await ctx.send(embed=e)
 		await m.add_reaction('👍')
@@ -176,7 +178,7 @@ class Misc:
 	@commands.command()
 	@commands.is_owner()
 	async def secrettory(self,ctx):
-		await ctx.send(f"The secret tory is {random.choice(ctx.guild.members)}")
+		await ctx.send(f"The secret tory is {random.choice(ctx.guild.members).mention}")
 	
 	# @commands.command(aliases=["games"])
 	# async def roleme(self,ctx,*,game):

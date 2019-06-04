@@ -28,7 +28,7 @@ class TimeParser:
 		if self.seconds < 0:
 			raise commands.BadArgument("That was in the past mate...")
 			
-class Timers:
+class Timers(commands.Cog):
 	def __init__(self,bot):
 		self.bot = bot
 	

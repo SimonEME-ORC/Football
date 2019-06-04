@@ -8,18 +8,16 @@ from lxml import html
 import html as htmlc
 import traceback
 					
-class Twitter:
+class Twitter(commands.Cog):
 	""" Twitter stream commands """
 	def __init__(self, bot):
 		self.bot = bot
-		self.tweetson = True
 		with open("twitter.json") as f:
 			self.track = json.load(f)
 		self.pclient = PeonyClient(**self.bot.credentials['Twitter'])
 		self.bot.twitask = self.bot.loop.create_task(self.twat())
 	
 	def __unload(self):
-		self.tweetson = False
 		self.bot.twitask.cancel()
 
 	async def _save(self):
@@ -44,10 +42,6 @@ class Twitter:
 			async for t in stream:
 				# Break loop if bot not running.
 				if self.bot.is_closed():
-					break
-					
-				# if tweet output is disabled, break the loop.
-				if not self.tweetson:
 					break
 				
 				# discard malformed tweets	
@@ -164,13 +158,6 @@ class Twitter:
 		""" Check delay and status of twitter tracker """
 		e = discord.Embed(title="Twitter Status",color=0x7EB3CD)
 		e.set_thumbnail(url="https://i.imgur.com/jSEtorp.png")
-		if self.tweetson:
-			e.description = "```diff\n+ ENABLED```"
-			footer = ""
-		else:
-			e.description = "```diff\n- DISABLED```"
-			e.color = 0xff0000
-			footer = "Tweets are not currently being output."
 		e.set_footer(text=footer)
 		for i in set([i[1]["channel"] for i in self.track.items()]):
 			# Get Channel name from ID in JSON
@@ -197,33 +184,6 @@ class Twitter:
 			except NameError:
 				pass
 		await ctx.send(embed=e)
-	
-	@twitter.command(name="on",aliases=["start"])
-	@commands.is_owner()
-	async def _on(self,ctx):
-		""" Turn tweet output on """
-		if not self.tweetson:
-			self.tweetson = True
-			await ctx.send("Twitter output has been enabled.")
-			self.bot.twitask = self.bot.loop.create_task(self.twat())
-		elif self.bot.twitask._state in ["FINISHED","CANCELLED"]:
-			e = discord.Embed(color=0x7EB3CD)
-			e.description = f"Restarting {self.bot.twitask._state}\
-							task after exception {self.bot.twitask.exception()}."
-			await ctx.send(embed=e)
-			self.bot.twitask = self.bot.loop.create_task(self.twat())
-		else:
-			await ctx.send("Twitter output already enabled.")
-		
-	@twitter.command(name="off",aliases=["stop"])
-	@commands.is_owner()
-	async def _off(self,ctx):
-		""" Turn tweet output off """
-		if self.tweetson:
-			self.tweetson = False
-			await ctx.send("Twitter output has been disabled.")
-		else:
-			await ctx.send("Twitter output already disabled.")
 		
 	@twitter.command(name="add")
 	@commands.is_owner()

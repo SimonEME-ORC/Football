@@ -64,7 +64,7 @@ unidict = {
 	"u":"🇺","v":"🇻","w":"🇼","x":"🇽","y":"🇾","z":"🇿"
 	}
 
-class Transfers:
+class Transfers(commands.Cog):
 	""" Transfermarket lookups """
 	def __init__(self, bot):
 		self.bot = bot
@@ -580,14 +580,20 @@ class Transfers:
 				e = str(reaction.emoji)
 				return e in res.keys()
 		
+		async def end(m):
+			try:
+				return await m.clear_reactions()
+			except:
+				return
+		
 		# Wait for appropriate reaction
 		try:
 			rea = await self.bot.wait_for("reaction_add",check=check,timeout=120)
 		except asyncio.TimeoutError:
-			return await m.clear_reactions()
+			await end(m)
 		rea = rea[0]
 		if rea.emoji == "⏏": #eject cancels.
-			return await m.clear_reactions()
+			await end(m)
 		elif rea.emoji in res.keys():
 			# invoke appropriate subcommand for category selection.
 			await m.delete()
@@ -720,12 +726,18 @@ class Transfers:
 					return e.startswith(('⏮','◀','▶','⏭','⏏'))
 		
 		# Reaction Logic Loop.
+		
+		async def end(m):
+			try:
+				return await m.clear_reactoins()
+			except:
+				return
+		
 		while True:
 			try:
 				res = await self.bot.wait_for("reaction_add",check=check,timeout=30)
 			except asyncio.TimeoutError:
-				await m.clear_reactions()
-				break
+				await end(m)
 			res = res[0]
 			if res.emoji == "⏮": #first
 				page = 1
@@ -742,8 +754,7 @@ class Transfers:
 				page = maxpage
 				await m.remove_reaction("⏭",ctx.message.author)
 			if res.emoji == "⏏": #eject
-				await m.clear_reactions()
-				break
+				await end(m)
 			if res.emoji in reactdict:
 				await m.delete()
 				match = reactdict[res.emoji]

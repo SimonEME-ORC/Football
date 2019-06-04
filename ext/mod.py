@@ -29,7 +29,7 @@ class TimeParser:
 		if self.seconds < 0:
 			raise commands.BadArgument("That was in the past mate...")
 
-class Mod:
+class Mod(commands.Cog):
 	''' Guild Moderation Commands '''
 	def __init__(self, bot):
 		self.bot = bot
@@ -67,13 +67,14 @@ class Mod:
 	
 	@commands.command()
 	@commands.is_owner()
-	@commands.bot_has_permissions(manage_messages=True)
-	async def say(self, ctx,destin:discord.TextChannel = None,*,tosay):
+	async def say(self,ctx,destin:discord.TextChannel = None,*,tosay):
 		""" Say something as the bot in specified channel """
+		try:
+			await ctx.message.delete()
+		except:
+			pass
 		if destin is None:
 			destin = ctx
-		await ctx.message.delete()
-		print(f"{ctx.author} in {destin}: {tosay}")
 		await destin.send(tosay)
 
 	@commands.command(aliases=["pin"])
@@ -154,8 +155,12 @@ class Mod:
 		
 		await member.remove_roles(mrole)
 		await ctx.send(f"{member.mention} was unmuted.")
-		if self.bot.config[f"{ctx.guild.id}"]["mod"]["mutes"] == "On":
-			await self.bot.get_channel(c["channel"]).send(f"{member.mention} was unmuted by {ctx.author}")		
+		try:
+			if self.bot.config[f"{ctx.guild.id}"]["mod"]["mutes"] == "On":
+				await self.bot.get_channel(c["channel"]).send(f"{member.mention} was unmuted by {ctx.author}")	
+		except KeyError:
+			self.bot.config[f"{ctx.guild.id}"]["mod"]["mutes"] == "Off"
+				
 
 	@commands.has_permissions(kick_members=True)
 	@commands.command()
@@ -297,7 +302,7 @@ class Mod:
 		try:
 			un,discrim = who.split('#')
 			for i in await ctx.guild.bans():
-				if i.name == un:
+				if i.user.display_name == un:
 					if i.discriminator == discrim:
 						try:
 							await self.bot.http.unban(i.user.id, ctx.guild.id)
@@ -309,7 +314,7 @@ class Mod:
 							await ctx.send(f"🆗 {who} was unbanned")
 		except ValueError:
 			for i in await ctx.guild.bans():
-				if i.name == who:
+				if i.user.name == who:
 					try:
 						await self.bot.http.unban(i.user.id, ctx.guild.id)
 					except discord.Forbidden:

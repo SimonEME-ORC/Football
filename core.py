@@ -35,8 +35,7 @@ async def get_prefix(bot, message):
 	return commands.when_mentioned_or(*pref)(bot, message)
 
 description = "Football lookup bot by Painezor#8489"
-bot = commands.Bot(command_prefix=get_prefix, description=description,
-				   pm_help=None)
+bot = commands.Bot(command_prefix=get_prefix, description=description,help_command = commands.DefaultHelpCommand(dm_help = True))
 				   
 # On Client Ready
 @bot.event
@@ -84,7 +83,7 @@ if __name__ == '__main__':
 	# Cleanup.
 	bot.twitask.cancel()
 	bot.scorechecker.cancel()
-	self.bot.run_until_complete(bot.session.close()) #Aiohttp ClientSession
+	bot.run_until_complete(bot.session.close()) #Aiohttp ClientSession
 	handlers = log.handlers[:]
 	for hdlr in handlers:
 		hdlr.close()

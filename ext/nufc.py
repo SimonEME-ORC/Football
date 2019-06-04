@@ -4,7 +4,7 @@ from unidecode import unidecode
 from lxml import html
 import random
 
-class NUFC:
+class NUFC(commands.Cog):
 	""" NUFC.com player profiles """
 	def __init__(self, bot):
 		self.bot = bot
@@ -19,7 +19,8 @@ class NUFC:
 	async def color(self,ctx,color):
 		""" Gives you a colour """
 		if not ctx.channel.id == 332167049273016320:
-			return await ctx.send("Wrong channel.",delete_after=2)
+			await ctx.message.delete()
+			return await ctx.send(f"{ctx.author.mention} wrong channel.",delete_after=2)
 		else:
 			color.strip('#')
 			color.strip('0x')
@@ -30,14 +31,24 @@ class NUFC:
 				rcolor = discord.Colour(int(color,16))
 			except ValueError:
 				return await ctx.send('Not a valid Hex Code. Check <http://htmlcolorcodes.com/color-picker/>')
+			
 			e = discord.Embed(color=rcolor)
 			e.description = f"{ctx.author.mention}'s name colour has been updated."
 			e.set_footer(text="Confused? Go to http://htmlcolorcodes.com/color-picker/ pick a colour, and copy the hex code.")
-			if discord.utils.get(ctx.guild.roles, name=ctx.author.name) is None:
-				nrole = await ctx.guild.create_role(name=ctx.author.name,reason="coloured names are still cancer",color=rcolor)
+			
+			for i in ctx.author.roles:
+				# Check if role hoisted
+				removelist = []
+				if not i.hoist and not i == ctx.guild.default_role:
+					removelist.append(i)
+				
+				await ctx.author.remove_roles(*removelist)
+	
+			if discord.utils.get(ctx.guild.roles, name=f"#{color.upper()}") is None:
+				nrole = await ctx.guild.create_role(name=f"#{color.upper()}",reason="coloured names are still cancer",color=rcolor)
 				await ctx.author.add_roles(nrole,reason="Colours are cancer")
 			else:
-				orole = discord.utils.get(ctx.guild.roles, name=ctx.author.name)
+				orole = discord.utils.get(ctx.guild.roles, name=f"#{color}")
 				await orole.edit(color=rcolor)
 				await ctx.author.add_roles(orole,reason="Colours are cancer")
 			await ctx.send(embed=e)
@@ -81,7 +92,7 @@ class NUFC:
 				return await ctx.send("Nobody has added any streams yet.")
 		except KeyError:
 			self.bot.streams[f"{ctx.guild.id}"] = []
-			return await ctx.send("Nobody has added any streams yet. Try r/soccerstreams")
+			return await ctx.send("Nobody has added any streams yet.")
 		output = "**Streams: **\n"
 		for c,v in enumerate(self.bot.streams[f"{ctx.guild.id}"],1):
 			output += f"{c}: {v}\n"
@@ -90,7 +101,7 @@ class NUFC:
 	@streams.command(name="add")
 	async def stream_add(self,ctx,*,stream):
 		""" Add a stream to the stream list. """
-		if not "://" in stream or len(stream) > 100:
+		if not "://" in stream:
 			return await ctx.send('That doesn\'t look like a stream.')
 		# Hide link preview.
 		if "http" in stream:

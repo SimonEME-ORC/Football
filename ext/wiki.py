@@ -3,7 +3,7 @@ from discord.ext import commands
 from lxml import html
 import re
 
-class Wikipedia:
+class Wikipedia(commands.Cog):
 	""" Wikipedia Search """
 	def __init__(self, bot):
 		self.bot = bot

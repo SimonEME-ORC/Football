@@ -7,7 +7,7 @@ import json
 import aiohttp
 from lxml import html
 
-class Tv:
+class Tv(commands.Cog):
 	""" Search for live TV matches """
 	def __init__(self, bot):
 		self.bot = bot

@@ -18,8 +18,8 @@ reactdict = {
 			}
 
 # Enable/disable			  
-class GlobalChecks:
-	def __init__(self, bot):
+class GlobalChecks(commands.Cog):
+	def __init__(self, bot):	
 		self.bot = bot
 		self.bot.add_check(self.disabledcmds)
 		self.bot.add_check(self.muted)
@@ -37,7 +37,7 @@ class GlobalChecks:
 			return not str(ctx.command) in self.bot.config[f"{ctx.guild.id}"]["disabled"]
 								
 	
-class Reactions:
+class Reactions(commands.Cog):
 	def __init__(self, bot):
 		self.bot = bot
 		with open('girlsnames.txt',"r") as f:
@@ -48,26 +48,29 @@ class Reactions:
 			with open('config.json',"w",encoding='utf-8') as f:
 				json.dump(self.bot.config,f,ensure_ascii=True,
 				sort_keys=True,indent=4, separators=(',',':'))
-			
+	
+	@commands.Cog.listener()
 	async def on_guild_remove(self,guild):
 		self.bot.config.pop(f"{guild.id}")
 		await self._save()
 
+	@commands.Cog.listener()
 	async def on_member_update(self,before,after):
 		# Goala 178631560650686465
 		# Keegs 272722118192529409
 		if not before.id == 272722118192529409:
 			return
-		if before.nick != after.nick:
+		if before.nick != after.nick:	
 			async for i in before.guild.audit_logs(limit=1):
 				if i.user.id == 272722118192529409:
 					await after.edit(nick=random.choice(self.bot.girls).title())	
-					
+	@commands.Cog.listener()			
 	async def on_member_join(self,member):
 		if not member.id == 272722118192529409:
 			return
 		await member.edit(nick=random.choice(self.bot.girls).title())
-		
+	
+	@commands.Cog.listener()
 	async def on_message_delete(self,message):
 		if message.guild is None:
 			return
@@ -103,6 +106,7 @@ class Reactions:
 				e.set_image(url=att.proxy_url)
 		await delchan.send(embed=e)
 	
+	@commands.Cog.listener()
 	async def on_message(self,m):
 		c = m.content.lower()
 		# ignore bot messages

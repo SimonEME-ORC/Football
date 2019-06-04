@@ -25,7 +25,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
 
-class MatchThread:
+class MatchThread(commands.Cog):
 	""" MatchThread Bot rewrite."""
 	def __init__(self, bot):
 		self.bot = bot

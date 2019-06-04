@@ -5,7 +5,7 @@ import asyncio
 import copy
 
 
-class Info:
+class Info(commands.Cog):
 	""" Get information about users or servers. """
 	def __init__(self,bot):
 		self.bot = bot
@@ -13,7 +13,7 @@ class Info:
 	@commands.command()
 	async def hackyinfo(self,ctx,*,id):
 		""" Get info about a user by their ID #"""
-		user = await self.bot.get_user_info(id)
+		user = await self.bot.fetch_user(id)
 		e = discord.Embed()
 		e.color = 0x7289DA
 		e.set_author(name=str(user))

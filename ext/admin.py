@@ -10,7 +10,7 @@ import sys
 import datetime
 from collections import Counter
 
-class Admin:
+class Admin(commands.Cog):
 	"""Code debug & 1oading of modules"""
 	def __init__(self, bot):
 		self.bot = bot
@@ -125,6 +125,22 @@ class Admin:
 									   f"{resp.url}")
 		else:
 			await ctx.send(f"```py\n{result}```")
+	
+	
+	@commands.command()
+	@commands.is_owner()
+	async def toxic(self,ctx):
+		print("--------------------------------------------")
+		toxic = self.bot.get_channel(521382853708218369)
+		text = ""
+		async for i in toxic.history(limit=1000000,reverse=True):	
+			text += f"[{i.id}][{i.created_at}] {i.author}: {i.content}\n"
+
+		with open("fulldump-trollingchannel.txt", "wb") as fp:
+			fp.write(text.encode("utf-8"))
+			
+		print("Parse done.")
+		
 		
 	@commands.command()
 	@commands.is_owner()
@@ -159,11 +175,6 @@ class Admin:
 		"""Restarts the bot"""
 		await ctx.send(":gear: Restarting.")
 		await self.bot.logout()
-		
-	@commands.command()
-	@commands.is_owner()
-	async def ownersay(self,ctx,ch:discord.TextChannel,*,text):
-		await ch.send(text)
 		
 	@commands.command()
 	@commands.is_owner()
