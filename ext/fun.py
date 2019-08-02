@@ -110,7 +110,7 @@ class Misc(commands.Cog):
 		e = discord.Embed(color=0x7289DA)
 		e.title = f"Poll"
 		e.description = arg
-		e.set_footer(text=f"Poll created by {ctx.author.mention}")
+		e.set_footer(text=f"Poll created by {ctx.author.name}")
 		
 		m = await ctx.send(embed=e)
 		await m.add_reaction('👍')

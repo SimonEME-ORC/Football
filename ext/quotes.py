@@ -24,9 +24,18 @@ class quotedb(commands.Cog):
 	async def make_embed(self,data):
 		# Get data from ids
 		# Stored by [id,content,channelid,timestamp,submitterid]
-		author = await self.bot.fetch_user(data[1])
-		channel = self.bot.get_channel(data[3])
-		submitter = await self.bot.fetch_user(data[5])
+		try:
+			author = await self.bot.fetch_user(data[1])
+		except:
+			author = "<Deleted User>"
+		try:
+			channel = self.bot.get_channel(data[3])
+		except:
+			channel = "<Deleted Channel>"
+		try:
+			submitter = await self.bot.fetch_user(data[5])
+		except:
+			submitter = "<Deleted User>"
 		submittern = submitter.display_name if submitter is not None else "deleted user"
 		
 		e = discord.Embed(color=0x7289DA,description=data[2])
@@ -162,7 +171,7 @@ class quotedb(commands.Cog):
 			m = discord.utils.get(messages,channel=ctx.channel,author=user)
 		elif target.isdigit():
 			try:
-				m = await ctx.channel.get_message(int(target))
+				m = await ctx.channel.fetch_message(int(target))
 			except discord.errors.NotFound:
 				return await ctx.send('Message not found. Are you sure that\'s a valid ID?')
 		if m is None:

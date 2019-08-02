@@ -16,23 +16,19 @@ class Admin(commands.Cog):
 		self.bot = bot
 
 	# Error Handler
+	@commands.Cog.listener()
 	async def on_command_error(self,ctx,error):
-	
-		ignored = (commands.CommandNotFound, commands.UserInputError)
 		# Let local error handling override.
 		if hasattr(ctx.command,'on_error'):
 			return
 		
 		# NoPM
 		elif isinstance(error, commands.NoPrivateMessage):
-			await ctx.author.send('Sorry, this command cannot be used in private messages.')
-			
-		# Ignore these errors.
-		elif isinstance(error,ignored):
-			return
-			
+			await ctx.send('Sorry, this command cannot be used in DMs.')
+				
 		elif isinstance(error,discord.Forbidden):
 			try:
+				print(f"Forbidden: {ctx.message.content} ({ctx.author})in {ctx.channel.name} on {ctx.guild.name}")
 				await ctx.message.add_reaction('⛔')
 			except discord.Forbidden:
 				print(f"Forbidden: {ctx.message.content} ({ctx.author})in {ctx.channel.name} on {ctx.guild.name}")
@@ -45,7 +41,8 @@ class Admin(commands.Cog):
 			traceback.print_tb(error.original.__traceback__)
 			print('{0.__class__.__name__}: {0}'.format(error.original),
 				  file=sys.stderr)	
-				  
+		elif isinstance(error, commands.CommandNotFound):
+			print(f"Invalid command: {ctx.author.name} on {ctx.guild.name} ({ctx.message.content})")
 		else:
 			print(f"Error: {ctx.message.content} ({ctx.author.name} on {ctx.guild.name})\n {error}")
 		
@@ -126,21 +123,14 @@ class Admin(commands.Cog):
 		else:
 			await ctx.send(f"```py\n{result}```")
 	
-	
 	@commands.command()
 	@commands.is_owner()
-	async def toxic(self,ctx):
-		print("--------------------------------------------")
-		toxic = self.bot.get_channel(521382853708218369)
-		text = ""
-		async for i in toxic.history(limit=1000000,reverse=True):	
-			text += f"[{i.id}][{i.created_at}] {i.author}: {i.content}\n"
-
-		with open("fulldump-trollingchannel.txt", "wb") as fp:
-			fp.write(text.encode("utf-8"))
-			
-		print("Parse done.")
-		
+	async def guilds(self,ctx):
+		guilds = []
+		for i in self.bot.guilds:
+			guilds.append(f"{i.id}: {i.name}")
+		guilds = "\n".join(guilds)
+		await ctx.send(guilds)
 		
 	@commands.command()
 	@commands.is_owner()

@@ -4,10 +4,9 @@ import discord
 import asyncio
 import copy
 
-
 class Info(commands.Cog):
 	""" Get information about users or servers. """
-	def __init__(self,bot):
+	def __init__(self, bot):
 		self.bot = bot
 
 	@commands.command()
@@ -17,10 +16,29 @@ class Info(commands.Cog):
 		e = discord.Embed()
 		e.color = 0x7289DA
 		e.set_author(name=str(user))
-		e.description = f"User ID: {user.id}"
+		e.add_field(name='ID', value=user.id,inline=True)
+		e.add_field(name='Created at', value=user.created_at,inline=True)
+		e.add_field(name="Is bot?",value=user.bot)
 		e.set_thumbnail(url=user.avatar_url)
 		await ctx.send(embed=e)
-		
+	
+	
+	@commands.command()
+	@commands.guild_only()
+	@commands.is_owner()
+	async def shared(self,ctx,*,id):
+		id = int(id)	
+		matches = []
+		for i in self.bot.guilds:
+			for j in i.members:
+				if j.id == id:
+					matches.append(i.name)
+		if matches:
+			matches = ", ".join(matches)
+			await ctx.send(f"User ID found on these Shared servers: {matches}")
+		else:
+			await ctx.send("No shared servers found.")
+	
 	@commands.group(invoke_without_command=True)
 	@commands.guild_only()
 	async def info(self,ctx,*,member: discord.Member = None):
@@ -76,7 +94,7 @@ class Info(commands.Cog):
 			outstr += f"User Roles: {', '.join(roles)}"
 			outstr += "```"
 			await ctx.send(outstr)
-
+	
 	@info.command(name='guild', aliases=["server"])
 	@commands.guild_only()
 	async def server_info(self, ctx):

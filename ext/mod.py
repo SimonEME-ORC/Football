@@ -39,31 +39,6 @@ class Mod(commands.Cog):
 			with open('config.json',"w",encoding='utf-8') as f:
 				json.dump(self.bot.config,f,ensure_ascii=True,
 				sort_keys=True,indent=4, separators=(',',':'))
-				
-	async def on_channel_create(self,channel):
-		try:
-			muted = discord.utils.get(channel.guild.roles, name='Muted')
-			moverwrite = PermissionOverwrite()
-			moverwrite.add_reactions = False
-			moverwrite.send_messages = False
-			await channel.set_permissions(mrole,overwrite=moverwrite)
-		except:
-			return
-		
-		
-	@commands.group(invoke_without_command=True)
-	@commands.has_permissions(view_audit_logs=True)
-	async def logs(self,ctx):
-		""" View Audit Logs """
-		pass
-		
-	@logs.command()
-	async def bans(self,ctx):
-		""" View the most recent bans """
-		logs = []
-		async for i in ctx.guild.audit_logs(limit=100,action=discord.AuditLogAction.ban):
-			logs.append(i)
-		await ctx.send(logs)
 	
 	@commands.command()
 	@commands.is_owner()
@@ -240,36 +215,30 @@ class Mod(commands.Cog):
 	@commands.has_permissions(kick_members=True)
 	async def kick(self,ctx,user : discord.Member,*,reason = "unspecified reason."):
 		""" Kicks the user from the server """
+		await ctx.message.delete()
 		try:
-			await ctx.message.delete()
 			await user.kick(reason=f"{ctx.author.name}: {reason}")
 		except discord.Forbidden:
 			await ctx.send(f"⛔ Sorry {ctx.author.name} I can't kick {user.mention}.")
 		except discord.HTTPException:
 			await ctx.send('❔ Kicking failed.')
 		else:
-			if reason == "unspecified reason.":
-				await ctx.send(f"👢 {user.mention} was kicked by {ctx.author.display_name}.")
-			else:
-				await ctx.send(f"👢 {user.mention} was kicked by {ctx.author.display_name} for: \"{reason}\".")
+			await ctx.send(f"👢 {user.mention} was kicked by {ctx.author.mention} for: \"{reason}\".")
 	
 	@commands.command()
 	@commands.has_permissions(ban_members=True)
 	@commands.bot_has_permissions(ban_members=True)
 	async def ban(self,ctx,member : discord.Member,*,reason="Not specified",days = 0):
 		""" Bans the member from the server """
+		await ctx.message.delete()
 		try:
-			await ctx.message.delete()
 			await member.ban(reason=f"{ctx.author.name}: {reason}",delete_message_days=days)
 		except discord.Forbidden:
 			await ctx.send(f"⛔ Sorry, I can't ban {member.mention}.")
 		except discord.HTTPException:
 			await ctx.send("❔ Banning failed.")
 		else:
-			if reason == "Not specified":
-				await ctx.send(f"☠ {member.mention} was banned by {ctx.author.display_name} (No reason provided)")
-			else:
-				await ctx.send(f"☠ {member.mention} was banned by {ctx.author.display_name} for {reason}.")
+			await ctx.send(f"☠ {member.mention} was banned by {ctx.author.mention} for: \"{reason}\".")
 	
 	@commands.command()
 	@commands.has_permissions(ban_members=True)
@@ -289,6 +258,7 @@ class Mod(commands.Cog):
 	@commands.bot_has_permissions(ban_members=True)
 	async def unban(self,ctx,*,who):
 		""" Unbans a user from the server (use name#discrim or userid)"""
+		# Try to get by userid. 
 		if who.isdigit():
 			who = self.bot.get_user(int(who))
 			try:
@@ -298,12 +268,24 @@ class Mod(commands.Cog):
 			except discord.HTTPException:
 				await ctx.send("❔ Unban failed.")
 			else:
-				await ctx.send(f"🆗 {who} was unbanned")			
-		try:
-			un,discrim = who.split('#')
-			for i in await ctx.guild.bans():
-				if i.user.display_name == un:
-					if i.discriminator == discrim:
+				await ctx.send(f"🆗 {who} was unbanned")	
+		else:				
+			try:
+				un,discrim = who.split('#')
+				for i in await ctx.guild.bans():
+					if i.user.display_name == un:
+						if i.discriminator == discrim:
+							try:
+								await self.bot.http.unban(i.user.id, ctx.guild.id)
+							except discord.Forbidden:
+								await ctx.send("⛔ I can\'t unban that user.")
+							except discord.HTTPException:
+								await ctx.send("❔ Unban failed.")
+							else:
+								await ctx.send(f"🆗 {who} was unbanned")
+			except ValueError:
+				for i in await ctx.guild.bans():
+					if i.user.name == who:
 						try:
 							await self.bot.http.unban(i.user.id, ctx.guild.id)
 						except discord.Forbidden:
@@ -312,17 +294,6 @@ class Mod(commands.Cog):
 							await ctx.send("❔ Unban failed.")
 						else:
 							await ctx.send(f"🆗 {who} was unbanned")
-		except ValueError:
-			for i in await ctx.guild.bans():
-				if i.user.name == who:
-					try:
-						await self.bot.http.unban(i.user.id, ctx.guild.id)
-					except discord.Forbidden:
-						await ctx.send("⛔ I can\'t unban that user.")
-					except discord.HTTPException:
-						await ctx.send("❔ Unban failed.")
-					else:
-						await ctx.send(f"🆗 {who} was unbanned")
 		
 	@commands.command(aliases=['bans'])
 	@commands.guild_only()
@@ -417,7 +388,7 @@ class Mod(commands.Cog):
 		e = discord.Embed(color=0x7289DA)
 		e.description = f"Mod Channel: {mc.mention}\n"
 		e.title = f"Config settings for {ctx.guild.name}"
-		for i in ['joins','leaves','bans','unbans','emojis']:
+		for i in ['joins','leaves','bans','emojis','mutes']:
 			try:
 				c[i]
 			except KeyError:
@@ -425,7 +396,6 @@ class Mod(commands.Cog):
 		e.description += f"Joins: `{c['joins']}`\n"
 		e.description += f"Leaves: `{c['leaves']}`\n"
 		e.description += f"Bans: `{c['bans']}`\n"
-		e.description += f"Unbans: `{c['unbans']}`\n"
 		e.description += f"Emojis: `{c['emojis']}`\n"
 		e.description += f"Mutes: `{c['mutes']}`"
 		e.set_thumbnail(url=ctx.guild.icon_url)
@@ -527,7 +497,8 @@ class Mod(commands.Cog):
 		ch = self.bot.get_channel(c['channel']).mention
 		await ctx.send(f"Join messages will no longer be output to {ch}")
 		await self._save()
-	
+
+	@commands.Cog.listener()
 	async def on_guild_emojis_update(self,guild,before,after):
 		# Check config to see if outputting.
 		try:
@@ -546,7 +517,8 @@ class Mod(commands.Cog):
 			return await c.send(f"The '{removedemoji.name}' emoji was removed")
 		else:
 			await c.send(f"The {newemoji[0]} emoji was created.")
-			
+
+	@commands.Cog.listener()			
 	async def on_member_join(self,mem):
 		try:
 			j = self.bot.config[f"{mem.guild.id}"]["mod"]["joins"]
@@ -602,7 +574,7 @@ class Mod(commands.Cog):
 		ch = self.bot.get_channel(c['channel']).mention
 		await ctx.send(f"Leave messages will now be output to {ch}")
 		await self._save()
-
+		
 	@leaves.command(name="off")
 	@commands.has_permissions(manage_guild=True)
 	async def loff(self,ctx):
@@ -612,13 +584,15 @@ class Mod(commands.Cog):
 		ch = self.bot.get_channel(c['channel']).mention
 		await ctx.send(f"Leave messages will no longer be output to {ch}")
 		await self._save()
-	
+		
+	@commands.Cog.listener()
 	async def on_member_remove(self,member):
 		try:
 			l = self.bot.config[f"{member.guild.id}"]["mod"]["leaves"]
 			c = self.bot.config[f"{member.guild.id}"]["mod"]["channel"]
 			c = self.bot.get_channel(c)
 		except KeyError:
+			print("Key error, on member remove.")
 			return
 		if l == "On":
 			async for i in member.guild.audit_logs(limit=1):
@@ -626,9 +600,8 @@ class Mod(commands.Cog):
 				if str(x.target) == str(member):
 					if x.action.name == "kick":
 						if x.reason is not None:
-							for i in ["roulete","Asked to be"]:
-								if i in x.reason:
-									return
+							if any(["roulete","Asked to be"]) in x.reason:
+								return
 						return await c.send(f"👢 **Kick**: {member.mention} by {x.user.mention} for {x.reason}.")
 					elif x.action.name == "ban":
 						return await c.send(f"☠ **Ban**: {member.mention} by {x.user.mention} for {x.reason}.")
@@ -706,46 +679,11 @@ class Mod(commands.Cog):
 		ch = self.bot.get_channel(c['channel']).mention
 		await ctx.send(f"Ban messages will no longer be output to {ch}")
 		await self._save()
-	
-	@commands.has_permissions(manage_guild=True)
-	@commands.group(invoke_without_command=True)
-	async def unbanlog(self,ctx):
-		""" Show or hide Ban information <On|Off>"""
-		try:
-			c = self.bot.config[f"{ctx.guild.id}"]["mod"]
-			mc = self.bot.get_channel(c["channel"])
-		except KeyError:
-			m =f"Mod channel not set, use {self.bot.command_prefix[0]}mod set"
-			return await ctx.send(m)
-		try:
-			status = c["unbans"]
-		except KeyError:
-			c["unbans"] = "Off"
-		await ctx.send(f"Unban messages are currently set to `{status}`")
 		
-	@unbanlog.command(name="on")
-	@commands.has_permissions(manage_guild=True)
-	async def unbon(self,ctx):
-		""" Display "Member has been unbanned" message """
-		c = self.bot.config[f"{ctx.guild.id}"]["mod"]
-		j = c["unbans"] = "On"
-		ch = self.bot.get_channel(c['channel']).mention
-		await ctx.send(f"Unban messages will now be output to {ch}")
-		await self._save()
-
-	@unbanlog.command(name="off")
-	@commands.has_permissions(manage_guild=True)
-	async def unboff(self,ctx):
-		""" Hides "Member has been unbanned" messages """
-		c = self.bot.config[f"{ctx.guild.id}"]["mod"]
-		j = c["unbans"] = "Off"
-		ch = self.bot.get_channel(c['channel']).mention
-		await ctx.send(f"Unban messages will no longer be output to {ch}")
-		await self._save()
-		
+	@commands.Cog.listener()
 	async def on_member_unban(self,guild,member):
 		try:
-			l = self.bot.config[f"{guild.id}"]["mod"]["unbans"]
+			l = self.bot.config[f"{guild.id}"]["mod"]["bans"]
 			c = self.bot.config[f"{guild.id}"]["mod"]["channel"]
 			c = self.bot.get_channel(c)
 		except KeyError:

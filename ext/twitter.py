@@ -57,8 +57,6 @@ class Twitter(commands.Cog):
 				else:
 					continue
 				
-
-				
 				# discard retweets & adverts		
 				if hasattr(t,'retweeted_status') or t.text.startswith(("rt",'ad')):
 					continue
@@ -158,7 +156,6 @@ class Twitter(commands.Cog):
 		""" Check delay and status of twitter tracker """
 		e = discord.Embed(title="Twitter Status",color=0x7EB3CD)
 		e.set_thumbnail(url="https://i.imgur.com/jSEtorp.png")
-		e.set_footer(text=footer)
 		for i in set([i[1]["channel"] for i in self.track.items()]):
 			# Get Channel name from ID in JSON
 			fname = f"#{self.bot.get_channel(int(i)).name} Tracker"

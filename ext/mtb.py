@@ -30,6 +30,7 @@ class MatchThread(commands.Cog):
 	def __init__(self, bot):
 		self.bot = bot
 		self.driver = None
+		
 		# Discord and Subreddit
 		# r/NUFC 
 		self.subreddit = "nufc"
@@ -93,7 +94,6 @@ class MatchThread(commands.Cog):
 		# Scheduler
 		self.nextmatch = ""
 		self.postat = ""
-		self.scheduling = True
 		self.schedtask = self.bot.loop.create_task(self.scheduler())
 		
 		# MT Task
@@ -132,22 +132,30 @@ class MatchThread(commands.Cog):
 	# Loop to check when to post.-
 	async def scheduler(self):
 		""" This is the bit that determines when to run a match thread """
-		while self.scheduling:
+		while not self.bot.is_closed():
 			# Scrape the next kickoff date & time from the fixtures list on r/NUFC
-			async with self.bot.session.get("https://old.reddit.com/r/NUFC/") as resp: 
+			async with self.bot.session.get("https://www.nufc.co.uk/matches/first-team") as resp: 
 				if resp.status != 200:
 					print(f'{resp.status} error in scheduler.')
 					await asycio.sleep(10)
 					continue
+				
 				tree = html.fromstring(await resp.text())
-				fixture = tree.xpath('.//div[@class="titlebox"]//div[@class="md"]//li[5]//table/tbody/tr[1]/td[1]//text()')[-1]
-				next = datetime.datetime.strptime(fixture,'%a %d %b %H:%M').replace(year=datetime.datetime.now().year)
-				if not next:
-					print("No matches found. Sleeping 24h.")
-					await asyncio.sleep(86400) # sleep for a day.
-				else:
-					print(f"Match found: {next}")
+				nextfix = tree.xpath('.//div[@class="fixtures__item"]//p[@content]//text()')[0]
+				
+				nextfix = nextfix.replace("3rd","3").replace("th","").replace("1st","1").replace("2nd","2")
+				nextfix = nextfix.strip().split(" ",1)
+				
+				nextfix[0] = nextfix[0].rjust(2,"0")
+				nextfix = " ".join(nextfix)
+				print(nextfix)
+				
+				next = datetime.datetime.strptime(nextfix,"%d %B %Y %H:%M %p")
+				
 				now = datetime.datetime.now()
+				postat = next - now - datetime.timedelta(minutes=15)
+				
+				
 				self.nextmatch = next
 				postat = next - now - datetime.timedelta(minutes=15)
 				
@@ -853,7 +861,10 @@ class MatchThread(commands.Cog):
 	@commands.is_owner()
 	async def checkmtb(self,ctx):
 		await ctx.send(f'Debug; self.nextmatch = {self.nextmatch}')
-		await ctx.send(f'Match thread will be posted in: {self.nextmatch - datetime.datetime.now() - datetime.timedelta(minutes=15)}')
+		if self.nextmatch:
+			await ctx.send(f'Match thread will be posted in: {self.nextmatch - datetime.datetime.now() - datetime.timedelta(minutes=15)}')
+		else:
+			await ctx.send('Couldn\'t find next match.')
 	
 	@commands.command()
 	@commands.is_owner()

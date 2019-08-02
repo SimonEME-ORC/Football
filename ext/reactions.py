@@ -64,6 +64,7 @@ class Reactions(commands.Cog):
 			async for i in before.guild.audit_logs(limit=1):
 				if i.user.id == 272722118192529409:
 					await after.edit(nick=random.choice(self.bot.girls).title())	
+	
 	@commands.Cog.listener()			
 	async def on_member_join(self,member):
 		if not member.id == 272722118192529409:
@@ -117,6 +118,9 @@ class Reactions(commands.Cog):
 				await m.delete()
 			return
 		if m.guild and m.guild.id == 332159889587699712:
+			if len(m.mentions) >= 5:
+				await m.author.kick(reason="Mention spam")
+				await m.channel.send(f"👢 {m.author.mention} was autokicked.")
 			for string,reactions in reactdict.items():
 				if string in c:
 					for emoji in reactions:

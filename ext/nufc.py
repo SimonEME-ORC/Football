@@ -24,6 +24,7 @@ class NUFC(commands.Cog):
 		else:
 			color.strip('#')
 			color.strip('0x')
+			color = color.upper()
 			if len(color) != 6:
 				await ctx.send("6 character RGB value required. <http://htmlcolorcodes.com/color-picker/>")
 				return
@@ -40,17 +41,15 @@ class NUFC(commands.Cog):
 				# Check if role hoisted
 				removelist = []
 				if not i.hoist and not i == ctx.guild.default_role:
-					removelist.append(i)
-				
+					removelist.append(i)	
 				await ctx.author.remove_roles(*removelist)
 	
-			if discord.utils.get(ctx.guild.roles, name=f"#{color.upper()}") is None:
-				nrole = await ctx.guild.create_role(name=f"#{color.upper()}",reason="coloured names are still cancer",color=rcolor)
+			if discord.utils.get(ctx.guild.roles, name=f"#{color}") is None:
+				nrole = await ctx.guild.create_role(name=f"#{color}",reason="coloured names are still cancer",color=rcolor)
 				await ctx.author.add_roles(nrole,reason="Colours are cancer")
 			else:
 				orole = discord.utils.get(ctx.guild.roles, name=f"#{color}")
-				await orole.edit(color=rcolor)
-				await ctx.author.add_roles(orole,reason="Colours are cancer")
+				await ctx.author.add_roles(orole,reason="Coloured names")
 			await ctx.send(embed=e)
 	
 			
@@ -134,10 +133,15 @@ class NUFC(commands.Cog):
 		self.bot.streams[f"{ctx.guild.id}"] = []
 		await ctx.send("Streams cleared.")
 	
-	@commands.command()
+	@commands.command(hidden=True)
 	async def gherkin(self,ctx):
 		""" DON'T LET ME GOOOOOO AGAIN"""
 		await ctx.send("https://www.youtube.com/watch?v=L4f9Y-KSKJ8")
+	
+	@commands.command(hidden=True)
+	async def metro(self,ctx):
+		""" GET. OFF. THE METRO. NOOOOOOOOOOW. """
+		await ctx.send(file=discord.File('Get off the metro now.mp3'))
 	
 	@commands.command()
 	@commands.check(nufccheck)

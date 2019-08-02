@@ -10,13 +10,13 @@ import json
 
 # Startup Modules
 load = [	
-	'ext.admin','ext.fixtures','ext.fun','ext.google','ext.images','ext.info',
+	'ext.admin','ext.fixtures','ext.fun','ext.images','ext.info',
 	'ext.meta','ext.mod','ext.mtb','ext.nufc','ext.quotes',
 	'ext.reactions','ext.scores', 'ext.sidebar','ext.timers','ext.twitter',
 	'ext.transfers','ext.tv'
 	# 'ext.wiki'
 ]
-
+	
 # Enable Logging
 log = logging.getLogger('discord')
 log.setLevel(logging.INFO)
@@ -35,7 +35,7 @@ async def get_prefix(bot, message):
 	return commands.when_mentioned_or(*pref)(bot, message)
 
 description = "Football lookup bot by Painezor#8489"
-bot = commands.Bot(command_prefix=get_prefix, description=description,help_command = commands.DefaultHelpCommand(dm_help = True))
+bot = commands.Bot(command_prefix=get_prefix, description=description,help_command = commands.DefaultHelpCommand(dm_help_threshold = 500))
 				   
 # On Client Ready
 @bot.event

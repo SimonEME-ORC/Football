@@ -254,7 +254,9 @@ class Scores(commands.Cog):
 		# Wanted league is in the dict's keys.
 		filtered = {}
 		for (k,v) in self.matchlist.items():
-			if any(i in k for i in ["Champions League","Premier League"]) and not any(i in k for i in ["Women","Welsh","Russian"]):
+			wanted = ["Champions League","Premier League","FA Cup"]
+			unwanted = ["Women","Welsh","Russian","Qualifying"]
+			if any(i in k for i in wanted) and not any(i in k for i in unwanted):
 				filtered.update({k:v})
 		
 		# Flatten for iteration.

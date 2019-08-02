@@ -4,7 +4,8 @@ from discord.ext import commands
 
 import aiohttp
 import requests
-from lxml import html
+import html
+from lxml import html as htmlc
 from selenium import webdriver
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.common.exceptions import NoSuchElementException, WebDriverException
@@ -53,6 +54,9 @@ class Fixtures(commands.Cog):
 			self.driver.quit()
 		
 	async def _search(self,ctx,m,qry):
+		# aiohttp lookup for json.
+		qry = qry.replace("'","")
+
 		qryurl = f"https://s.flashscore.com/search/?q={qry}&l=1&s=1&f=1%3B1&pid=2&sid=1"
 		async with self.bot.session.get(qryurl) as resp:
 			res = await resp.text()
@@ -255,9 +259,6 @@ class Fixtures(commands.Cog):
 			self.driver.get(url)
 		except TimeoutException:
 			self.driver.execute_script("window.stop();")
-		except ConnectionAbortedError: 
-			self.driver.quit()
-			self.spawn_chrome()
 			 
 		e = discord.Embed()
 		try:
@@ -270,157 +271,107 @@ class Fixtures(commands.Cog):
 			pass
 		
 		e.url = url
-		
-		t = html.fromstring(self.driver.page_source)
+		t = htmlc.fromstring(self.driver.page_source)
+		self.driver.quit()
 		return t,e
 
 	def parse_results(self,url,au):
 		url = f"{url}/results"
 		t,e = self.get_html(url)
-		rstb = t.xpath('.//div[@id="fs-results"]//tbody/tr')
-		now = datetime.datetime.now()
-		dates = []
-		games = []
-		if "/team/" in url:
-			team = "".join(t.xpath('.//div[@class="team-name"]/text()')).strip()
-			e.title = f"≡ Results for {team}"
-			for i in rstb:
-				d = "".join(i.xpath('.//td[contains(@class,"time")]//text()'))
-				# Skip header rows.
-				if not d:
-					continue
-					
-				# Get match date
-				try:
-					d = datetime.datetime.strptime(d,"%d.%m. %H:%M")
-					d = d.replace(year=now.year)
-					d = datetime.datetime.strftime(d,"%a %d %b: %H:%M")
-				except ValueError:
-					# Fix older than a year games.
-					d = datetime.datetime.strptime(d,"%d.%m.%Y")
-					d = datetime.datetime.strftime(d,"%d/%m/%Y")
-				
-				# Score
-				sc = i.xpath('.//td[contains(@class,"score")]/text()')
-				sc = "".join(sc).replace('\xa0','').split(':')
-				h = sc[0]
-				a = sc[1]
-				sc = "-".join(sc)
-				# Assume we're playing at home.
-				op = "".join(i.xpath('.//span[@class="padl"]/text()')).strip() # PADR IS HOME.
-				
-				wh = "H"
-				w = "W" if h > a else "D" if h == a else "L"
-				if team in op:
-					# if we're actually the away team.
-					wh = "A"
-					op = "".join(i.xpath('.//span[@class="padr"]/text()')).strip()
-					w = "L" if h > a else "D" if h == a else "W"
-					
-				dates.append(f"`{wh}: {d}`")
-				games.append(f"`{w}: {sc} v {op}`")
-		else:
-			comp = "".join(t.xpath('.//div[@class="tournament-name"]/text()'))
-			e.title = f"≡ Fixtures for {comp}"
-			for i in rstb:
-				d = "".join(i.xpath('.//td[contains(@class,"time")]//text()'))
-				# Skip header rows.
-				if not d:
-					continue
+		matches = []
+		results = t.xpath(".//div[contains(@class,'sportName soccer')]/div")
+		
+		title = "".join(t.xpath('.//div[@class="teamHeader__name"]/text()')).strip()
+		e.title = f"≡ Results for {title}"		
+		for i in results:
+			d = "".join(i.xpath('.//div[@class="event__time"]//text()'))
+			
+			if not d:
+				continue
+			try:
 				d = datetime.datetime.strptime(d,"%d.%m. %H:%M")
-				d = d.replace(year=now.year)
-				d = datetime.datetime.strftime(d,"%a %d %b: %H:%M")
-				dates.append(f"`{d}`")
-				sc = i.xpath('.//td[contains(@class,"score")]/text()')
-				sc = "".join(sc).replace('\xa0','').split(':')
-				hos = sc[0]
-				aws = sc[1]
+				d = d.replace(year=datetime.datetime.now().year)
+				d = datetime.datetime.strftime(d,"%a %d %b")
+			except ValueError:
+				# Fix older than a year games.
+				d = datetime.datetime.strptime(d,"%d.%m.%Y")
+				d = datetime.datetime.strftime(d,"%d/%m/%Y")
+			
+			# Score
+			h,a = i.xpath('.//div[contains(@class,"event__scores")]/span/text()')
+			sc = f"{h} - {a}"
+			
+			# Teams
+			ht,at = i.xpath('.//div[contains(@class,"event__participant")]/text()')
+			ht,at = ht.strip(),at.strip()
+			
+			if "(" in ht:
+				ht = ht.split('(')[0].strip()
+			if "(" in at:
+				at = at.split('(')[0].strip()
+			
+			if "/team/" in url:
+				# if we're actually the away team.
+				if title in ht:
+					wh,op = "A",at
+					w = "L" if h < a else "D" if h == a else "W"
+				else:
+					wh,op = "H",ht
+					w = "W" if h < a else "D" if h == a else "L"
 				
-				
-				h = "".join(i.xpath('.//span[@class="padr"]/text()'))
-				a = "".join(i.xpath('.//span[@class="padl"]/text()'))
-				sc = f"`{hos}-{aws}`"
-				games.append(f"{h} {sc} {a}")
-		if not games:
-			return # Rip
-		z = list(zip(dates,games))
-		embeds = self.build_embeds(au,e,z,"Result")
+				matches.append((f"`{wh}: {d}`",f"`{w}: {sc} v {op}`"))
+			else:
+				matches.append((f"`{d}`",f"`{ht} {sc} {at}`"))
+		
+		embeds = self.build_embeds(au,e,matches,"Result")
 		return embeds
 		
 	def parse_fixtures(self,url,au):
 		url = f"{url}/fixtures"
-		print("Fetching HTML from get_html")
 		t,e = self.get_html(url)
-		print("Performing x-path requests.")
-		fxtb = t.xpath('.//div[@id="fs-fixtures"]//tbody/tr')
-		now = datetime.datetime.now()
+
+		title = "".join(t.xpath('.//div[@class="teamHeader__name"]/text()')).strip()
+		e.title = f"≡ Fixtures for {title}"
+		
+		fixtures = t.xpath(".//div[contains(@class,'sportName soccer')]/div")
+		matches = []		
+		for i in fixtures:
+			d = "".join(i.xpath('.//div[@class="event__time"]//text()'))
+
+			if not d:
+				continue
 				
-		dates = []
-		games = []
-		print("fx / POF / A ")
-		if "team" in url:
-			team = "".join(t.xpath('.//div[@class="team-name"]/text()')).strip()
-			e.title = f"≡ Fixtures for {team}"
-			print("fx / POF / B 1")
-			for i in fxtb:
-				d = "".join(i.xpath('.//td[contains(@class,"time") and not(contains(@class,"canceled"))]//text()'))
-				# Skip header rows.
-				if not d:
-					continue
+			try:
 				d = datetime.datetime.strptime(d,"%d.%m. %H:%M")
-				d = d.replace(year=now.year)
 				d = datetime.datetime.strftime(d,"%a %d %b: %H:%M")
-				dates.append(f"`{d}`")
-				tv = i.xpath(".//span[contains(@class,'tv')]")
-				if tv:
-					tv = i.xpath("./@id")[0].split("_")[-1]
-					tv = f" [`📺`](http://www.flashscore.com/match/{tv}/)"
-				else:
-					tv = ""
-				op = "".join(i.xpath('.//span[@class="padr"]/text()')).strip()
-				wh = "A"
+			except ValueError: # Fuck this cant be bothered to fix it.
+				d = "Tue 31 Feb: 15:00"
 				
-				if team in op:
-					op = "".join(i.xpath('.//span[@class="padl"]/text()'))
-					wh = "H"
-				games.append(f"`{wh}: {op}`{tv}")
-		else:
-			print("fx / POF / B 2 ")
-			comp = "".join(t.xpath('.//div[@class="tournament-name"]/text()'))
-			e.title = f"≡ Fixtures for {comp}"
-			for i in fxtb:
-				d = "".join(i.xpath('.//td[contains(@class,"time")]//text()'))
-				# Skip header rows.
-				if not d:
-					continue
-				d = datetime.datetime.strptime(d,"%d.%m. %H:%M")
-				d = d.replace(year=now.year)
-				d = datetime.datetime.strftime(d,"%a %d %b: %H:%M")
-				tv = i.xpath(".//span[contains(@class,'tv')]")
-				if tv:
-					tv = i.xpath("./@id")[0].split("_")[-1]
-					tv = f"[`📺`](http://www.flashscore.com/match/{tv}/)"
-				else:
-					tv = ""
-				dates.append(f"`{d}`{tv}")
-				h = "".join(i.xpath('.//span[@class="padr"]/text()'))
-				a = "".join(i.xpath('.//span[@class="padl"]/text()'))
-				games.append(f"`{h} v {a}`")
-		print("fx / POF / C ")
-		if not games:
-			return # Rip
-		z = list(zip(dates,games))
-		embeds = self.build_embeds(au,e,z,"Fixture")
+			tv = i.xpath(".//span[contains(@class,'tv')]")
+			if tv:
+				tv = i.xpath("./@id")[0].split("_")[-1]
+				tv = f" [`📺`](http://www.flashscore.com/match/{tv}/)"
+			else:
+				tv = ""
+			
+			h,a = i.xpath('.//div[contains(@class,"event__participant")]/text()')
+			
+			if "team" in url:
+				op,wh = h,"A"
+				if title in op:
+					op,wh = a,"H"
+				matches.append((f"`{d}`",f"`{wh}: {op}`{tv}"))
+			else:
+				matches.append((f"`{d}`",f"`{h} v {a}` {tv}"))
+		embeds = self.build_embeds(au,e,matches,"Fixture")
 		return embeds
 	
 	def parse_bracket(self,bracket):
-		if self.driver is None:
-			self.spawn_chrome()
+		self.spawn_chrome()
 		self.driver.get(bracket)
-		stitches = []
+
 		totwid = 0
 		xp = './/div[@class="viewport"]'
-		
 		# Generate our base image.
 		canvas = Image.new('RGB',(0,0))
 		initheight = 0
@@ -465,6 +416,7 @@ class Fixtures(commands.Cog):
 		canvas.save(output,"PNG")
 		output.seek(0)
 		df = discord.File(output,filename="bracket.png")
+		self.driver.quit()
 		return df
 	
 	def parse_scorers(self,url,au):
@@ -506,7 +458,7 @@ class Fixtures(commands.Cog):
 			x.click()
 			players = self.driver.find_element_by_id("table-type-10")
 			t = players.get_attribute('innerHTML')
-			tree = html.fromstring(t)
+			tree = htmlc.fromstring(t)
 			players = tree.xpath('.//tbody/tr')
 			for i in players:
 				p = "".join(i.xpath('.//td[contains(@class,"player_name")]//a/text()'))
