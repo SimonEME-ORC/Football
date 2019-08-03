@@ -79,7 +79,21 @@ class Admin(commands.Cog):
 			await ctx.send(f':no_entry_sign: {type(e).__name__}: {e}')
 		else:
 			await ctx.send(f':gear: Reloaded {module}')
-		
+	
+	@commands.command()
+	@commands.is_owner()
+	async def ignore(self,ctx,user : discord.Member,*,reason="Unspecified"):
+		""" Ignore commands from a user (reason opptional)"""
+		if f"{user.id}"  in self.bot.ignored:
+			del self.bot.ignored[f"{user.id}"]
+			await ctx.send(f"Stopped ignoring commands from {user.mention}.")
+		else:
+			self.bot.ignored.update({f"{user.id}":reason})
+			await ctx.send(f"Ignoring commands from {user.mention}.")
+		with open('ignored.json',"w",encoding='utf-8') as f:
+			json.dump(self.bot.ignored,f,ensure_ascii=True,
+			sort_keys=True,indent=4, separators=(',',':'))
+	
 	@commands.command()
 	@commands.is_owner()
 	async def debug(self, ctx, *, code : str):
@@ -166,13 +180,5 @@ class Admin(commands.Cog):
 		await ctx.send(":gear: Restarting.")
 		await self.bot.logout()
 		
-	@commands.command()
-	@commands.is_owner()
-	async def emojitest(self,ctx):
-		e = discord.Embed()
-		e.description = "<:badge:332195611195605003>"
-		m = await ctx.send("<:badge:332195611195605003>",embed=e)
-		await m.add_reaction(":badge:332195611195605003")
-
 def setup(bot):
     bot.add_cog(Admin(bot))

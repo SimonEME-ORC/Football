@@ -9,6 +9,27 @@ class Info(commands.Cog):
 	def __init__(self, bot):
 		self.bot = bot
 
+	@commands.command(aliases=["lastmsg","lastonline","lastseen"])
+	async def seen(self,ctx,t : discord.Member = None):
+		""" Find the last message from a user in this channel """
+		if t == None:
+			await ctx.send("No user provided",delete_after=15)
+			return
+		m = await ctx.send("Searching...")
+		async for msg in ctx.channel.history(limit=50000):
+			if msg.author.id == t.id:
+				if t.id == 178631560650686465:
+					c = (f"{t.mention} last seen being a spacker in "
+						f" {ctx.channel.mention} at {msg.created_at} "
+						f"saying '{msg.content}'")
+					await m.edit(content=c)
+				else:
+					c = (f"{t.mention} last seen in {ctx.channel.mention} "
+						 f"at {msg.created_at} saying '{msg.content}'")
+					await m.edit(content=c)
+				return
+		await m.edit(content="Couldn't find a recent message from that user.")		
+		
 	@commands.command()
 	async def hackyinfo(self,ctx,*,id):
 		""" Get info about a user by their ID #"""

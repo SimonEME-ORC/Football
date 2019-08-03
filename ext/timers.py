@@ -34,13 +34,14 @@ class Timers(commands.Cog):
 	
 	@commands.command()
 	@commands.has_permissions(ban_members=True)
-	async def temp_ban(self,ctx,member:discord.Member,*,time: TimeParser):
+	async def tempban(self,ctx,member:discord.Member,*,time: TimeParser):
 		""" Temporarily ban a member from the server """
 		id = member.id
 		try:
 			await ctx.ban(member)
-		except:
+		except error as e:
 			return await ctx.send('Banning failed.')
+			print(e)
 		await ctx.send(f'Banned {member.mention} for {time}')
 		unbanned = await bot.get_user(id)
 		await asyncio.sleep(time.seconds)

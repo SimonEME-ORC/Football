@@ -255,7 +255,7 @@ class Transfers(commands.Cog):
 						ch = self.bot.config[i]["transfers"]["channel"]
 						ch = self.bot.get_channel(ch)
 					except KeyError:
-						print(f"Key Error (channel) for guild {i.id}")
+						print(f"Key Error (channel) for guild {i}")
 						self.bot.config[i]["transfers"]["channel"] = None
 						ch = None
 					try:
@@ -615,7 +615,7 @@ class Transfers(commands.Cog):
 				for i,j in zip(lines,targets):
 					emoji = replacelist.pop(0)
 					reactdict[emoji] = j
-					e.description += f"{emoji} {i}\n"
+					e.description += f"{emoji} \n"
 				return e,reactdict
 			else:
 				for i in lines:
