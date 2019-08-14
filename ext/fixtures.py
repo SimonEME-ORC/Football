@@ -38,10 +38,13 @@ class Fixtures(commands.Cog):
 		caps = DesiredCapabilities().CHROME
 		caps["pageLoadStrategy"] = "normal"  #  complete
 		chrome_options = Options()
-		chrome_options.add_argument('log-level=3')
 		chrome_options.add_argument("--headless")
 		chrome_options.add_argument("--window-size=1920x1200")
 		chrome_options.add_argument('--no-proxy-server')
+		chrome_options.add_argument("--proxy-server='direct://'")
+		chrome_options.add_argument("--proxy-bypass-list=*")
+		chrome_options.add_argument("--disable-extensions")
+		chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
 		
 		driver_path = os.getcwd() +"\\chromedriver.exe"
 		prefs = {'profile.default_content_setting_values': {'images': 2, 'javascript': 2}}
@@ -117,25 +120,26 @@ class Fixtures(commands.Cog):
 	@commands.command()
 	async def table(self,ctx,*,qry=None):
 		""" Get table for a league """
-		if qry is None:
-			if ctx.guild is not None:
-				if ctx.guild.id == 332159889587699712:
-					url = "https://www.flashscore.com/soccer/england/premier-league"
+		async with ctx.typing():
+			if qry is None:
+				if ctx.guild is not None:
+					if ctx.guild.id == 332159889587699712:
+						url = "https://www.flashscore.com/soccer/england/premier-league"
+					else:
+						return await ctx.send("Specify a search query.")
 				else:
-					return await ctx.send("Specify a search query.")
+					return await ctx.send("Please specify a search query.")
 			else:
-				return await ctx.send("Please specify a search query.")
-		else:
-			m = await ctx.send(f"Searching for {qry}...")
-			url = await self._search(ctx,m,qry)
-		
-		if url is None:
-			return #rip
-		m = await ctx.send(f"Grabbing table from {url}...")
-		await ctx.trigger_typing()
-		p = await self.bot.loop.run_in_executor(None,self.parse_table,url)
-		await m.delete()
-		await ctx.send(file=p)
+				m = await ctx.send(f"Searching for {qry}...")
+				url = await self._search(ctx,m,qry)
+			
+			if url is None:
+				return #rip
+			m = await ctx.send(f"Grabbing table from {url}...")
+			await ctx.trigger_typing()
+			p = await self.bot.loop.run_in_executor(None,self.parse_table,url)
+			await m.delete()
+			await ctx.send(file=p)
 	
 	def parse_table(self,url):
 		url += "/standings/"
@@ -172,37 +176,39 @@ class Fixtures(commands.Cog):
 	@commands.command()
 	async def bracket(self,ctx,*,qry=None):
 		""" Get btacket for a tournament """
-		if qry is None:
-			return await ctx.send("Specify a search query.")
-		else:
-			m = await ctx.send(f"Searching for {qry}...")
-			url = await self._search(ctx,m,qry)
-			
-		if url is None:
-			return #rip	
-		m = await ctx.send(f"Grabbing bracket from {url}...")
-		await ctx.trigger_typing()
-		p = await self.bot.loop.run_in_executor(None,self.parse_bracket,url)
-		await m.delete()
-		await ctx.send(file=p)
+		async with ctx.typing():
+			if qry is None:
+				return await ctx.send("Specify a search query.")
+			else:
+				m = await ctx.send(f"Searching for {qry}...")
+				url = await self._search(ctx,m,qry)
+				
+			if url is None:
+				return #rip	
+			m = await ctx.send(f"Grabbing bracket from {url}...")
+			await ctx.trigger_typing()
+			p = await self.bot.loop.run_in_executor(None,self.parse_bracket,url)
+			await m.delete()
+			await ctx.send(file=p)
 		
 	@commands.command(aliases=["fx"])
 	async def fixtures(self,ctx,*,qry=None):
 		""" Displays upcoming fixtures for a team or league.
 			Navigate with reactions.
 		"""
-		if qry is None:
-			if ctx.guild is not None:
-				if ctx.guild.id == 332159889587699712:
-					url = "https://www.flashscore.com/team/newcastle-utd/p6ahwuwJ"
+		async with ctx.typing():
+			if qry is None:
+				if ctx.guild is not None:
+					if ctx.guild.id == 332159889587699712:
+						url = "https://www.flashscore.com/team/newcastle-utd/p6ahwuwJ"
+					else:
+						return await ctx.send("Specify a search query.")
 				else:
 					return await ctx.send("Specify a search query.")
 			else:
-				return await ctx.send("Specify a search query.")
-		else:
-			m = await ctx.send(f"Searching for {qry}...")
-			url = await self._search(ctx,m,qry)
-		pages = await self.bot.loop.run_in_executor(None,self.parse_fixtures,url,ctx.author.name)
+				m = await ctx.send(f"Searching for {qry}...")
+				url = await self._search(ctx,m,qry)
+			pages = await self.bot.loop.run_in_executor(None,self.parse_fixtures,url,ctx.author.name)
 		await self.paginate(ctx,pages)
 
 	@commands.command(aliases=['sc'])
@@ -210,16 +216,17 @@ class Fixtures(commands.Cog):
 		""" Displays top scorers for a team or league.
 			Navigate with reactions.
 		"""
-		if qry is None:
-			if ctx.guild is not None:
-				if ctx.guild.id == 332159889587699712:
-					url = "https://www.flashscore.com/soccer/england/premier-league"
+		async with ctx.typing():
+			if qry is None:
+				if ctx.guild is not None:
+					if ctx.guild.id == 332159889587699712:
+						url = "https://www.flashscore.com/soccer/england/premier-league"
+				else:
+					return await ctx.send("Specify a search query.")
 			else:
-				return await ctx.send("Specify a search query.")
-		else:
-			m = await ctx.send(f"Searching for {qry}...")
-			url = await self._search(ctx,m,qry)
-		pages = await self.bot.loop.run_in_executor(None,self.parse_scorers,url,ctx.author.name)
+				m = await ctx.send(f"Searching for {qry}...")
+				url = await self._search(ctx,m,qry)
+			pages = await self.bot.loop.run_in_executor(None,self.parse_scorers,url,ctx.author.name)
 		await self.paginate(ctx,pages)		
 		
 	@commands.command(aliases=["rx"])
@@ -227,20 +234,21 @@ class Fixtures(commands.Cog):
 		""" Displays previous results for a team or league.
 			Navigate with reactions.
 		"""
-		if qry is None:
-			if ctx.guild is not None:
-				if ctx.guild.id == 332159889587699712:
-					url = "https://www.flashscore.com/team/newcastle-utd/p6ahwuwJ"
+		async with ctx.typing():
+			if qry is None:
+				if ctx.guild is not None:
+					if ctx.guild.id == 332159889587699712:
+						url = "https://www.flashscore.com/team/newcastle-utd/p6ahwuwJ"
+				else:
+					return await ctx.send("Specify a search query.")
 			else:
-				return await ctx.send("Specify a search query.")
-		else:
-			m = await ctx.send(f"Searching for {qry}...")
-			url = await self._search(ctx,m,qry)
-		
-		if url is None:
-			return #rip
-		
-		pages = await self.bot.loop.run_in_executor(None,self.parse_results,url,ctx.author.name)
+				m = await ctx.send(f"Searching for {qry}...")
+				url = await self._search(ctx,m,qry)
+			
+			if url is None:
+				return #rip
+			
+			pages = await self.bot.loop.run_in_executor(None,self.parse_results,url,ctx.author.name)
 		await self.paginate(ctx,pages)	
 		
 	def get_color(self,url):
