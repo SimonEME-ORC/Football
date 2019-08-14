@@ -115,10 +115,14 @@ class MatchThread(commands.Cog):
 		caps = DesiredCapabilities().CHROME
 		caps["pageLoadStrategy"] = "normal"  #  complete
 		chrome_options = Options()
-		chrome_options.add_argument('log-level=3')
+		chrome_options = Options()
 		chrome_options.add_argument("--headless")
 		chrome_options.add_argument("--window-size=1920x1200")
 		chrome_options.add_argument('--no-proxy-server')
+		chrome_options.add_argument("--proxy-server='direct://'")
+		chrome_options.add_argument("--proxy-bypass-list=*")
+		chrome_options.add_argument("--disable-extensions")
+		chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
 		
 		driver_path = os.getcwd() +"\\chromedriver.exe"
 		prefs = {'profile.default_content_setting_values': {'images': 2, 'javascript': 2}}
