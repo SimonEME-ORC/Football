@@ -50,60 +50,38 @@ class Meta(commands.Cog):
 	async def inviteme(self,ctx):
 		await ctx.send("Use this link to invite me, without moderation accesss. <https://discordapp.com/oauth2/authorize?client_id=250051254783311873&permissions=67488768&scope=bot>")
 	
-	@commands.group(invoke_without_command=True)
-	@commands.guild_only()	
-	async def prefix(self,ctx):
-		""" Lists the bot prefixes for this server """
+	@commands.command()
+	@commands.guild_only()
+	async def prefix(self,ctx,*,prefix=""):
+		""" Lists the bot prefixes for this server.
+			Use `@toonbot prefix <prefix>` to toggle <prefix> as a command prefix for this server.."""
+		
 		try:
 			prefixes = self.bot.config[f"{ctx.guild.id}"]["prefix"]
 		except KeyError:
-			self.bot.config[f"{ctx.guild.id}"]["prefix"] = ['$','!','`','.','-','?']
+			self.bot.config[f"{ctx.guild.id}"].update({"prefix":['$','!','`','.','-','?']})
 			await self._save()
-			prefixes = self.bot.config[f"{ctx.guild.id}"]["prefix"]
-		await ctx.send(f"Command prefixes for this server: ```{' '.join(prefixes)}```")
+			prefixes = ['$','!','`','.','-','?']
 		
-	@prefix.command(name="add")
-	@commands.has_permissions(manage_guild=True)
-	async def _add(self,ctx,*,prefix):
-		""" Add a bot prefix for the server """
-		prefixes = self.bot.config[f"{ctx.guild.id}"]["prefix"]
+		if prefix:
+			# Server Admin only.
+			if  ctx.channel.permissions_for(ctx.author).manage_guild:
+				# Get Current prefix list.					
+				if prefix not in prefixes:
+					prefixes.append(prefix)
+					await ctx.send(f'Adding {prefix} to {ctx.guild.name} prefix list.')
+				else:
+					prefixes.remove(prefix)
+					await ctx.send(f'Removing {prefix} from {ctx.guild.name} prefix list.')
+				
+				self.bot.config[f"{ctx.guild.id}"].update({"prefix":prefixes})
+				await self._save()
+				
 		if not prefixes:
-			self.bot.config[f"{ctx.guild.id}"]["prefix"] = ['$','!','`','.','-','?',prefix]
-			await self._save()
-			return await ctx.send(f"{prefix} added to prefix list.")
-		if prefix in prefixes:
-			return await ctx.send("Already in prefix list")
+			# How to add prefixes without one.
+			return await ctx.send(f"No prefixes found for this server, use {ctx.me.mention} prefix <your prefix> to add one.")
 		else:
-			self.bot.config[f"{ctx.guild.id}"]["prefix"].append(prefix)
-			await self._save()
-			prefixes = self.bot.config[f"{ctx.guild.id}"]["prefix"]
-			return await ctx.send(f"{prefix} added to prefix list. New prefix list: ```{prefixes}```")
-			
-	@prefix.command(name="remove",aliases=["del"])
-	@commands.has_permissions(manage_guild=True)
-	async def _remove(self,ctx,*,prefix):
-		""" Add a bot prefix for the server """
-		prefixes = self.bot.config[f"{ctx.guild.id}"]["prefix"]
-		if not prefixes:
-			return await ctx.send(f"Unable to find existing prefix list.")
-		if prefix in prefixes:
-			self.bot.config[f"{ctx.guild.id}"]["prefix"].remove(prefix)
-			await self._save()
-			prefixes = self.bot.config[f"{ctx.guild.id}"]["prefix"]
-			if not prefixes:
-				return await ctx.send(f"No prefixes found for this server, use {ctx.me.mention} prefix add <your prefix> to add one.")
-			return await ctx.send(f"{prefix} removed from prefix list. New prefix list: ```{prefixes}```")			
-		else:
-			return await ctx.send(f"{prefix} was not in the existing prefix list.")
-	
-	
-	@prefix.command()
-	@commands.has_permissions(manage_guild=True)
-	async def default(self,ctx):
-		""" Resets the guild's prefixes to default ['$','!','`','.','-','?']"""
-		self.bot.config[f"{ctx.guild.id}"]["prefix"] = ['$','!','`','.','-','?']
-		await self._save()
-		await ctx.send("Server prefixes reset to ['$','!','`','.','-','?']")
+			await ctx.send(f"Current Command prefixes for this server: ```{' '.join(prefixes)}```")
 	
 	@commands.command()
 	@commands.has_permissions(manage_guild=True)
@@ -153,7 +131,7 @@ class Meta(commands.Cog):
 		def is_me(m):
 			return m.author.id == self.bot.user.id or m.content[0] in preflist
 		try:
-			mc = self.bot.config[str(ctx.guild.id)]['mod']['channel']
+			mc = self.bot.config[[f"{ctx.guild.id}"]]['mod']['channel']
 			mc = self.bot.get_channel(mc)
 		except KeyError:
 			mc = "N/A"

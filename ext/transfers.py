@@ -188,7 +188,6 @@ class Transfers(commands.Cog):
 				
 				if firstrun:
 					self.parsed.append(pname)
-					print(f"Skipped player: {pname}")
 					continue
 				
 				self.parsed.append(pname)
@@ -256,8 +255,9 @@ class Transfers(commands.Cog):
 						ch = self.bot.get_channel(ch)
 					except KeyError:
 						print(f"Key Error (channel) for guild {i}")
-						self.bot.config[i]["transfers"]["channel"] = None
+						self.bot.config[i]["transfers"] = {"channel": None, "mode":"default","whitelist":[]}
 						ch = None
+						await self._save()
 					try:
 						mode = self.bot.config[i]["transfers"]["mode"]
 					except KeyError:
@@ -280,7 +280,8 @@ class Transfers(commands.Cog):
 					try:
 						await ch.send(embed=e)
 					except discord.Forbidden:
-						print("Bot does not have permission to post in {ch.guild.name}'s transfers channel.")
+						print(f"Bot does not have permission to post in {ch.guild.name}'s transfers channel.")
+						await ch.send("Transfer detected, but I don't have 'embed links' permissions in this channel.")
 						
 			firstrun = False
 			# Run every min
@@ -291,27 +292,27 @@ class Transfers(commands.Cog):
 	async def tf(self,ctx):
 		""" Enable or disable the transfer ticker for a server. Use the command "ticker set" in a channel to set it as a transfer ticker channel."""
 		try:
-			ch = self.bot.config[str(ctx.guild.id)]['transfers']['channel']
+			ch = self.bot.config[f"{ctx.guild.id}"]['transfers']['channel']
 			ch = self.bot.get_channel(ch)
 		except KeyError:
-			ch = self.bot.config[str(ctx.guild.id)]['transfers']['channel'] = None
+			ch = self.bot.config[f"{ctx.guild.id}"].update({'transfers':{'channel':None}})
 		
 		if ch is None:
 			return await ctx.send("The transfers channel has not been set"\
-			f"on this server. Create a new channel and use the command `{ctx.prefix}{ctx.command} set`"\
-			"in the new channel to setup your transfer ticker.")
+			f" on this server. Create a new channel and use the command `{ctx.prefix}{ctx.command} set`"\
+			" in the desired channel to setup your transfer ticker.")
 		
 		try:
-			mode = self.bot.config[str(ctx.guild.id)]['transfers']['mode']
+			mode = self.bot.config[f"{ctx.guild.id}"]['transfers']['mode']
 		except KeyError:
-			self.bot.config[str(ctx.guild.id)]['transfers']['mode'] = "default"
+			self.bot.config[f"{ctx.guild.id}"]['transfers']['mode'] = "default"
 			mode = "default"
 			await self._save()	
 		
 		try:
-			whitelist = self.bot.config[str(ctx.guild.id)]['transfers']['whitelist']
+			whitelist = self.bot.config[f"{ctx.guild.id}"]['transfers']['whitelist']
 		except KeyError:
-			self.bot.config[str(ctx.guild.id)]['transfers']['whitelist'] = []
+			self.bot.config[f"{ctx.guild.id}"]['transfers']['whitelist'] = []
 			await self._save()
 
 		if mode == "whitelist":
@@ -339,7 +340,7 @@ class Transfers(commands.Cog):
 			e.color = 0xff0000
 		
 		try:
-			ch = self.bot.config[str(ctx.guild.id)]['transfers']['channel']
+			ch = self.bot.config[f"{ctx.guild.id}"]['transfers']['channel']
 			chan = self.bot.get_channel(ch)
 			chanval = chan.mention
 		except KeyError:
@@ -378,16 +379,16 @@ class Transfers(commands.Cog):
 		"""
 		# Check if mode exists
 		try:
-			ch = self.bot.config[str(ctx.guild.id)]['transfers']['channel']
+			ch = self.bot.config[f"{ctx.guild.id}"]['transfers']['channel']
 			chan = self.bot.get_channel(ch).mention
 		except KeyError:
 			return await ctx.send(f"Please set your transfers channel first using {ctx.prefix}tf set in your desired transfers channel")
 		
 		if not mode:
 			try:
-				mode = self.bot.config[str(ctx.guild.id)]["transfers"]["mode"]
+				mode = self.bot.config[f"{ctx.guild.id}"]["transfers"]["mode"]
 			except KeyError:
-				self.bot.config[str(ctx.guild.id)]["transfers"]["mode"] = "default"
+				self.bot.config[f"{ctx.guild.id}"]["transfers"]["mode"] = "default"
 				mode = "default"
 				await self._save()
 			if mode == "default":
@@ -401,7 +402,7 @@ class Transfers(commands.Cog):
 		if mode not in ["whitelist","default"]:
 			return await ctx.send('Invalid mode selected, valid modes are "default" or "whitelist"')
 
-		self.bot.config[str(ctx.guild.id)]["transfers"]["mode"] = mode
+		self.bot.config[f"{ctx.guild.id}"]["transfers"]["mode"] = mode
 		await self._save()
 		return await ctx.send(f"{chan} mode set to {mode}")
 	
@@ -410,27 +411,27 @@ class Transfers(commands.Cog):
 	async def whitelist(self,ctx,*,filter):
 		""" Check the server's transfers whitelist """
 		# Check we have an active transfers channel.
-		ch = self.bot.config[str(ctx.guild.id)]['transfers']['channel']
+		ch = self.bot.config[[f"{ctx.guild.id}"]]['transfers']['channel']
 		try:
 			chan = self.bot.get_channel(ch).mention
 		except AttributeError:
 			return await ctx.send('Please set your transfers channel first using {ctx.prefix}tf set in your desired transfers channel')
 		
 		if not filter:
-			if not self.bot.config[str(ctx.guild.id)]["transfers"]["mode"] == "whitelist":
-				self.bot.config[str(ctx.guild.id)]["transfers"]["mode"] = "whitelist"
+			if not self.bot.config[[f"{ctx.guild.id}"]]["transfers"]["mode"] == "whitelist":
+				self.bot.config[[f"{ctx.guild.id}"]]["transfers"]["mode"] = "whitelist"
 				await ctx.send("Transfer ticker set to Whitelist mode for {ctx.guild.name}")
 		elif filter in whitelist:
-			self.bot.config[str(ctx.guild.id)]['transfers']['whitelist'].remove(item)
+			self.bot.config[[f"{ctx.guild.id}"]]['transfers']['whitelist'].remove(item)
 			await ctx.send(f"Removed {filter} from {ctx.guild.name} transfer ticker whitelist.")
 		else:
-			self.bot.config[str(ctx.guild.id)]['transfers']['whitelist'].append(item)
+			self.bot.config[[f"{ctx.guild.id}"]]['transfers']['whitelist'].append(item)
 			await ctx.send(f"Added {filter} from {ctx.guild.name} transfer ticker whitelist.")
 		
 		try:
-			whitelist = self.bot.config[str(ctx.guild.id)]['transfers']['whitelist']
+			whitelist = self.bot.config[[f"{ctx.guild.id}"]]['transfers']['whitelist']
 		except KeyError:
-			self.bot.config[str(ctx.guild.id)]['transfers']['whitelist'] = []
+			self.bot.config[[f"{ctx.guild.id}"]]['transfers']['whitelist'] = []
 			whitelist = []
 
 		if not whitelist:
@@ -455,7 +456,7 @@ class Transfers(commands.Cog):
 	@commands.has_permissions(manage_channels=True)
 	async def _unset(self,ctx):
 		""" Unsets the transfer ticker channel for this server """
-		self.bot.config[str(ctx.guild.id)]["transfers"]["channel"] = None
+		self.bot.config[f"{ctx.guild.id}"]["transfers"]["channel"] = None
 		await self._save()
 		await ctx.send(f"Transfer ticker channel for {ctx.guild.name} unset.")
 	
@@ -588,11 +589,12 @@ class Transfers(commands.Cog):
 		
 		# Get trs of table after matching header / {categ} name.
 		matches = f".//div[@class='box']/div[@class='table-header'][contains(text(),'{categ}')]/following::div[1]//tbody/tr"
+
 		e = discord.Embed()
 		e.color = 0x1a3151
 		e.title = "View full results on transfermarkt"
 		e.url = str(resp.url)
-		e.set_author(name=tree.xpath(f".//div[@class='table-header'][contains(text(),'{categ}')]/text()")[0])
+		e.set_author(name="".join(tree.xpath(f".//div[@class='table-header'][contains(text(),'{categ}')]/text()")))
 		e.description = ""
 		numpages = int("".join([i for i in e.author.name if i.isdigit()])) // 10 + 1
 		e.set_footer(text=f"Page {page} of {numpages}")
@@ -611,11 +613,11 @@ class Transfers(commands.Cog):
 			if special:
 				replacelist = ["🇦","🇧",'🇨','🇩','🇪',
 							   '🇫','🇬',"🇭","🇮","🇯"]
-				reactdict = {}
+				reactdict = {}		
 				for i,j in zip(lines,targets):
 					emoji = replacelist.pop(0)
 					reactdict[emoji] = j
-					e.description += f"{emoji} \n"
+					e.description += f"{emoji} {i}\n"
 				return e,reactdict
 			else:
 				for i in lines:
@@ -686,6 +688,8 @@ class Transfers(commands.Cog):
 
 	def get_flag(self,ctry):
 		# Check if pycountry has country
+		if not ctry:
+			return
 		try:					
 			ctry = pycountry.countries.get(name=ctry.title()).alpha_2
 		except KeyError:

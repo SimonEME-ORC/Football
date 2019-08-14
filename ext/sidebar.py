@@ -110,40 +110,19 @@ class Sidebar(commands.Cog):
 			sb = await self.bot.loop.run_in_executor(None,self.build_sidebar,sb,table,fixtures,res,lastres,threads)
 			await self.bot.loop.run_in_executor(None,self.post_sidebar,sb)
 	
-	@sidebar.command()
+	@sidebar.command(aliases=["captext","text","manual"])
 	@commands.has_permissions(manage_messages=True)
-	@commands.check(nufccheck)
-	async def manual(self,ctx):
-		""" Manually force a sidebar update """
-		m = await ctx.send("Getting data...")
-		await ctx.trigger_typing()
-		
-		table = await self.table()
-		sb,fixtures,res,lastres,threads = await self.bot.loop.run_in_executor(None,self.get_data)
-		sb = await self.bot.loop.run_in_executor(None,self.build_sidebar,sb,table,fixtures,res,lastres,threads)
-		await self.bot.loop.run_in_executor(None,self.post_sidebar,sb)
-		
-		e = discord.Embed(color=0xff4500)
-		th = ("http://vignette2.wikia.nocookie.net/valkyriecrusade/images"
-			  "/b/b5/Reddit-The-Official-App-Icon.png")
-		e.set_author(icon_url=th,name="Sidebar updater")
-		e.description = (f"Sidebar for http://www.reddit.com/r/"
-						 f"{self.subreddit} manually updated.")
-		e.timestamp = datetime.datetime.now()
-		e.set_footer(text=f"{len(sb)} / 10240 Characters")
-		await m.edit(content="",embed=e)
-
-	@sidebar.command(aliases=["captext","text"])
-	@commands.has_permissions(manage_messages=True)
-	async def caption(self,ctx,*,captext):
+	async def caption(self,ctx,*,captext=None):
 		""" Set the sidebar caption on r/NUFC """
+		
 		await ctx.trigger_typing()
 		sb = await self.bot.loop.run_in_executor(None,self.get_wiki)
-		captext = f"---\n\n> {captext}\n\n---"
-		sb = re.sub(r'\-\-\-.*?\-\-\-',captext,sb,flags=re.DOTALL)
-		
-		
-		await self.bot.loop.run_in_executor(None,self.post_wiki,sb)
+		if captext is not None:
+			captext = f"---\n\n> {captext}\n\n---"
+			sb = re.sub(r'\-\-\-.*?\-\-\-',captext,sb,flags=re.DOTALL)
+			await self.bot.loop.run_in_executor(None,self.post_wiki,sb)
+			
+		table = await self.table()
 		sb,fixtures,res,lastres,threads = await self.bot.loop.run_in_executor(None,self.get_data)
 		sb = await self.bot.loop.run_in_executor(None,self.build_sidebar,sb,table,fixtures,res,lastres,threads)
 		await self.bot.loop.run_in_executor(None,self.post_sidebar,sb)

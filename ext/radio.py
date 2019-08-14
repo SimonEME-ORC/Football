@@ -63,12 +63,12 @@ class YouTube:
 	async def get_guild_voice_client(self, ctx):
 		voice_client = None
 		try:
-			voice_client = self.guilds[ctx.guild.id][0]
+			voice_client = self.guilds[f"{ctx.guild.id}"][0]
 		except KeyError:
 			if ctx.author.voice:
-				self.guilds[ctx.guild.id] = [await ctx.author.voice.channel.
+				self.guilds[f"{ctx.guild.id}"] = [await ctx.author.voice.channel.
 											 connect(), []]
-				voice_client = self.guilds[ctx.guild.id][0]
+				voice_client = self.guilds[f"{ctx.guild.id}"][0]
 		return voice_client
 
 	async def get_current_queue(self, requests):
@@ -97,15 +97,15 @@ class YouTube:
 		else:
 			request_info = [ctx, query]
 			try:
-				voice_client = self.guilds[ctx.guild.id][0]
-				self.guilds[ctx.guild.id][1].append(request_info)
+				voice_client = self.guilds[f"{ctx.guild.id}"][0]
+				self.guilds[f"{ctx.guild.id}"][1].append(request_info)
 			except:
-				self.guilds[ctx.guild.id] = [ctx.voice_client,
+				self.guilds[f"{ctx.guild.id}"] = [ctx.voice_client,
 											 [].append(request_info)]
 			await ctx.send("**{}** has been added to the queue for **{}**.\n"
 						   "```{}```".format(query, ctx.guild.name,
 											 await self.get_current_queue(
-												 self.guilds[ctx.guild.id][1])))
+												 self.guilds[f"{ctx.guild.id}"][1])))
 
 	async def next_song(self):
 		# have a loop that continously loops through each guild and checks to

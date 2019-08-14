@@ -53,6 +53,7 @@ class quotedb(commands.Cog):
 		return e
 		
 	@commands.group(invoke_without_command=True,aliases=["quotes"])
+	@commands.check(nufccheck)	
 	async def quote(self,ctx,*,member:discord.Member = None):
 		""" Show random quote (optionally from specific user). Use ".help quote" to view subcommands. """
 		if ctx.invoked_subcommand is None:
@@ -73,6 +74,7 @@ class quotedb(commands.Cog):
 		await ctx.send(embed=e)
 
 	@quote.command()
+	@commands.check(nufccheck)	
 	async def search(self,ctx,*,qry):
 		with ctx.typing():
 			m = await ctx.send('Searching...')
@@ -148,6 +150,7 @@ class quotedb(commands.Cog):
 		await ctx.send("Quotes exported.",file=discord.File("out.txt","quotes.txt"))
 
 	@quote.command(aliases=["id","fetch"])
+	@commands.check(nufccheck)	
 	async def get(self,ctx,number):
 		""" Get a quote by it's QuoteID number """
 		if not number.isdigit():

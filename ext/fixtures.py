@@ -343,11 +343,19 @@ class Fixtures(commands.Cog):
 				
 			try:
 				d = datetime.datetime.strptime(d,"%d.%m. %H:%M")
+				d = d.replace(year=datetime.datetime.now().year)
+				
+				if d.month < datetime.datetime.now().month:
+					d = d.replace(year=datetime.datetime.now().year + 1)
+				elif d.month == datetime.datetime.now().month:
+					if d.day < datetime.datetime.now().day:
+						d = d.replace(year=datetime.datetime.now().year + 1)
+
 				d = datetime.datetime.strftime(d,"%a %d %b: %H:%M")
 			except ValueError: # Fuck this cant be bothered to fix it.
 				d = "Tue 31 Feb: 15:00"
 				
-			tv = i.xpath(".//span[contains(@class,'tv')]")
+			tv = i.xpath(".//div[contains(@class,'tv')]")
 			if tv:
 				tv = i.xpath("./@id")[0].split("_")[-1]
 				tv = f" [`📺`](http://www.flashscore.com/match/{tv}/)"

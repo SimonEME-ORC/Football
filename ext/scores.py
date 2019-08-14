@@ -376,8 +376,8 @@ class Scores(commands.Cog):
 			e.description = "```diff\n- Disabled```"
 			e.color = 0xff0000
 
-		if "scorechannel" in self.bot.config[str(ctx.guild.id)]:
-			ch = self.bot.config[str(ctx.guild.id)]["scorechannel"]
+		if "scorechannel" in self.bot.config[[f"{ctx.guild.id}"]]:
+			ch = self.bot.config[[f"{ctx.guild.id}"]]["scorechannel"]
 			chan = self.bot.get_channel(ch)
 			chanval = chan.mention
 		else:
@@ -410,7 +410,7 @@ class Scores(commands.Cog):
 	@commands.has_permissions(manage_channels=True)
 	async def _unset(self,ctx):
 		""" Unsets the live score channel for this server """
-		self.bot.config[str(ctx.guild.id)]["scorechannel"] = None
+		self.bot.config[[f"{ctx.guild.id}"]]["scorechannel"] = None
 		with await self.bot.configlock:
 			with open('config.json',"w",encoding='utf-8') as f:
 				json.dump(self.bot.config,f,ensure_ascii=True,
@@ -443,7 +443,7 @@ class Scores(commands.Cog):
 			await ctx.send('Request timed out, live score channel note set.')
 		
 		rea = rea[0]
-		if rea.emoji == "✅": 
+		if rea.emoji == "✅":
 			self.bot.config[f"{ctx.guild.id}"].update({"scorechannel":ctx.channel.id})
 			with await self.bot.configlock:
 				with open('config.json',"w",encoding='utf-8') as f:

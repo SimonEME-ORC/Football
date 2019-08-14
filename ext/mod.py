@@ -243,34 +243,31 @@ class Mod(commands.Cog):
 				json.dump(self.bot.config,f,ensure_ascii=True,
 				sort_keys=True,indent=4, separators=(',',':'))
 	
-	async def get_mod_channel(self,ctx,id):
+	@commands.Cog.listener()
+	async def on_guild_join(self,guild):
+		self.bot.config.update({f"{guild.id}":{}})
+		await self._save()
+		
+	@commands.Cog.listener()
+	async def on_guild_remove(self,guild):
+		del self.bot.config[f"{guild.id}"]
+		await self._save()		
+	
+	async def get_mod_channel(self,guild):
+		# Check if in dict.
 		try: 
-			d = self.bot.config[id]["mod"]
+			d = self.bot.config[f"{guild.id}"]
 		except KeyError:
-			d = self.bot.config[id]["mod"] = {}
+			self.bot.config.update({f"{guild.id}":{"mod":{"channel":None}}})
+			return await self._save()
+			return None
 		
 		try:
-			c = d["channel"]
-			mc = self.bot.get_channel(c)
+			return self.bot.get_channel(d["mod"]["channel"])
 		except KeyError:
-			d["channel"] = None
+			self.bot.config[f"{guild.id}"].update({"mod":{"channel":None}})
 			await self._save()
-			mc = None
-			
-		if mc is None:
-			await ctx.send(f"Mod channel not set, please use"\
-				f"`{ctx.prefix}mod set` in desired channel to set it first")
-		
-		return mc
-	
-	async def check_mod_config(self,guild):
-	# Check if in mod.
-		id = guild.id
-		try: 
-			d = self.bot.config[id]["mod"]
-		except KeyError:
-			d = self.bot.config[id]["mod"] = {}
-			await self._save()
+			return None
 	
 	@commands.command()
 	@commands.has_permissions(manage_guild=True)
@@ -278,21 +275,23 @@ class Mod(commands.Cog):
 	async def mod(self,ctx,*,set=""):
 		""" Shows the status of various mod tools."""
 		if set == "set":
-			self.bot.config.update({f"{ctx.guild.id}":{"mod":{"channel":f"{ctx.channel.id}"}}})
+			self.bot.config.update({f"{ctx.guild.id}":{"mod":{"channel":ctx.channel.id}}})
 			cf = f"Mod Channel for {ctx.guild.name} set to {ctx.channel.name}"
 			await ctx.send(cf)
 			await self._save()
 		
 		# Check mod is set.
-		mc = await self.get_mod_channel(ctx,id)
+		mc = await self.get_mod_channel(ctx.guild)
 		
 		if not mc:
+			return await ctx.send("Mod channel not set.")
 			return
 		
 		e = discord.Embed(color=0x7289DA)
 		e.description = f"Mod Channel: {mc.mention}\n"
 		e.title = f"Config settings for {ctx.guild.name}"
 		
+		c = self.bot.config[f"{ctx.guild.id}"]["mod"]
 		for i in ['joins','leaves','unbans','emojis','mutes']:
 			try:
 				c[i]
@@ -311,6 +310,8 @@ class Mod(commands.Cog):
 	@commands.command()
 	async def block(self,ctx,member:discord.Member):
 		""" Block a user from this channel (cannot be used on guild default channel) """
+		mc = await self.get_mod_channel(ctx.guild)
+		
 		# Check if already muted
 		ows = ctx.channel.overwrites
 		ows = [i[0] for i in ows if isinstance(i[0],discord.Member)]
@@ -323,15 +324,10 @@ class Mod(commands.Cog):
 			else:
 				try:
 					if self.bot.config[f"{ctx.guild.id}"]["mod"]["mutes"]:
-						# Get Mod channel.
-						mc = await self.get_mod_channel(ctx,id)
-						
-						if not mc:
-							return
-							
 						await mc.send(f"{member.mention} was unmuted by {ctx.author}")	
 				except KeyError:
-					self.bot.config[f"{ctx.guild.id}"]["mod"]["mutes"] == False			
+					self.bot.config[f"{ctx.guild.id}"]["mod"].update({"mutes":False})
+					await self._save()
 				return await ctx.send(f"Unblocked {member.mention} from {ctx.channel.mention}")		
 		
 		ow = discord.PermissionOverwrite()
@@ -346,12 +342,10 @@ class Mod(commands.Cog):
 		else:
 			await ctx.send(f"{member.mention} has been blocked from {ctx.channel.mention}")
 			# Get Mod channel.
-			mc = await self.get_mod_channel(ctx,id)
-			
 			if not mc:
 				return
-				
-			await mc.send(f"{member.mention} was unmuted by {ctx.author}")	
+			if self.bot.config[f"{ctx.guild.id}"]["mod"]["mutes"]:	
+				await mc.send(f"{member.mention} was unmuted by {ctx.author}")	
 			
 	
 	@commands.has_permissions(manage_messages=True)
@@ -359,23 +353,23 @@ class Mod(commands.Cog):
 	@commands.guild_only()
 	async def mute(self,ctx,member:discord.Member,*,reason="No reason given."):
 		""" Toggle a user having the "Muted" role."""
+		mc = await self.get_mod_channel(ctx.guild)
+		
 		mrole = discord.utils.get(ctx.guild.roles, name='Muted')
-				
 		# Unmute if currently muted.
 		if mrole in member.roles:
 			await member.remove_roles(*mrole)
 			await ctx.send(f"{member.mention} was unmuted.")
 			
 			# Get Mod channel.
-			mc = await self.get_mod_channel(ctx,id)
 			if not mc:
 				return
 				
 			try:
-				if self.bot.config[f"{ctx.guild.id}"]["mod"]["mutes"]:
-					await mc.send(f"{member.mention} was unmuted by {ctx.author}")	
+				if self.bot.config[fctx.guild.id]["mod"]["mutes"]:
+					return await mc.send(f"{member.mention} was unmuted by {ctx.author}")	
 			except KeyError:
-				self.bot.config[f"{ctx.guild.id}"]["mod"]["mutes"] == False
+				self.bot.config[f"{ctx.guild.id}"]["mod"].update({"mutes":False})
 			return
 			
 		# Else Mute
@@ -410,9 +404,10 @@ class Mod(commands.Cog):
 					await i.set_permissions(mrole,overwrite=moverwrite)
 					
 			if r.emoji == "❌": #Cross
-				return await m.edit(f"Did not mute {member.mention}, \"Muted\" role does not exist and creation was cancelled.")
+				return await m.edit(f"Did not mute {member.mention}, \"Muted\" role does not exist and creation was cancelled."\
+									f"Use `{ctx.me.mention} disable mute` to disable this command on this server.")
 		
-		await member.add_roles(*mrole)
+		await member.add_roles(*[mrole])
 		
 		# Reapply muted role overrides.
 		moverwrite = discord.PermissionOverwrite()
@@ -426,7 +421,8 @@ class Mod(commands.Cog):
 			if self.bot.config[f"{ctx.guild.id}"]["mod"]["mutes"]:
 				await self.bot.get_channel(c["channel"]).send(f"{member.mention} was muted by {ctx.author}: {reason}")
 		except KeyError:
-			self.bot.config[f"{ctx.guild.id}"]["mod"]["mutes"] == False
+			self.bot.config[f"{ctx.guild.id}"]["mod"].update({"mutes":False})
+			await self._save()
 	
 	@commands.has_permissions(manage_guild=True)
 	@commands.command()
@@ -434,9 +430,9 @@ class Mod(commands.Cog):
 	async def mutes(self,ctx,*,toggle=None):
 		""" Show or hide member mutings and blockings from channel, toggle with mutes "on" or "off" """
 		# Check mod channel is set.
-		mc = await self.get_mod_channel(ctx,id)
+		mc = await self.get_mod_channel(ctx.guild)
 		
-		if not mc:
+		if mc is None:
 			return
 		
 		# Give current info
@@ -444,11 +440,11 @@ class Mod(commands.Cog):
 			try: 
 				m = self.bot.config[f"{ctx.guild.id}"]["mod"]["mutes"]
 			except KeyError:
-				self.bot.config[f"{ctx.guild.id}"]["mod"]["mutes"] = False
+				self.bot.config[f"{ctx.guild.id}"]["mod"].update({"mutes": False})
 				await self._save()
+				m = False
 			
-			m = self.bot.config[f"{ctx.guild.id}"]["mod"]["mutes"]
-			if j:
+			if m:
 				return await ctx.send(f"Messages will be output to {mc.mention}"\
 					f"when a member is muted. Toggle with `{ctx.prefix}mutes off`")
 			else:
@@ -457,41 +453,28 @@ class Mod(commands.Cog):
 
 		# Or update guild preference
 		elif toggle.lower() == "on":
-			await self.check_mod_config(ctx.guild)
-			self.bot.config[f"{ctx.guild.id}"]["mod"]["joins"] = True
+			self.bot.config[f"{ctx.guild.id}"]["mod"].update({"mutes": True})
 			await self._save()
 			return await ctx.send(f"A notification will be sent to {mc.mention} when a member is muted.")
 			
 		elif toggle.lower() == "off":
-			await self.check_mod_config(ctx.guild)
-			self.bot.config[f"{ctx.guild.id}"]["mod"]["joins"] = False
+			self.bot.config[f"{ctx.guild.id}"]["mod"].update({"mutes": False})
 			await self._save()
 			return await ctx.send(f"Notifications will no longer be sent to {mc.mention} when members are muted.")		
 
 	### Extended Member Join Information
 	@commands.Cog.listener()			
 	async def on_member_join(self,mem):
-		
-		await self.check_mod_config(mem.guild)
-		
+		mc = await self.get_mod_channel(mem.guild)
 		# Check if in config.
-		try: 
-			d = self.bot.config[id]["mod"]
-		except KeyError:
-			d = self.bot.config[id]["mod"] = {}
-			await self._save()
-			
 		try:
 			j = self.bot.config[f"{mem.guild.id}"]["mod"]["joins"]
 		except KeyError:
-			self.bot.config[f"{mem.guild.id}"]["mod"]["joins"] =  False
+			self.bot.config[f"{mem.guild.id}"]["mod"].update({"joins":False})
 			await self._save()
-		try:	
-			c = self.bot.config[f"{mem.guild.id}"]["mod"]["channel"]
-			c = self.bot.get_channel(c)
-		except KeyError:
 			return
-		if j:
+
+		if j and mc:
 			e = discord.Embed()
 			e.color = 0x7289DA
 			s = sum(1 for m in self.bot.get_all_members() if m.id == mem.id)
@@ -504,7 +487,7 @@ class Mod(commands.Cog):
 				e.description = '**This is a bot account**'
 			e.add_field(name='Account Created', value=mem.created_at,inline=True)
 			e.set_thumbnail(url=mem.avatar_url)
-			await c.send(embed=e)
+			await mc.send(embed=e)
 			
 	@commands.has_permissions(manage_guild=True)
 	@commands.command()
@@ -512,20 +495,17 @@ class Mod(commands.Cog):
 	async def joins(self,ctx,*,toggle=None):
 		""" Show or hide extended member information upon joining. (Toggle with 'on' and 'off')"""
 		# Check mod channel is set.
-		mc = await self.get_mod_channel(ctx,id)
-		
-		if not mc:
-			return
+		mc = await self.get_mod_channel(ctx.guild)
 		
 		# Give current info
 		if toggle is None:
 			try: 
 				j = self.bot.config[f"{ctx.guild.id}"]["mod"]["joins"]
 			except KeyError:
-				self.bot.config[f"{ctx.guild.id}"]["mod"]["joins"] = False
+				self.bot.config[f"{ctx.guild.id}"]["mod"].update({"joins":False})
 				await self._save()
+				j = False
 			
-			j = self.bot.config[f"{ctx.guild.id}"]["mod"]["joins"]
 			if j:
 				return await ctx.send(f"Extended information is currently output to {mc.mention}"\
 					f"when a member joins this server. Toggle with `{ctx.prefix}joins off`")
@@ -535,64 +515,42 @@ class Mod(commands.Cog):
 
 		# Or update guild preference
 		elif toggle.lower() == "on":
-			self.bot.config[f"{ctx.guild.id}"]["mod"]["joins"] = True
+			self.bot.config[f"{ctx.guild.id}"]["mod"].update({"joins":True})
 			await self._save()
 			return await ctx.send(f"Extended information will be output to {mc.mention} when a member joins this server.")
 			
 		elif toggle.lower() == "off":
-			self.bot.config[f"{ctx.guild.id}"]["mod"]["joins"] = False
+			self.bot.config[f"{ctx.guild.id}"]["mod"].update({"joins":False})
 			await self._save()
 			return await ctx.send(f"Extended information will no longer be output to {mc.mention} when members joins this server.")
 	
 	### Kick, Ban/Unban, and Leave information
 	@commands.Cog.listener()
 	async def on_member_unban(self,guild,user):
-		
-		await self.check_mod_config(guild)
-		
-		# Check if in mod.
-		try: 
-			d = self.bot.config[id]["mod"]
-		except KeyError:
-			d = self.bot.config[id]["mod"] = {}
-			await self._save()
+		mc = await self.get_mod_channel(guild)
 			
 		try:
 			l = self.bot.config[f"{guild.id}"]["mod"]["leaves"]
 		except KeyError:
-			l = self.bot.config[f"{guild.id}"]["mod"]["leaves"] = False
-			await self._save()
-		
-		try:
-			c = self.bot.config[f"{guild.id}"]["mod"]["channel"]			
-			c = self.bot.get_channel(c)
-		except KeyError:
-			c = self.bot.config[f"{guild.id}"]["mod"]["channel"] = None
+			self.bot.config[f"{guild.id}"]["mod"].update({"leaves":False})
 			await self._save()
 		
 		if l:
-			await c.send(f"🆗 {user.name}#{user.discrim} (ID: {user.id}) was unbanned.")
+			await mc.send(f"🆗 {user.name}#{user.discrim} (ID: {user.id}) was unbanned.")
 	
 	
 	@commands.Cog.listener()
 	async def on_member_remove(self,member):
 		# Check if in mod.
-		await self.check_mod_config(member.guild)
+		mc = await self.get_mod_channel(member.guild)
 			
 		try:
 			l = self.bot.config[f"{member.guild.id}"]["mod"]["leaves"]
 		except KeyError:
-			l = self.bot.config[f"{member.guild.id}"]["mod"]["leaves"] = False
+			l = self.bot.config[f"{member.guild.id}"]["mod"].update({"leaves":False})
 			await self._save()
 			
-		try:
-			c = self.bot.config[f"{member.guild.id}"]["mod"]["channel"]
-			c = self.bot.get_channel(c)
-		except KeyError:
-			c = self.bot.config[f"{member.guild.id}"]["mod"]["channel"] = None
-			await self._save()
-		
-		if not l or c is None:
+		if not l or mc is None:
 			return
 		
 		async for i in member.guild.audit_logs(limit=1):
@@ -602,21 +560,19 @@ class Mod(commands.Cog):
 					if x.reason is not None:
 						if x.reason in ["roulete","Asked to be"]:
 							return
-					return await c.send(f"👢 **Kick**: {member.mention} by {x.user.mention} for {x.reason}.")
+					return await mc.send(f"👢 **Kick**: {member.mention} by {x.user.mention} for {x.reason}.")
 				elif x.action.name == "ban":
-					return await c.send(f"☠ **Ban**: {member.mention} by {x.user.mention} for {x.reason}.")
+					return await mc.send(f"☠ **Ban**: {member.mention} by {x.user.mention} for {x.reason}.")
 			else:
-				await c.send(f"⬅ {member.mention} left the server.")
+				await mc.send(f"⬅ {member.mention} left the server.")
 				
 	@commands.has_permissions(manage_guild=True)
 	@commands.command()
 	@commands.guild_only()
 	async def leaves(self,ctx,*,toggle=None):
 		""" Show or hide a message when a member is kicked/banned or leaves """
-		
-		await self.check_mod_config(ctx.channel.guild)
 		# Check mod is set.
-		mc = await self.get_mod_channel(ctx,id)
+		mc = await self.get_mod_channel(ctx.guild)
 		
 		if not mc:
 			return
@@ -626,10 +582,10 @@ class Mod(commands.Cog):
 			try: 
 				l = self.bot.config[f"{ctx.guild.id}"]["mod"]["leaves"]
 			except KeyError:
-				self.bot.config[f"{ctx.guild.id}"]["mod"]["leaves"] = False
+				self.bot.config[f"{ctx.guild.id}"]["mod"].update({"leaves":False})
+				l = False
 				await self._save()
 			
-			l = self.bot.config[f"{ctx.guild.id}"]["mod"]["leaves"]
 			if l:
 				return await ctx.send(f"Messages are currently output to {mc.mention}"\
 					f"when a member leaves this server. Toggle with `{ctx.prefix}leaves off`")
@@ -639,50 +595,38 @@ class Mod(commands.Cog):
 
 		# Or update guild preference			
 		elif toggle.lower() == "on":
-			self.bot.config[f"{ctx.guild.id}"]["mod"]["leaves"] = True
+			self.bot.config[f"{ctx.guild.id}"]["mod"].update({"leaves":True})
 			await self._save()
 			return await ctx.send(f"A message will be output to {mc.mention} when a member leaves this server.")
 			
 		elif toggle.lower() == "off":
-			self.bot.config[f"{ctx.guild.id}"]["mod"]["leaves"] = False
+			self.bot.config[f"{ctx.guild.id}"]["mod"].update({"leaves":False})
 			await self._save()
 			return await ctx.send(f"Messages will no longer be output to {mc.mention} when members leave this server.")
 	
 	### Emoji update information
 	@commands.Cog.listener()
 	async def on_guild_emojis_update(self,guild,before,after):
+		mc = await self.get_mod_channel(guild)
 		
-		# Check if in mod.
-		try: 
-			d = self.bot.config[id]["mod"]
-		except KeyError:
-			d = self.bot.config[id]["mod"] = {}
-			await self._save()
-	
 		# Check config to see if outputting.
 		try:
-			l = self.bot.config[f"{member.guild.id}"]["mod"]["emojis"]
+			e = self.bot.config[f"{guild.id}"]["mod"]["emojis"]
 		except KeyError:
-			l = self.bot.config[f"{member.guild.id}"]["mod"]["emojis"] = False
+			e = self.bot.config[f"{guild.id}"]["mod"].update({"emojis":False})
+			e = False
 			await self._save()
 			
-		try:
-			c = self.bot.config[f"{member.guild.id}"]["mod"]["channel"]
-			c = self.bot.get_channel(c)
-		except KeyError:
-			c = self.bot.config[f"{member.guild.id}"]["mod"]["channel"] = None
-			await self._save()
-		
-		if not l or c is None:
-			return		
+		if not e or mc is None:
+			return
 		
 		# Find if it was addition or removal.
 		newemoji = [i for i in after if i not in before]
 		if not newemoji:
 			removedemoji = [i for i in before if i not in after][0]
-			return await c.send(f"The '{removedemoji.name}' emoji was removed")
+			return await mc.send(f"The '{removedemoji.name}' emoji was removed")
 		else:
-			await c.send(f"The {newemoji[0]} emoji was created.")
+			await mc.send(f"The {newemoji[0]} emoji was created.")
 	
 	@commands.has_permissions(manage_guild=True)
 	@commands.command()
@@ -690,21 +634,18 @@ class Mod(commands.Cog):
 	async def emojis(self,ctx,*,toggle=None):
 		""" Show or hide messages when guild emojis are updated. Toggle with mod emojis on/off """
 		# Check mod is set.
-		mc = await self.get_mod_channel(ctx,id)
-		
-		if not mc:
-			return
+		mc = await self.get_mod_channel(ctx.guild)
 			
 		# Give current info
 		if toggle is None:
 			try: 
-				l = self.bot.config[f"{ctx.guild.id}"]["mod"]["emojis"]
+				e = self.bot.config[f"{ctx.guild.id}"]["mod"]["emojis"]
 			except KeyError:
-				self.bot.config[f"{ctx.guild.id}"]["mod"]["emojis"] = False
+				self.bot.config[f"{ctx.guild.id}"]["mod"].update({"emojis":False})
 				await self._save()
+				e = False
 			
-			l = self.bot.config[f"{ctx.guild.id}"]["mod"]["emojis"]
-			if l:
+			if e:
 				return await ctx.send(f"Messages are currently output to {mc.mention}"\
 					f"when an emojis are updated on this server. Toggle with ``emojis off`")
 			else:
@@ -713,12 +654,12 @@ class Mod(commands.Cog):
 					
 		# Or update guild preference		
 		elif toggle.lower() == "on":
-			self.bot.config[f"{ctx.guild.id}"]["mod"]["emojis"] = True
+			self.bot.config[f"{ctx.guild.id}"]["mod"].update({"emojis":True})
 			await self._save()
 			return await ctx.send(f"A message will be output to {mc.mention} when emojis are updated on this server.")
 			
 		elif toggle.lower() == "off":
-			self.bot.config[f"{ctx.guild.id}"]["mod"]["emojis"] = False
+			self.bot.config[f"{ctx.guild.id}"]["mod"].update({"emojis":False})
 			await self._save()
 			return await ctx.send(f"Messages will no longer be output to {mc.mention} when emojis are updated on this server.")
 		
