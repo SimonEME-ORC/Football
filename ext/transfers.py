@@ -144,7 +144,7 @@ class Transfers(commands.Cog):
 			}
 		}
 	
-	def __unload(self):
+	def cog_unload(self):
 		self.transferson = False
 		self.bot.transferticker.cancel()
 	
@@ -157,7 +157,7 @@ class Transfers(commands.Cog):
 	async def imgurify(self,imgurl):
 		# upload image to imgur
 		d = {"image":imgurl}
-		h = {'Authorization': self.bot.credentials["Imgur"]["Authorization"]}
+		h = {'Authorization': f'Client-ID {self.bot.credentials["Imgur"]["Authorization"]}'}
 		async with self.bot.session.post("https://api.imgur.com/3/image",data = d,headers=h) as resp:
 			res = await resp.json()
 		return res['data']['link']
@@ -165,17 +165,18 @@ class Transfers(commands.Cog):
 	async def transfer_ticker(self):
 		await self.bot.wait_until_ready()
 		firstrun = True
-		print("Transfer loop started")
+		loopiter = 60
 		while self.transferson:
 			try: 
 				async with self.bot.session.get('https://www.transfermarkt.co.uk/statistik/neuestetransfers') as resp:
 					if resp.status != 200:
-						await asyncio.sleep(60)
+						await asyncio.sleep(loopiter)
 						continue
 					tree = html.fromstring(await resp.text())
 			# Bare excepts are bad but I don't care.
 			except:
 				print("Error fetching transfermarkt data.")
+				await asyncio.sleep(loopiter)
 				continue
 				
 			players = tree.xpath('.//div[@class="responsive-table"]/div/table/tbody/tr')
@@ -184,7 +185,7 @@ class Transfers(commands.Cog):
 				pname = "".join(i.xpath('.//td[1]//tr[1]/td[2]/a/text()')).strip()
 
 				if not pname or pname in self.parsed:
-					continue # continue when loop.
+					continue # skip when duplicate / void.
 				
 				if firstrun:
 					self.parsed.append(pname)
@@ -194,7 +195,7 @@ class Transfers(commands.Cog):
 				print(f"Transfer found - {pname}")
 				
 				e = discord.Embed(color = 0x1a3151)
-				e.set_author(name=pname)
+				e.title = pname
 				
 				# Player Profile Link
 				plink = "".join(i.xpath('.//td[1]//tr[1]/td[2]/a/@href'))
@@ -268,7 +269,6 @@ class Transfers(commands.Cog):
 					if ch is None:
 						continue
 					
-					print(f"{i}: {mode}")
 					if mode == "whitelist":
 						try:
 							whitelist = self.bot.config[i]["transfers"]["whitelist"]
@@ -284,13 +284,13 @@ class Transfers(commands.Cog):
 						await ch.send("Transfer detected, but I don't have 'embed links' permissions in this channel.")
 						
 			firstrun = False
-			# Run every min
-			await asyncio.sleep(60)
+			await asyncio.sleep(loopiter)
 	
 	@commands.group(invoke_without_command=True,aliases=["ticker"])
 	@commands.guild_only()
+	@commands.has_permissions(manage_channels=True)
 	async def tf(self,ctx):
-		""" Enable or disable the transfer ticker for a server. Use the command "ticker set" in a channel to set it as a transfer ticker channel."""
+		""" Enable or disable the transfer ticker for a server. Use 'tf set' to a transfer ticker channel."""
 		try:
 			ch = self.bot.config[f"{ctx.guild.id}"]['transfers']['channel']
 			ch = self.bot.get_channel(ch)
@@ -298,9 +298,7 @@ class Transfers(commands.Cog):
 			ch = self.bot.config[f"{ctx.guild.id}"].update({'transfers':{'channel':None}})
 		
 		if ch is None:
-			return await ctx.send("The transfers channel has not been set"\
-			f" on this server. Create a new channel and use the command `{ctx.prefix}{ctx.command} set`"\
-			" in the desired channel to setup your transfer ticker.")
+			return await ctx.send(f"The transfers channel has not been set on this server. Create a new channel and use the command `{ctx.prefix}{ctx.command} set` in the desired channel to setup your transfer ticker.")
 		
 		try:
 			mode = self.bot.config[f"{ctx.guild.id}"]['transfers']['mode']
@@ -410,28 +408,29 @@ class Transfers(commands.Cog):
 	@commands.has_permissions(manage_channels=True)
 	async def whitelist(self,ctx,*,filter):
 		""" Check the server's transfers whitelist """
+		filter = discord.utils.escape_mentions(filter)
 		# Check we have an active transfers channel.
-		ch = self.bot.config[[f"{ctx.guild.id}"]]['transfers']['channel']
+		ch = self.bot.config[f"{ctx.guild.id}"]['transfers']['channel']
 		try:
 			chan = self.bot.get_channel(ch).mention
 		except AttributeError:
 			return await ctx.send('Please set your transfers channel first using {ctx.prefix}tf set in your desired transfers channel')
 		
 		if not filter:
-			if not self.bot.config[[f"{ctx.guild.id}"]]["transfers"]["mode"] == "whitelist":
-				self.bot.config[[f"{ctx.guild.id}"]]["transfers"]["mode"] = "whitelist"
+			if not self.bot.config[f"{ctx.guild.id}"]["transfers"]["mode"] == "whitelist":
+				self.bot.config[f"{ctx.guild.id}"]["transfers"]["mode"] = "whitelist"
 				await ctx.send("Transfer ticker set to Whitelist mode for {ctx.guild.name}")
 		elif filter in whitelist:
-			self.bot.config[[f"{ctx.guild.id}"]]['transfers']['whitelist'].remove(item)
+			self.bot.config[f"{ctx.guild.id}"]['transfers']['whitelist'].remove(item)
 			await ctx.send(f"Removed {filter} from {ctx.guild.name} transfer ticker whitelist.")
 		else:
-			self.bot.config[[f"{ctx.guild.id}"]]['transfers']['whitelist'].append(item)
+			self.bot.config[f"{ctx.guild.id}"]['transfers']['whitelist'].append(item)
 			await ctx.send(f"Added {filter} from {ctx.guild.name} transfer ticker whitelist.")
 		
 		try:
-			whitelist = self.bot.config[[f"{ctx.guild.id}"]]['transfers']['whitelist']
+			whitelist = self.bot.config[f"{ctx.guild.id}"]['transfers']['whitelist']
 		except KeyError:
-			self.bot.config[[f"{ctx.guild.id}"]]['transfers']['whitelist'] = []
+			self.bot.config[f"{ctx.guild.id}"]['transfers']['whitelist'] = []
 			whitelist = []
 
 		if not whitelist:
@@ -464,6 +463,7 @@ class Transfers(commands.Cog):
 	@commands.group(invoke_without_command=True)
 	async def lookup(self,ctx,*,target:str):
 		""" Perform a database lookup on transfermarkt """
+		target = discord.utils.escape_mentions(target)
 		p = {"query":target} # html encode.
 		async with self.bot.session.post(f"http://www.transfermarkt.co.uk/schnellsuche/ergebnis/schnellsuche",params=p) as resp:
 			if resp.status != 200:
@@ -478,7 +478,10 @@ class Transfers(commands.Cog):
 		res = {}
 		for i in cats:
 			# Just give us the number of matches by replacing non-digit characters.
-			length = [int(n) for n in i if n.isdigit()][0]
+			try:
+				length = [int(n) for n in i if n.isdigit()][0]
+			except IndexError:
+				length = None
 			if length:
 				letter = replacelist.pop(0)
 				for j in self.cats:
@@ -572,11 +575,6 @@ class Transfers(commands.Cog):
 		""" Get the latest transfer rumours for a team """
 		await self._search(ctx,qry,"Rumours",special=True)
 	
-	@commands.command(name="injuries",aliases=["suspensions","injured","hurt","suspended"])
-	async def _injuries(self,ctx,*,qry):
-		""" Get current injuries and suspensions for a team on transfermarkt """
-		await self._search(ctx,qry,"Injuries",special=True)	
-	
 	async def fetch(self,ctx,category,query,page):
 		p = {"query":query,self.cats[category]["querystr"]:page}
 		url = 'http://www.transfermarkt.co.uk/schnellsuche/ergebnis/schnellsuche'
@@ -601,6 +599,7 @@ class Transfers(commands.Cog):
 		return e,tree.xpath(matches),numpages
 	
 	async def _search(self,ctx,qry,category,special=False):
+		qry = discord.utils.escape_mentions(qry)
 		page = 1
 		e,tree,maxpage = await self.fetch(ctx,category,qry,page)
 		if not tree:
@@ -610,10 +609,12 @@ class Transfers(commands.Cog):
 		
 		def make_embed(e,lines,targets):
 			e.description = ""
+			reactdict = {}	
+			
 			if special:
 				replacelist = ["🇦","🇧",'🇨','🇩','🇪',
 							   '🇫','🇬',"🇭","🇮","🇯"]
-				reactdict = {}		
+				
 				for i,j in zip(lines,targets):
 					emoji = replacelist.pop(0)
 					reactdict[emoji] = j
@@ -622,12 +623,10 @@ class Transfers(commands.Cog):
 			else:
 				for i in lines:
 					e.description += f"{i}\n"
-			return e
+			return e,reactdict
 		
-		if special:
-			e,reactdict = make_embed(e,lines,targets)
-		else:
-			e = make_embed(e,lines,targets)
+		e,reactdict = make_embed(e,lines,targets)
+
 		# Create message and add reactions		
 		m = await ctx.send(embed=e)	
 		await m.add_reaction("⏏") # eject
@@ -647,10 +646,7 @@ class Transfers(commands.Cog):
 		def check(reaction,user):
 			if reaction.message.id == m.id and user == ctx.author:
 				e = str(reaction.emoji)
-				if special:
-					return e.startswith(('⏮','◀','▶','⏭','⏏')) or e in reactdict
-				else:
-					return e.startswith(('⏮','◀','▶','⏭','⏏'))
+				return e.startswith(('⏮','◀','▶','⏭','⏏')) or e in reactdict
 		
 		# Reaction Logic Loop.
 		while True:
@@ -662,20 +658,20 @@ class Transfers(commands.Cog):
 			if res.emoji == "⏮": #first
 				page = 1
 				await m.remove_reaction("⏮",ctx.message.author)
-			if res.emoji == "◀": #prev
+			elif res.emoji == "◀": #prev
 				await m.remove_reaction("◀",ctx.message.author)
 				if page > 1:
 					page = page - 1
-			if res.emoji == "▶": #next	
+			elif res.emoji == "▶": #next	
 				await m.remove_reaction("▶",ctx.message.author)
 				if page < maxpage:
 					page = page + 1
-			if res.emoji == "⏭": #last
+			elif res.emoji == "⏭": #last
 				page = maxpage
 				await m.remove_reaction("⏭",ctx.message.author)
-			if res.emoji == "⏏": #eject
+			elif res.emoji == "⏏": #eject
 				return await m.delete()
-			if res.emoji in reactdict:
+			elif res.emoji in reactdict:
 				await m.delete()
 				match = reactdict[res.emoji]
 				return await self.cats[category]["outfunc"](ctx,e,match)

@@ -42,6 +42,7 @@ class Mod(commands.Cog):
 			await ctx.message.delete()
 			topin = await ctx.send(f":pushpin: {ctx.author.mention}: {msg}")
 			await topin.pin()
+			await ctx.message.delete()
 	
 	@commands.command()
 	@commands.has_permissions(manage_nicknames=True)
@@ -54,7 +55,8 @@ class Mod(commands.Cog):
 		except discord.HTTPException:
 			await ctx.send("❔ Member edit failed.")
 		else:
-			await ctx.send(f"{member.mention} has been renamed.")	
+			await ctx.send(f"{member.mention} has been renamed.")
+		await ctx.message.delete()
 
 	@commands.command()
 	@commands.is_owner()
@@ -78,7 +80,6 @@ class Mod(commands.Cog):
 	@commands.has_permissions(kick_members=True)
 	async def kick(self,ctx,user : discord.Member,*,reason = "unspecified reason."):
 		""" Kicks the user from the server """
-		await ctx.message.delete()
 		try:
 			await user.kick(reason=f"{ctx.author.name}: {reason}")
 		except discord.Forbidden:
@@ -87,13 +88,13 @@ class Mod(commands.Cog):
 			await ctx.send('❔ Kicking failed.')
 		else:
 			await ctx.send(f"👢 {user.mention} was kicked by {ctx.author.mention} for: \"{reason}\".")
+		await ctx.message.delete()
 	
 	@commands.command()
 	@commands.has_permissions(ban_members=True)
 	@commands.bot_has_permissions(ban_members=True)
 	async def ban(self,ctx,member : discord.Member,*,reason="Not specified",days = 0):
 		""" Bans the member from the server """
-		await ctx.message.delete()
 		try:
 			await member.ban(reason=f"{ctx.author.name}: {reason}",delete_message_days=days)
 		except discord.Forbidden:
@@ -102,6 +103,7 @@ class Mod(commands.Cog):
 			await ctx.send("❔ Banning failed.")
 		else:
 			await ctx.send(f"☠ {member.mention} was banned by {ctx.author.mention} for: \"{reason}\".")
+		await ctx.message.delete()
 	
 	@commands.command()
 	@commands.has_permissions(ban_members=True)
@@ -348,7 +350,8 @@ class Mod(commands.Cog):
 				await mc.send(f"{member.mention} was unmuted by {ctx.author}")	
 			
 	
-	@commands.has_permissions(manage_messages=True)
+	@commands.has_permissions(manage_roles=True)
+	@commands.bot_has_permissions(manage_roles=True)
 	@commands.command()
 	@commands.guild_only()
 	async def mute(self,ctx,member:discord.Member,*,reason="No reason given."):
@@ -623,10 +626,39 @@ class Mod(commands.Cog):
 		# Find if it was addition or removal.
 		newemoji = [i for i in after if i not in before]
 		if not newemoji:
-			removedemoji = [i for i in before if i not in after][0]
-			return await mc.send(f"The '{removedemoji.name}' emoji was removed")
+			try:
+				removedemoji = [i for i in before if i not in after][0]
+				await mc.send(f"The '{removedemoji.name}' emoji was removed")
+			except IndexError:
+				await ctx.send("An emoji was removed.")
 		else:
 			await mc.send(f"The {newemoji[0]} emoji was created.")
+	
+	@commands.command(aliases=["purge","clear"])
+	@commands.has_permissions(manage_messages=True)
+	@commands.bot_has_permissions(manage_messages=True)
+	async def clean(self,ctx,number : int = 100):
+		""" Deletes my messages from the last x messages in channel"""
+		try:
+			prefixes = tuple(self.bot.config[f"{ctx.guild.id}"]["prefix"])
+		except KeyError:
+			prefixes = ctx.prefix
+		
+		def is_me(m):
+			return m.author == ctx.me or m.content.startswith(prefixes)
+				
+		try:
+			mc = self.bot.config[f"{ctx.guild.id}"]['mod']['channel']
+			mc = self.bot.get_channel(mc)
+		except KeyError:
+			pass
+		else:
+			if ctx.channel == mc:
+				await ctx.send("🚫 'Clean' is disabled for moderator channels.",delete_after=10)
+
+		deleted = await ctx.channel.purge(limit=number, check=is_me)
+		s = "s" if len(deleted) > 1 else ""
+		await ctx.send(f'♻️ {ctx.author.mention}: Deleted {len(deleted)} bot and command messages{s}',delete_after=10)	
 	
 	@commands.has_permissions(manage_guild=True)
 	@commands.command()

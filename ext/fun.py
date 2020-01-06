@@ -61,7 +61,7 @@ class Misc(commands.Cog):
 		'(☭ ͜ʖ ☭)','( ° ͜ʖ °)','( ‾ ʖ̫ ‾)','( ͡° ʖ̯ ͡°)','( ͡° ل͜ ͡°)','( ͠° ͟ʖ ͠°)','( ͡o ͜ʖ ͡o)','( ͡☉ ͜ʖ ͡☉)','ʕ ͡° ͜ʖ ͡°ʔ','( ͡° ͜ʖ ͡ °)']
 		await ctx.send(random.choice(lennys))
 	
-	@commands.command(aliases=["horo"],hidden=True)
+	@commands.command(aliases=["horo"])
 	async def horoscope(self,ctx,*,sign):
 		""" Find out your horoscope for this week """
 		sign = sign.title()
@@ -109,6 +109,7 @@ class Misc(commands.Cog):
 			pass
 		e = discord.Embed(color=0x7289DA)
 		e.title = f"Poll"
+		arg = discord.utils.escape_mentions(arg)
 		e.description = arg
 		e.set_footer(text=f"Poll created by {ctx.author.name}")
 		
@@ -180,24 +181,11 @@ class Misc(commands.Cog):
 	async def secrettory(self,ctx):
 		await ctx.send(f"The secret tory is {random.choice(ctx.guild.members).mention}")
 	
-	# @commands.command(aliases=["games"])
-	# async def roleme(self,ctx,*,game):
-		# """ Give you the role for a game to allow players to @mention you for a game. """
-		# games = ["haxball","cah"]
-		# if game.lower in games:
-			# grole = discord.utils.get(ctx.guild.roles, name=game)
-			# if grole in ctx.author.roles:
-				# await ctx.author.remove_roles(grole)
-				# await ctx.send(f"{ctx.author.mention} has removed the {game} role.")
-			# else:
-				# await ctx.author.add_roles(grole,reason="Game role.")
-				# await ctx.send(f"{ctx.author.mention} has added the {game} role.")
-		# else:
-			# await ctx.send("Invalid game specified, valid games are {', '.join(games)}}")
-			
+		
 	@commands.command(aliases=["choice","pick","select"])
 	async def choose(self,ctx,*,choices):
 		""" Make a decision for me (seperate choices with commas)"""
+		choices = discord.utils.escape_mentions(choices)
 		x = choices.split(",")
 		if len(x) == 1:
 			return
@@ -211,15 +199,17 @@ class Misc(commands.Cog):
 		x = ["click.","click.","click.","click.","click.","🔫 BANG!"]
 		outcome = random.choice(x)
 		if outcome == "🔫 BANG!":
-			await ctx.author.kick(reason="roulette")
-			await ctx.send(f"🔫 BANG! {ctx.author.mention} was kicked.")
+			try:
+				await ctx.author.kick(reason="roulette")
+				await ctx.send(f"🔫 BANG! {ctx.author.mention} was kicked.")
+			except discord.Forbidden:
+				await ctx.send(f"{ctx.author.mention} fired but the bullet bounced off their thick skull. (I can't kick that user.)")
 		else:
 			await ctx.send(outcome)
 			
-	@commands.command(hidden=True,aliases=["flip","coinflip"])
+	@commands.command(aliases=["flip","coinflip"])
 	async def coin(self,ctx):
 		""" Flip a coin """
-		print(ctx.guild.name)
 		await ctx.send(random.choice(["Heads","Tails"]))
 	
 	@commands.command(hidden=True)
@@ -293,7 +283,7 @@ class Misc(commands.Cog):
 		""" STOP STOP HE'S ALREADY DEAD """
 		await ctx.send("https://www.youtube.com/watch?v=mAUY1J8KizU")
 		
-	@commands.command(pass_context=True,aliases=["urbandictionary"])
+	@commands.command(aliases=["urbandictionary"])
 	async def ud(self,ctx,*,lookup):
 		""" Lookup a definition from urban dictionary """
 		await ctx.trigger_typing()
@@ -333,6 +323,7 @@ class Misc(commands.Cog):
 				count += 1
 		else:
 				e = discord.Embed(color=0xFE3511)
+				lookup = discord.utils.escape_mentions(lookup)
 				e.description = f"🚫 No results found for {lookup}."
 				embeds.append(e)
 		
@@ -395,8 +386,7 @@ class Misc(commands.Cog):
 					 "\n\n Score | Link | Direct | Author \n--|--|--|--|")]
 			for i in posts:
 				title = i.xpath(".//a[contains(@class, 'title')]/text()")
-				x = (".//ul[@class='flat-list buttons']/"
-					"li[@class='first']//@href")
+				x = (".//ul[@class='flat-list buttons']/li[@class='first']//@href")
 				comme = i.xpath(x)
 				link  = i.xpath(".//a[contains(@class, 'title')]/@href")
 				authn = i.xpath(".//a[contains(@class, 'author')]/text()")
@@ -422,6 +412,8 @@ class Misc(commands.Cog):
 		
 		string = "".join([f":regional_indicator_{i.lower()}:" if i.isalpha()
 						else f"{i}⃣" if i.isdigit() else i for i in string])
+						
+		string = discord.utils.escape_mentions(string)
 		await ctx.send(string)	
 		
 def setup(bot):

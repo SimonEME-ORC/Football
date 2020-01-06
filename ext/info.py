@@ -13,22 +13,26 @@ class Info(commands.Cog):
 	async def seen(self,ctx,t : discord.Member = None):
 		""" Find the last message from a user in this channel """
 		if t == None:
-			await ctx.send("No user provided",delete_after=15)
-			return
+			return await ctx.send("No user provided")
+		
 		m = await ctx.send("Searching...")
-		async for msg in ctx.channel.history(limit=50000):
-			if msg.author.id == t.id:
-				if t.id == 178631560650686465:
-					c = (f"{t.mention} last seen being a spacker in "
-						f" {ctx.channel.mention} at {msg.created_at} "
-						f"saying '{msg.content}'")
-					await m.edit(content=c)
-				else:
-					c = (f"{t.mention} last seen in {ctx.channel.mention} "
-						 f"at {msg.created_at} saying '{msg.content}'")
-					await m.edit(content=c)
-				return
-		await m.edit(content="Couldn't find a recent message from that user.")		
+		with ctx.typing():
+			if ctx.author == t:
+				return await ctx.send("Last seen right now, being an idiot.")
+				
+			async for msg in ctx.channel.history(limit=50000):
+				if msg.author.id == t.id:
+					if t.id == 178631560650686465:
+						c = (f"{t.mention} last seen being a spacker in "
+							f" {ctx.channel.mention} at {msg.created_at} "
+							f"saying '{msg.content}'")
+						await m.edit(content=c)
+					else:
+						c = (f"{t.mention} last seen in {ctx.channel.mention} "
+							 f"at {msg.created_at} saying '{msg.content}'")
+						await m.edit(content=c)
+					return
+			await m.edit(content="Couldn't find a recent message from that user.")		
 		
 	@commands.command()
 	async def hackyinfo(self,ctx,*,id):
@@ -42,23 +46,6 @@ class Info(commands.Cog):
 		e.add_field(name="Is bot?",value=user.bot)
 		e.set_thumbnail(url=user.avatar_url)
 		await ctx.send(embed=e)
-	
-	
-	@commands.command()
-	@commands.guild_only()
-	@commands.is_owner()
-	async def shared(self,ctx,*,id):
-		id = int(id)	
-		matches = []
-		for i in self.bot.guilds:
-			for j in i.members:
-				if j.id == id:
-					matches.append(i.name)
-		if matches:
-			matches = ", ".join(matches)
-			await ctx.send(f"User ID found on these Shared servers: {matches}")
-		else:
-			await ctx.send("No shared servers found.")
 	
 	@commands.group(invoke_without_command=True)
 	@commands.guild_only()

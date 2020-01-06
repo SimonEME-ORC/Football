@@ -124,25 +124,7 @@ class Meta(commands.Cog):
 			await self._save()
 	
 	@commands.command()
-	@commands.has_permissions(manage_messages=True)
-	async def clean(self,ctx,number : int = 100):
-		""" Deletes my messages from last x in channel"""
-		preflist = await self.bot.command_prefix(self.bot,ctx.message)
-		def is_me(m):
-			return m.author.id == self.bot.user.id or m.content[0] in preflist
-		try:
-			mc = self.bot.config[[f"{ctx.guild.id}"]]['mod']['channel']
-			mc = self.bot.get_channel(mc)
-		except KeyError:
-			mc = "N/A"
-		if ctx.channel == mc:
-			await ctx.send("🚫 'Clean' has been disabled for the moderator channel.",delete_after=10)
-		else:
-			deleted = await ctx.channel.purge(limit=number, check=is_me)
-			s = "s" if len(deleted) > 1 else ""
-			await ctx.send(f'♻️ {ctx.author.mention}: Deleted {len(deleted)} bot and command messages{s}',delete_after=10)
-	
-	@commands.command()
+	@commands.is_owner()
 	async def source(self, ctx, *, command: str = None):
 		"""Displays my full source code or for a specific command.
 		To display the source code of a subcommand you can separate it by
@@ -215,34 +197,6 @@ class Meta(commands.Cog):
 		
 	async def on_socket_response(self, msg):
 		self.bot.socket_stats[msg.get('t')] += 1		
-		
-	@commands.command()
-	@commands.is_owner()
-	async def playing(self,ctx,*,game):
-		""" Change status to "playing {game}" """
-		await self.bot.change_presence(game=discord.Game(name=game,type=0))
-		await self.ctx.send(f"Set status to playing {game}")
-
-	@commands.command()
-	@commands.is_owner()
-	async def streaming(self,ctx,*,game):
-		""" Change status to "streaming {game}" """
-		await self.bot.change_presence(game=discord.Game(name=game,type=1))
-		await self.ctx.send(f"Set status to streaming {game}")
-		
-	@commands.command()
-	@commands.is_owner()
-	async def watching(self,ctx,*,game):
-		""" Change status to "watching {game}" """
-		await self.bot.change_presence(game=discord.Game(name=game,type=3))
-		await self.ctx.send(f"Set status to watching {game}")
-		
-	@commands.command()
-	@commands.is_owner()
-	async def listening(self,ctx,*,game):
-		""" Change status to "listening to {game}" """
-		await self.bot.change_presence(game=discord.Game(name=game,type=2))
-		await self.ctx.send(f"Set status to listening to {game}")
 
 	def get_bot_uptime(self):
 		delta = datetime.datetime.utcnow() - self.bot.uptime

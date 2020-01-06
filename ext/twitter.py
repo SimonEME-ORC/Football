@@ -17,7 +17,7 @@ class Twitter(commands.Cog):
 		self.pclient = PeonyClient(**self.bot.credentials['Twitter'])
 		self.bot.twitask = self.bot.loop.create_task(self.twat())
 	
-	def __unload(self):
+	def cog_unload(self):
 		self.bot.twitask.cancel()
 
 	async def _save(self):
@@ -163,23 +163,22 @@ class Twitter(commands.Cog):
 			fvalue = "\n".join([c[0] for c in self.track.items() if c[1]["channel"] == i])
 			e.add_field(name=fname,value=fvalue)
 		
-		if self.bot.is_owner(ctx.author):
-			x =  self.bot.twitask._state
-			if x == "PENDING":
-				v = "✅ Task running."
-			elif x == "CANCELLED":
-				v = "⚠ Task Cancelled."
-			elif x == "FINISHED":
-				self.bot.twitask.print_stack()
-				v = "⁉ Task Finished"
-				z = self.bot.twitask.exception()
-			else:
-				v = f"❔ `{self.bot.twitask._state}`"
-			e.add_field(name="Debug Info",value=v,inline=False)
-			try:
-				e.add_field(name="Exception",value=z,inline=False)
-			except NameError:
-				pass
+		x = self.bot.twitask._state
+		if x == "PENDING":
+			v = "✅ Task running."
+		elif x == "CANCELLED":
+			v = "⚠ Task Cancelled."
+		elif x == "FINISHED":
+			self.bot.twitask.print_stack()
+			v = "⁉ Task Finished"
+			z = self.bot.twitask.exception()
+		else:
+			v = f"❔ `{self.bot.twitask._state}`"
+		e.add_field(name="Debug Info",value=v,inline=False)
+		try:
+			e.add_field(name="Exception",value=z,inline=False)
+		except NameError:
+			pass
 		await ctx.send(embed=e)
 		
 	@twitter.command(name="add")

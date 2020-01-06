@@ -143,7 +143,7 @@ class Reactions(commands.Cog):
 			return
 		# Emoji reactions
 		if "toon toon" in c:
-			await m.channel.send("**Black and white army.**")
+			await m.channel.send("**BLACK AND WHITE ARMY**")
 			
 		
 def setup(bot):

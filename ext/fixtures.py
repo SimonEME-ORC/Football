@@ -25,16 +25,9 @@ class Fixtures(commands.Cog):
 	""" Rewrite of fixture & result lookups. """
 	def __init__(self, bot):
 		self.bot = bot
-		self.driver = None
-	
-	def __unload(self):
-		if self.driver:
-			self.driver.quit()
 	
 	# Spawn an instance of headerless chrome.
 	def spawn_chrome(self):
-		if self.driver:
-			self.driver.quit()
 		caps = DesiredCapabilities().CHROME
 		caps["pageLoadStrategy"] = "normal"  #  complete
 		chrome_options = Options()
@@ -49,14 +42,11 @@ class Fixtures(commands.Cog):
 		driver_path = os.getcwd() +"\\chromedriver.exe"
 		prefs = {'profile.default_content_setting_values': {'images': 2, 'javascript': 2}}
 		chrome_options.add_experimental_option('prefs', prefs)
-		self.driver = webdriver.Chrome(desired_capabilities=caps,chrome_options=chrome_options, executable_path=driver_path)
-		self.driver.set_page_load_timeout(20)
+		driver = webdriver.Chrome(desired_capabilities=caps,chrome_options=chrome_options, executable_path=driver_path)
+		driver.set_page_load_timeout(20)
+		return driver
 		
-	def __unload(self):
-		if self.driver is not None:
-			self.driver.quit()
-		
-	async def _search(self,ctx,m,qry):
+	async def _search(self,ctx,m,qry,mode=None):
 		# aiohttp lookup for json.
 		qry = qry.replace("'","")
 
@@ -70,16 +60,14 @@ class Fixtures(commands.Cog):
 		key = 0
 		# Remove irrel.
 		for i in res["results"]:
-			# Format for LEAGUE
-			if i["participant_type_id"] == 0:
-				# Sample League URL: https://www.flashscore.com/soccer/england/premier-league/
-				resdict[str(key)] = {"Match":i['title'],"url":f"soccer/{i['country_name'].lower()}/{i['url']}"} 
-			
-			# Format for TEAM
-			elif i["participant_type_id"] == 1:
-				# Sample Team URL: https://www.flashscore.com/team/thailand-stars/jLsL0hAF/
-				resdict[str(key)] = {"Match":i["title"],"url":f"team/{i['url']}/{i['id']}"}
-			
+			if i["participant_type_id"] == 0: # League
+				if mode is not "team":
+					# Sample League URL: https://www.flashscore.com/soccer/england/premier-league/
+					resdict[str(key)] = {"Match":i['title'],"url":f"soccer/{i['country_name'].lower()}/{i['url']}"}	
+			elif i["participant_type_id"] == 1: # Team
+				if mode is not "league":
+					# Sample Team URL: https://www.flashscore.com/team/thailand-stars/jLsL0hAF/
+					resdict[str(key)] = {"Match":i["title"],"url":f"team/{i['url']}/{i['id']}"}
 			key += 1
 		
 		if not resdict:
@@ -99,19 +87,20 @@ class Fixtures(commands.Cog):
 		try:
 			await m.edit(content=f"Please type matching id: ```{outtext}```")
 		except discord.HTTPException:
+			### TODO: Paginate.
 			return await m.edit(content=f"Too many matches to display, please be more specific.")
 		
 		def check(message):
 			if message.author.id == ctx.author.id and message.content in resdict:
 				return True
-		
-		match = await self.bot.wait_for("message",check=check,timeout=30)
 		try:
-			await m.delete()
-		except:
-			pass
+			match = await self.bot.wait_for("message",check=check,timeout=30)
+		except asyncio.TimeoutError:
+			return await m.delete()
+		
 		mcontent = match.content
 		try:
+			await m.delete()
 			await match.delete()
 		except:
 			pass
@@ -122,42 +111,41 @@ class Fixtures(commands.Cog):
 		""" Get table for a league """
 		async with ctx.typing():
 			if qry is None:
-				if ctx.guild is not None:
-					if ctx.guild.id == 332159889587699712:
-						url = "https://www.flashscore.com/soccer/england/premier-league"
-					else:
-						return await ctx.send("Specify a search query.")
-				else:
-					return await ctx.send("Please specify a search query.")
+				return await ctx.send("Please specify a search query.")
 			else:
+				qry = discord.utils.escape_mentions(qry)
 				m = await ctx.send(f"Searching for {qry}...")
 				url = await self._search(ctx,m,qry)
 			
 			if url is None:
-				return #rip
+				return # rip
+				
 			m = await ctx.send(f"Grabbing table from {url}...")
 			await ctx.trigger_typing()
 			p = await self.bot.loop.run_in_executor(None,self.parse_table,url)
-			await m.delete()
-			await ctx.send(file=p)
+			try:
+				await ctx.send(file=p)
+			except discord.HTTPException:
+				return await m.edit(content=f"Failed to grab table from {url}")
 	
 	def parse_table(self,url):
 		url += "/standings/"
-		self.spawn_chrome()
-		self.driver.get(url)
-		self.driver.save_screenshot('screenie.png')
-		xp = './/table[contains(@id,"table-type-")]'
+		driver = self.spawn_chrome()
+		driver.get(url)
+		driver.save_screenshot('screenie.png')
+		xp = './/div[@id="glib-stats-data"]'
 		
 		try:
-			tbl = self.driver.find_element_by_xpath(xp)
+			tbl = driver.find_element_by_xpath(xp)
 		except NoSuchElementException:
-			WebDriverWait(self.driver, 2)
+			WebDriverWait(driver, 2)
 			try:
-				tbl = self.driver.find_element_by_xpath(xp)
+				tbl = driver.find_element_by_xpath(xp)
 			except NoSuchElementException:
-				self.driver.quit()
+				driver.quit()
 				return # Rip
 		
+		# Perform cropoperations.
 		location = tbl.location
 		size = tbl.size
 		im = Image.open("screenie.png")
@@ -170,7 +158,7 @@ class Fixtures(commands.Cog):
 		im.save(output,"PNG")
 		output.seek(0)
 		df = discord.File(output,filename="table.png")
-		self.driver.quit()
+		driver.quit()
 		return df
 
 	@commands.command()
@@ -180,13 +168,13 @@ class Fixtures(commands.Cog):
 			if qry is None:
 				return await ctx.send("Specify a search query.")
 			else:
+				qry = discord.utils.escape_mentions(qry)
 				m = await ctx.send(f"Searching for {qry}...")
 				url = await self._search(ctx,m,qry)
 				
 			if url is None:
 				return #rip	
 			m = await ctx.send(f"Grabbing bracket from {url}...")
-			await ctx.trigger_typing()
 			p = await self.bot.loop.run_in_executor(None,self.parse_bracket,url)
 			await m.delete()
 			await ctx.send(file=p)
@@ -206,6 +194,7 @@ class Fixtures(commands.Cog):
 				else:
 					return await ctx.send("Specify a search query.")
 			else:
+				qry = discord.utils.escape_mentions(qry)
 				m = await ctx.send(f"Searching for {qry}...")
 				url = await self._search(ctx,m,qry)
 			pages = await self.bot.loop.run_in_executor(None,self.parse_fixtures,url,ctx.author.name)
@@ -224,13 +213,14 @@ class Fixtures(commands.Cog):
 				else:
 					return await ctx.send("Specify a search query.")
 			else:
+				qry = discord.utils.escape_mentions(qry)
 				m = await ctx.send(f"Searching for {qry}...")
 				url = await self._search(ctx,m,qry)
 			pages = await self.bot.loop.run_in_executor(None,self.parse_scorers,url,ctx.author.name)
 		await self.paginate(ctx,pages)		
 		
 	@commands.command(aliases=["rx"])
-	async def results(self,ctx,*,qry="Newcastle Utd"):
+	async def results(self,ctx,*,qry=None):
 		""" Displays previous results for a team or league.
 			Navigate with reactions.
 		"""
@@ -241,16 +231,85 @@ class Fixtures(commands.Cog):
 						url = "https://www.flashscore.com/team/newcastle-utd/p6ahwuwJ"
 				else:
 					return await ctx.send("Specify a search query.")
-			else:
-				m = await ctx.send(f"Searching for {qry}...")
-				url = await self._search(ctx,m,qry)
+		
+			qry = discord.utils.escape_mentions(qry)
+			m = await ctx.send(f"Searching for {qry}...")
+			url = await self._search(ctx,m,qry)
 			
 			if url is None:
 				return #rip
 			
 			pages = await self.bot.loop.run_in_executor(None,self.parse_results,url,ctx.author.name)
 		await self.paginate(ctx,pages)	
+	
+	@commands.command(aliases=["suspensions"])
+	async def injuries(self,ctx,*,qry=None):
+		""" Get a team's current injuries """
+		async with ctx.typing():
+			if qry is None:
+				return await ctx.send("Specify a search query.")
+			
+			qry = discord.utils.escape_mentions(qry)
+			m = await ctx.send(f"Searching for {qry}...")
+			url = await self._search(ctx,m,qry,mode="team")
+			
+			if url is None:
+				return #rip
+			
+			m = await ctx.send(f'Grabbing injury data for {qry}...')
+			
+			e = await self.bot.loop.run_in_executor(None,self.parse_injuries,url,ctx.author.name)
+			await m.delete()
+			await ctx.send(embed = e)
+	
+	def parse_injuries(self,url,au):
+		t,e,driver = self.get_html(url)
 		
+		url += "/squad"
+		
+		driver.get(url)
+		WebDriverWait(driver,2)
+		driver.save_screenshot("injuries.png")
+		tree = htmlc.fromstring(driver.page_source)
+		driver.quit()
+		rows = tree.xpath('.//div[contains(@id,"overall-all-table")]/div[contains(@class,"profileTable__row")]')
+		matches = []
+		position = ""
+		
+		for i in rows:
+			pos = "".join(i.xpath('./text()')).strip()
+			if pos:
+				try:
+					position = pos.rsplit('s')[0]
+				except IndexError:
+					position = pos
+			
+			injury = "".join(i.xpath('.//span[contains(@class,"absence injury")]/@title'))
+			if not injury: 
+				continue
+						
+			player = "".join(i.xpath('.//div[contains(@class,"")]/a/text()'))
+			link = "".join(i.xpath('.//div[contains(@class,"")]/a/@href'))
+			if link:
+				link = "http://www.flashscore.com" + link
+			
+			# Put name in the right order.
+			playersplit = player.split(' ',1)
+			try:
+				player = f"{playersplit[1]} {playersplit[0]}"
+			except IndexError:
+				pass
+			matches.append(f"[{player}]({link}) ({position}): {injury}")
+		
+		title = "".join(t.xpath('.//div[@class="teamHeader__name"]/text()')).strip()
+		e.title = f"Injuries for {title}"
+		e.url = url
+		if matches:
+			e.description = "\n".join(matches)
+		else:
+			e.description = "No injuries found!"
+		return e
+			
 	def get_color(self,url):
 		url = url.strip('"')
 		r = requests.get(url).content
@@ -262,15 +321,15 @@ class Fixtures(commands.Cog):
 		return int('%02x%02x%02x' % rgb,16)	
 		
 	def get_html(self,url):
-		self.spawn_chrome()		
+		driver = self.spawn_chrome()		
 		try:
-			self.driver.get(url)
+			driver.get(url)
 		except TimeoutException:
-			self.driver.execute_script("window.stop();")
+			driver.execute_script("window.stop();")
 			 
 		e = discord.Embed()
 		try:
-			th = self.driver.find_element_by_xpath(".//div[contains(@class,'logo')]")
+			th = driver.find_element_by_xpath(".//div[contains(@class,'logo')]")
 			th = th.value_of_css_property('background-image')
 			th = th.strip("url(").strip(")")
 			e.set_thumbnail(url=th.strip('"'))
@@ -279,21 +338,20 @@ class Fixtures(commands.Cog):
 			pass
 		
 		e.url = url
-		t = htmlc.fromstring(self.driver.page_source)
-		self.driver.quit()
-		return t,e
+		t = htmlc.fromstring(driver.page_source)
+		return t,e,driver
 
 	def parse_results(self,url,au):
-		url = f"{url}/results"
-		t,e = self.get_html(url)
+		url += "/results"
+		t,e,driver = self.get_html(url)
+		driver.quit()
 		matches = []
 		results = t.xpath(".//div[contains(@class,'sportName soccer')]/div")
 		
 		title = "".join(t.xpath('.//div[@class="teamHeader__name"]/text()')).strip()
 		e.title = f"≡ Results for {title}"		
 		for i in results:
-			d = "".join(i.xpath('.//div[@class="event__time"]//text()'))
-			
+			d = "".join(i.xpath('.//div[@class="event__time"]//text()')).strip("Pen")
 			if not d:
 				continue
 			try:
@@ -336,8 +394,9 @@ class Fixtures(commands.Cog):
 		
 	def parse_fixtures(self,url,au):
 		url = f"{url}/fixtures"
-		t,e = self.get_html(url)
-
+		t,e,driver = self.get_html(url)
+		driver.quit()
+		
 		title = "".join(t.xpath('.//div[@class="teamHeader__name"]/text()')).strip()
 		e.title = f"≡ Fixtures for {title}"
 		
@@ -383,8 +442,8 @@ class Fixtures(commands.Cog):
 		return embeds
 	
 	def parse_bracket(self,bracket):
-		self.spawn_chrome()
-		self.driver.get(bracket)
+		driver = self.spawn_chrome()
+		driver.get(bracket)
 
 		totwid = 0
 		xp = './/div[@class="viewport"]'
@@ -395,12 +454,12 @@ class Fixtures(commands.Cog):
 
 		lastrun = False
 		while True:
-			bkt = self.driver.find_element_by_xpath(xp)
+			bkt = driver.find_element_by_xpath(xp)
 			location = bkt.location
 			size = bkt.size
 			# Try to delete dem ugly arrows.
 			try:
-				self.driver.execute_script("document.getElementsByClassName('scroll-left playoff-scroll-button playoff-scroll-button-left')[0].style.display = 'none';")
+				driver.execute_script("document.getElementsByClassName('scroll-left playoff-scroll-button playoff-scroll-button-left')[0].style.display = 'none';")
 			except WebDriverException as e:
 				print(f"Error'd.\n {e}")
 			im = Image.open(BytesIO(bkt.screenshot_as_png))
@@ -410,7 +469,7 @@ class Fixtures(commands.Cog):
 			bottom = location['y'] + size['height']
 			im = im.crop((left, top, right, bottom))
 			try:
-				z = self.driver.find_element_by_link_text("scroll right »")
+				z = driver.find_element_by_link_text("scroll right »")
 				z.click()
 				time.sleep(1)
 			except NoSuchElementException:
@@ -432,12 +491,13 @@ class Fixtures(commands.Cog):
 		canvas.save(output,"PNG")
 		output.seek(0)
 		df = discord.File(output,filename="bracket.png")
-		self.driver.quit()
+		driver.quit()
 		return df
 	
 	def parse_scorers(self,url,au):
-		t,e = self.get_html(url)
-		now = datetime.datetime.now()
+		t,e,driver = self.get_html(url)
+		
+		print(url)
 		
 		if "team" in url:
 			# For individual Team
@@ -468,31 +528,38 @@ class Fixtures(commands.Cog):
 			comp = "".join(t.xpath('.//div[@class="tournament-name"]/text()'))
 			e.title = f"≡ Top Scorers for {comp}"
 			# Re-scrape!
-			self.driver.get(url)
-			WebDriverWait(self.driver, 2)
-			x = self.driver.find_element_by_link_text("Top Scorers")
-			x.click()
-			players = self.driver.find_element_by_id("table-type-10")
-			t = players.get_attribute('innerHTML')
-			tree = htmlc.fromstring(t)
-			players = tree.xpath('.//tbody/tr')
-			for i in players:
-				p = "".join(i.xpath('.//td[contains(@class,"player_name")]//a/text()'))
-				p = ' '.join(p.split(' ')[::-1])
-				if not p:
-					continue
-				pl = "".join(i.xpath('.//td[contains(@class,"player_name")]/span[contains(@class,"team_name_span")]/a/@onclick'))
-				pl = pl.split("'")[1]
-				pl = f"http://www.flashscore.com{pl}"
-				g = "".join(i.xpath('.//td[contains(@class,"goals_for")]/text()'))
-				if g == "0":
-					continue
-				tm = "".join(i.xpath('.//td[contains(@class,"team_name")]/span/a/text()'))
-				tml = "".join(i.xpath('.//td[contains(@class,"team_name")]/span/a/@onclick'))
-				tml = tml.split("\'")[1]
-				tml = f"http://www.flashscore.com{tml}"
-				sclist.append(f"{g} [{p}]({pl})")
-				tmlist.append(f"[{tm}]({tml})")
+			
+			url += "/standings/"
+			driver.get(url)
+			WebDriverWait(driver, 2)
+			try:
+				x = driver.find_element_by_link_text("Top Scorers")
+				x.click()			
+				players = driver.find_element_by_id("table-type-10")
+				t = players.get_attribute('innerHTML')
+				tree = htmlc.fromstring(t)
+				players = tree.xpath('.//tbody/tr')
+				for i in players:
+					p = "".join(i.xpath('.//td[contains(@class,"player_name")]//a/text()'))
+					p = ' '.join(p.split(' ')[::-1])
+					if not p:
+						continue
+					pl = "".join(i.xpath('.//td[contains(@class,"player_name")]/span[contains(@class,"team_name_span")]/a/@onclick'))
+					pl = pl.split("'")[1]
+					pl = f"http://www.flashscore.com{pl}"
+					g = "".join(i.xpath('.//td[contains(@class,"goals_for")]/text()'))
+					if g == "0":
+						continue
+					tm = "".join(i.xpath('.//td[contains(@class,"team_name")]/span/a/text()'))
+					tml = "".join(i.xpath('.//td[contains(@class,"team_name")]/span/a/@onclick'))
+					tml = tml.split("\'")[1]
+					tml = f"http://www.flashscore.com{tml}"
+					sclist.append(f"{g} [{p}]({pl})")
+					tmlist.append(f"[{tm}]({tml})")
+			except WebDriverException:
+				driver.save_screenshot('scorers_fail.png')
+		driver.quit()
+				
 		z = list(zip(sclist,tmlist))
 		# Make Embeds.
 		embeds = []
@@ -589,8 +656,6 @@ class Fixtures(commands.Cog):
 			e.clear_fields()
 			count += 1
 		return embeds
-	
-	
 	
 def setup(bot):
 	bot.add_cog(Fixtures(bot))

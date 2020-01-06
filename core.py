@@ -6,6 +6,7 @@ import discord
 import asyncio
 import logging
 import praw
+from imgurpython import ImgurClient
 import json
 
 # Startup Modules
@@ -14,7 +15,6 @@ load = [
 	'ext.meta','ext.mod','ext.mtb','ext.nufc','ext.quotes',
 	'ext.reactions','ext.scores', 'ext.sidebar','ext.timers','ext.twitter',
 	'ext.transfers','ext.tv'
-	# 'ext.wiki'
 ]
 	
 # Enable Logging
@@ -75,15 +75,14 @@ if __name__ == '__main__':
 		bot.ignored = json.load(f)
 	with open('config.json') as f:
 		bot.config = json.load(f)
-	with open('tv.json') as f:
-		bot.tv = json.load(f)
+	bot.imgur = ImgurClient(bot.credentials["Imgur"]["Authorization"],bot.credentials["Imgur"]["Secret"])
 	bot.configlock = asyncio.Lock()
+	bot.timerlock = asyncio.Lock()
 	bot.run(bot.credentials['bot']['token'])
 	
 	# Cleanup.
 	bot.twitask.cancel()
 	bot.scorechecker.cancel()
-	bot.run_until_complete(bot.session.close()) #Aiohttp ClientSession
 	handlers = log.handlers[:]
 	for hdlr in handlers:
 		hdlr.close()

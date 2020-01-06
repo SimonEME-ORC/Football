@@ -31,7 +31,7 @@ class Sidebar(commands.Cog):
 		with open('teams.json') as f:
 			self.bot.teams = json.load(f)
 		
-	def __unload(self):
+	def cog_unload(self):
 		self.sidetask.cancel()
 		self.sidebaron = False
 		self.driver.quit()
@@ -347,7 +347,11 @@ class Sidebar(commands.Cog):
 				form = p[11]
 			except IndexError:
 				pass
-			tbldata += f"{r} {m}|{t}|{pd}|{w}|{d}|{l}|{gd}|{pts}\n"
+			
+			if "Newcastle" in t:
+				tbldata += f"**{r} {m}**|**{t}**|**{pd}**|**{w}**|**{d}**|**{l}**|**{gd}**|**{pts}**\n"
+			else:
+				tbldata += f"{r} {m}|{t}|{pd}|{w}|{d}|{l}|{gd}|{pts}\n"
 		return tbldata
 
 	def fixtures(self):	
@@ -364,9 +368,17 @@ class Sidebar(commands.Cog):
 				continue
 			try:
 				d = datetime.datetime.strptime(d,"%d.%m. %H:%M")
+				d = d.replace(year=datetime.datetime.now().year)
+				
+				if d.month < datetime.datetime.now().month:
+					d = d.replace(year=datetime.datetime.now().year + 1)
+				elif d.month == datetime.datetime.now().month:
+					if d.day < datetime.datetime.now().day:
+						d = d.replace(year=datetime.datetime.now().year + 1)
+
 				d = datetime.datetime.strftime(d,"%a %d %b: %H:%M")
 			except ValueError: # Fuck this cant be bothered to fix it.
-				d = "Tue 31 Feb: 15:00"			
+				d = "Tue 31 Feb: 15:00"
 
 			matchid = "".join(i.xpath(".//@id")).split('_')[2]
 			lnk = f"http://www.flashscore.com/match/{matchid}/#h2h;overall"
@@ -414,7 +426,7 @@ class Sidebar(commands.Cog):
 		results = t.xpath(".//div[contains(@class,'sportName soccer')]/div")
 		for i in results:
 			d = "".join(i.xpath('.//div[@class="event__time"]//text()'))
-			
+			d = d.replace("Pen","").replace("AET","")
 			if not d:
 				continue
 			try:

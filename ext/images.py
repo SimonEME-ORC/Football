@@ -1,5 +1,6 @@
 from PIL import Image,ImageDraw,ImageOps,ImageFont
 from discord.ext import commands
+from discord.ext.commands.cooldowns import BucketType
 from lxml import html
 import datetime
 import textwrap
@@ -15,11 +16,62 @@ class ImageManip(commands.Cog):
 	""" Edit images for you """
 	def __init__(self, bot):
 		self.bot = bot
-	
-	def is_ircle(message):
-		if message.guild:
-			return message.channel.id in [332165489285660672,332167049273016320] or message.guild.id is None
-	
+
+	@commands.command()
+	@commands.cooldown(1,120,BucketType.user) 
+	async def tinder(self,ctx):
+		""" Try to Find your next date. """
+		with ctx.typing():
+			match = random.choice([True,False,False,False])
+			if not match:
+				return await ctx.send("Nobody swiped right on you.")
+
+			async with self.bot.session.get(str(ctx.author.avatar_url_as(format="png"))) as resp:
+				av = await resp.content.read()
+			match = random.choice(ctx.guild.members)
+			name = match.display_name
+
+			async with self.bot.session.get(str(match.avatar_url_as(format="png"))) as resp:
+				target = await resp.content.read()
+				df = await self.bot.loop.run_in_executor(None,self.dtin,target,av,name)
+				
+			if match == ctx.author:
+				await ctx.send("Congratulations, you matched with yourself. How pathetic.",file=df)
+			else:
+				await ctx.send(file=df)
+
+	def dtin(self,image,av,name):
+		# Base Image
+		im = Image.open("tinder.png").convert(mode="RGBA")
+		# Prepare mask
+		msk = Image.open("retardedmask.png").convert('L')
+		msk = ImageOps.fit(msk,(185,185))
+		# User Avatar
+		avt = Image.open(BytesIO(av)).convert(mode="RGBA")
+		avo = ImageOps.fit(avt,(185,185))
+		avo.putalpha(msk)
+		im.paste(avo,box=(100,223,285,408),mask=msk)
+		# Player
+		plt = Image.open(BytesIO(image)).convert(mode="RGBA")
+		plo = ImageOps.fit(plt,(185,185),centering=(0.5,0.0))
+		plo.putalpha(msk)
+		im.paste(plo,box=(313,223,498,408),mask=msk)
+		# Write "it's a mutual match"
+		txt = f"You and {name} have liked each other."
+		f = ImageFont.truetype('Whitney-Medium.ttf',24)
+		w,h = f.getsize(txt)
+		d = ImageDraw.Draw(im)
+		d.text((300 - w/2,180),txt,font=f,fill="#ffffff")
+		# Cleanup & return as discord.file
+		todel = [plt,plo,im,avt,avo,msk,d]
+		output = BytesIO()
+		im.save(output,"PNG")
+		output.seek(0)
+		for i in todel:
+			del i
+		df = discord.File(output,filename="tinder.png")
+		return df
+
 	async def get_faces(self,ctx,target):
 		""" Retrieve face features from Prokect Oxford """
 		# Prepare POST
@@ -50,106 +102,37 @@ class ImageManip(commands.Cog):
 				await ctx.send(f"{resp.status} code accessing project oxford.")
 			image = await resp.content.read()
 		return image,respjson
-	
-	async def get_players(self):
-		names,pics = await self.gp("https://www.nufc.co.uk/teams/first-team")
-		for i in ["under-23s","on-loan","coaching-staff"]:
-			add1,add2 = await self.gp(f"https://www.nufc.co.uk/teams/{i}")
-			names += add1
-			pics += add2
-		print(names)
-		names = [x.split('/')[-1].replace('-',' ').title() for x in names] #strip preleading text
-		pick = list((z[0],z[1]) for z in zip(names,pics))
-		return random.choice(pick)
 		
-	async def gp(self,source): # get players for page
-		async with self.bot.session.get(source,allow_redirects=False) as resp:
-			if resp.status != 200:
-				return
-			tree = html.fromstring(await resp.text())
-		players = tree.xpath('.//div[@class="player-card"]/a/@href')
-		pictures = tree.xpath('.//div[@class="player-card"]/a/div/div/figure/img/@src')
-		return (players,pictures)
-	
-	@commands.command()
-	@commands.check(is_ircle)
-	async def tinder(self,ctx):
-		""" Find your NUFC lover. """
-		await ctx.trigger_typing()
-		match = await self.get_players()
-		which = random.choice(["none","none","none","Player","Player","Player","Player","Player","User","User"])
-		if which == "none":
-			return await ctx.send("Nobody wants to match with you.")
-		async with self.bot.session.get(ctx.author.avatar_url_as(format="png")) as resp:
-			av = await resp.content.read()
-		if which == "Player":
-			name = match[0]
-			target = match[1]
-			image,respjson = await self.get_faces(ctx,target)
-			async with self.bot.session.get(target) as resp:
-				target = await resp.content.read()
-		else:
-			match = random.choice(ctx.guild.members)
-			name = match.display_name
-			if name == ctx.author.display_name:
-				return await ctx.send("You're too ugly to use tinder mate.")
-			async with self.bot.session.get(match.avatar_url_as(format="png")) as resp:
-				target = await resp.content.read()
-			
-		# Executor
-		df = await self.bot.loop.run_in_executor(None,self.dtin,target,av,
-												 name)
-		await ctx.send(file=df)
-
-												 
-	def dtin(self,image,av,name):
-		# Base Image
-		im = Image.open("tinder.png").convert(mode="RGBA")
-		# Prepare mask
-		msk = Image.open("retardedmask.png").convert('L')
-		msk = ImageOps.fit(msk,(185,185))
-		# User Avatar
-		avt = Image.open(BytesIO(av)).convert(mode="RGBA")
-		avo = ImageOps.fit(avt,(185,185))
-		avo.putalpha(msk)
-		im.paste(avo,box=(100,223,285,408),mask=msk)
-		# Player
-		plt = Image.open(BytesIO(image)).convert(mode="RGBA")
-		plo = ImageOps.fit(plt,(185,185),centering=(0.5,0.0))
-		plo.putalpha(msk)
-		im.paste(plo,box=(313,223,498,408),mask=msk)
-		# Write "it's a mutual match"
-		txt = f"You and {name} have liked each other."
-		f = ImageFont.truetype('Whitney Medium Regular_0.ttf',24)
-		w,h = f.getsize(txt)
-		d = ImageDraw.Draw(im)
-		d.text((300 - w/2,180),txt,font=f,fill="#ffffff")
-		# Cleanup & return as discord.file
-		todel = [plt,plo,im,avt,avo,msk,d]
-		output = BytesIO()
-		im.save(output,"PNG")
-		output.seek(0)
-		for i in todel:
-			del i
-		df = discord.File(output,filename="tinder.png")
-		return df
-												 
-	@commands.command(aliases=["bob","ross"])
-	@commands.is_owner()
-	async def bobross(self,ctx,*,target):
-		""" Bob Rossify """
-		target = target.strip('<').strip('>')
-		await ctx.trigger_typing()
+	async def get_target(self,ctx,target):
 		if len(ctx.message.mentions) > 0:
 			target = ctx.message.mentions[0].avatar_url_as(format="png")
-		image,respjson = await self.get_faces(ctx,target)
-		if respjson is None:
-			await ctx.send("No faces were detected in your image.")
-			return
-		# To the Executor!
-		df = await self.bot.loop.run_in_executor(None,self.draw_bob,image,
-												 respjson)
-		await ctx.send(file=df)
+		if target == None:
+			for i in ctx.message.attachments:
+				if i.height is None: # Not an image.
+					continue
+				return i.url
+			return await ctx.send(':no_entry_sign: To use this command either upload an image, tag a user, or specify a url.')			
+		else:
+			return target
+
+	@commands.command(aliases=["bob","ross"])
+	async def bobross(self,ctx,*,target=None):
+		""" Bob Rossify """
+		with ctx.typing():
+			target = await self.get_target(ctx,target)
+			if not target:
+				return # rip.
+				
+			image,respjson = await self.get_faces(ctx,target)
+			if respjson is None:
+				return await ctx.send("No faces were detected in your image.")
+						
+			df = await self.bot.loop.run_in_executor(None,self.draw_bob,image,respjson)
+			await ctx.send(file=df)
+			try:
+				await ctx.message.delete()
+			except discord.Forbidden:
+				pass
 
 	def draw_bob(self,image,respjson):
 		""" Pillow Bob Rossifying """
@@ -181,25 +164,25 @@ class ImageManip(commands.Cog):
 		return df
 	
 	@commands.command()
-	async def knob(self,ctx,*,target):
+	async def knob(self,ctx,*,target=None):
 		""" Draw knobs in mouth on an image.
 		Mention a user to use their avatar.
 		Only works for human faces."""
-		await ctx.trigger_typing()
-		if len(ctx.message.mentions) > 0:
-			target = ctx.message.mentions[0].avatar_url_as(format="png")
-		image,respjson = await self.get_faces(ctx,target)
-		if respjson is None:
-			await ctx.send("No faces were detected in your image.")
-			return
-		# To the Executor!
-		df = await self.bot.loop.run_in_executor(None,self.draw_knob,image,
-												 respjson)
-		await ctx.send(ctx.author.mention,file=df)
-		try:
-			await ctx.message.delete()
-		except discord.Forbidden:
-			pass
+		with ctx.typing():
+			target = await self.get_target(ctx,target)
+			if not target:
+				return # rip
+			
+			image,respjson = await self.get_faces(ctx,target)
+			if respjson is None:
+				return await ctx.send("No faces were detected in your image.")
+				
+			df = await self.bot.loop.run_in_executor(None,self.draw_knob,image,respjson)
+			await ctx.send(ctx.author.mention,file=df)
+			try:
+				await ctx.message.delete()
+			except discord.Forbidden:
+				pass
 		
 	def draw_knob(self,image,respjson):
 		im = Image.open(BytesIO(image)).convert(mode="RGBA")
@@ -223,26 +206,27 @@ class ImageManip(commands.Cog):
 		return df
 	
 	@commands.command()
-	async def eyes(self,ctx,*,target):
+	async def eyes(self,ctx,*,target=None):
 		""" Draw Googly eyes on an image.
 			Mention a user to use their avatar.
 			Only works for human faces."""
-		await ctx.trigger_typing()
-		if len(ctx.message.mentions) > 0:
-			target = ctx.message.mentions[0].avatar_url_as(format="png")
-		image,respjson = await self.get_faces(ctx,target)
-		if respjson is None:
-			await ctx.send("No faces were detected in your image.")
-			return
-		# Pass it off to the executor
-		df = await self.bot.loop.run_in_executor(None,self.draw_eyes,
-													image,respjson)
-		await ctx.send(ctx.author.mention,file=df)
-		try:
-			await ctx.message.delete()
-		except:
-			pass
-			
+		with ctx.typing():
+			target = await self.get_target(ctx,target)
+			if not target:
+				return # rip
+			image,respjson = await self.get_faces(ctx,target)
+			if respjson is None:
+				await ctx.send("No faces were detected in your image.")
+				return
+			# Pass it off to the executor
+			df = await self.bot.loop.run_in_executor(None,self.draw_eyes,
+														image,respjson)
+			await ctx.send(ctx.author.mention,file=df)
+			try:
+				await ctx.message.delete()
+			except:
+				pass
+
 	def draw_eyes(self,image,respjson):
 		""" Draws the eyes """
 		im = Image.open(BytesIO(image))
@@ -296,7 +280,6 @@ class ImageManip(commands.Cog):
 		return df
 
 	@commands.command()
-	@commands.is_owner()
 	async def tard(self,ctx,target,*,quote):
 		""" Generate an "oh no, it's retarded" image
 		with a user's avatar and a quote 
@@ -310,15 +293,11 @@ class ImageManip(commands.Cog):
 				target = ctx.author
 				quote = "I think I'm smarter than Painezor"
 			cs = self.bot.session
-			async with cs.get(target.avatar_url_as(format="png", \
-						size=1024)) as resp:
+			async with cs.get(str(target.avatar_url_as(format="png",size=1024))) as resp:
 				if resp.status != 200:
-					await ctx.send(f"Error retrieving avatar for target"
-								   f" {target} {resp.status}")
-					return
+					return await ctx.send(f"Error retrieving avatar for target {target} {resp.status}")
 				image = await resp.content.read()
-			df = await self.bot.loop.run_in_executor(None,self.draw_tard,\
-				image,quote)
+			df = await self.bot.loop.run_in_executor(None,self.draw_tard,image,quote)
 			await ctx.send(file=df)
 		
 	def draw_tard(self,image,quote):
@@ -344,7 +323,8 @@ class ImageManip(commands.Cog):
 		# Get best size for text
 		def get_first_size(quote):
 			fntsize = 72
-			f = ImageFont.truetype('Whitney Medium Regular_0.ttf',fntsize)
+			ttf = 'Whitney-Medium.ttf'
+			f = ImageFont.truetype(ttf,fntsize)
 			wid = 300
 			quote = textwrap.fill(quote,width=wid)
 			while fntsize > 0:
@@ -354,10 +334,9 @@ class ImageManip(commands.Cog):
 						return (wid,f)
 					wid -=1
 					quote = textwrap.fill(quote,width=wid)
-					f = ImageFont.truetype('Whitney Medium Regular_0.ttf',
-											 fntsize)
+					f = ImageFont.truetype(ttf,fntsize)
 				fntsize -= 1
-				f = ImageFont.truetype('Whitney Medium Regular_0.ttf',fntsize)
+				f = ImageFont.truetype(ttf,fntsize)
 				wid = 40
 
 		wid,f = get_first_size(quote)
@@ -443,13 +422,12 @@ class ImageManip(commands.Cog):
 		return df
 		
 	@commands.command(aliases=["localman","local","ruin"],hidden=True)
-	async def ruins(self,ctx,*,user: discord.User):
+	async def ruins(self,ctx,*,user: discord.User = None):
 		""" Local man ruins everything """
 		with ctx.typing():
-			user = await self.bot.fetch_user(int(user.id))
 			if user == None:
 				user = ctx.author
-			av = user.avatar_url_as(format="png",size=256)
+			av = str(user.avatar_url_as(format="png",size=256))
 			async with self.bot.session.get(av) as resp:
 				if resp.status != 200:
 					await ctx.send(f"{resp.status} Error getting {user}'s avatar")
@@ -504,7 +482,6 @@ class ImageManip(commands.Cog):
 				await u.kick(reason="Autism prevention")
 			await ctx.delete_messages(autmessages)
 			await ctx.send(f"{len(autmessages)} messages were deleted.")
-
 			
 	def draw_autists(self,count):
 		""" Draw the autism meter """
@@ -536,9 +513,7 @@ class ImageManip(commands.Cog):
 		del d
 		return df
 		
-	
-	@commands.command(aliases=["mypurpose","purpose"])
-	@commands.is_owner()
+	@commands.command(hidden=True)
 	async def butter(self,ctx):
 		""" What is my purpose? """
 		await ctx.send(file=discord.File("butter.png"))
@@ -568,26 +543,25 @@ class ImageManip(commands.Cog):
 		""" Party on Garth """
 		await ctx.send(file=discord.File('goala.gif'))
 	
-	# @commands.command(aliases=["cat"])
-	# async def pussy(self,ctx):
-		# """ Get a random cat image (ircle channel only) """
-		# await ctx.trigger_typing()
-		# retries = 0
-		# while retries < 3:
-			# async with self.bot.session.get("http://random.cat/meow") as resp:
-				# if resp.status != 200:
-					# await asyncio.sleep(1)
-					# retries += 1
-					# continue
-				# else:
-					# cat = await resp.json()
-					# async with self.bot.session.get(cat["file"]) as resp:
-						# cat = await resp.content.read()
-						# await ctx.send(f'😺 {ctx.author.mention} A Cat has been delivered to your DMs, please take care of him!',delete_after=5)
-						# fp = discord.File(BytesIO(cat),filename="cat.png")
-						# await ctx.author.send("Here's your cat:",file=fp)
-					# return
-		# await ctx.author.send("Sorry, can't get a cat.")		
+	@commands.command()
+	@commands.cooldown(1,120,BucketType.user) 
+	async def cat(self,ctx):
+		""" Adopt a random cat """
+		await ctx.trigger_typing()
+		retries = 0
+		while retries < 3:
+			async with self.bot.session.get("http://random.cat/meow") as resp:
+				if resp.status != 200:
+					await asyncio.sleep(1)
+					retries += 1
+					continue
+				else:
+					cat = await resp.json()
+					async with self.bot.session.get(cat["file"]) as resp:
+						cat = await resp.content.read()
+						fp = discord.File(BytesIO(cat),filename="cat.png")
+						return await ctx.send("😺 Here's your cat:",file=fp)
+		await ctx.author.send("😿 Sorry, no cats want to be adopted by you.")		
 			
 def setup(bot):
 	bot.add_cog(ImageManip(bot))

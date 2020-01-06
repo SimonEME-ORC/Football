@@ -11,7 +11,9 @@ class Tv(commands.Cog):
 	""" Search for live TV matches """
 	def __init__(self, bot):
 		self.bot = bot
-	
+		with open('tv.json') as f:
+			bot.tv = json.load(f)
+			
 	async def save_tv(self):
 		with await self.bot.configlock:
 			with open('tv.json',"w",encoding='utf-8') as f:
@@ -50,6 +52,7 @@ class Tv(commands.Cog):
 	@commands.command()
 	async def tv(self,ctx,*,team = None):
 		""" Lookup next televised games for a team """
+		team = discord.utils.escape_mentions(team)
 		with ctx.typing():
 			if team and not team == "live":
 				matches = {i for i in self.bot.tv if team.lower() in i.lower()}

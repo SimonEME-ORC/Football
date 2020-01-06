@@ -14,7 +14,7 @@ class quotedb(commands.Cog):
 	def __init__(self,bot):
 		self.bot = bot
 		
-	def __unload(bot):	
+	def cog_unload(bot):	
 		conn.close()
 	
 	def nufccheck(ctx):

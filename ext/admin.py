@@ -35,16 +35,22 @@ class Admin(commands.Cog):
 		
 		elif isinstance(error,commands.DisabledCommand):
 			await ctx.message.add_reaction('🚫')
-
+		
+		elif isinstance(error,commands.BotMissingPermissions):
+			# Fail Silently.
+			pass
+			
+		elif isinstance(error, commands.CommandNotFound):
+			pass				
+		
 		elif isinstance(error, commands.CommandInvokeError):
 			print('In {0.command.qualified_name}:'.format(ctx), file=sys.stderr)
 			traceback.print_tb(error.original.__traceback__)
 			print('{0.__class__.__name__}: {0}'.format(error.original),
 				  file=sys.stderr)	
-		elif isinstance(error, commands.CommandNotFound):
-			print(f"Invalid command: {ctx.author.name} on {ctx.guild.name} ({ctx.message.content})")
+
 		else:
-			print(f"Error: {ctx.message.content} ({ctx.author.name} on {ctx.guild.name})\n {error}")
+			print(f"Error: ({ctx.author.id} on {ctx.guild.id})\n caused the following error\n{error}\nContext: {ctx.message.content}")
 		
 	@commands.command()
 	@commands.is_owner()
@@ -73,8 +79,7 @@ class Admin(commands.Cog):
 	async def _reload(self,ctx, *, module : str):
 		"""Reloads a module."""
 		try:
-			self.bot.unload_extension(module)
-			self.bot.load_extension(module)
+			self.bot.reload_extension(module)
 		except Exception as e:
 			await ctx.send(f':no_entry_sign: {type(e).__name__}: {e}')
 		else:
@@ -139,6 +144,12 @@ class Admin(commands.Cog):
 	
 	@commands.command()
 	@commands.is_owner()
+	async def ownersay(self,ctx,channel:discord.TextChannel,*,msg):
+		await channel.send(msg)
+		await ctx.message.delete()
+	
+	@commands.command()
+	@commands.is_owner()
 	async def guilds(self,ctx):
 		guilds = []
 		for i in self.bot.guilds:
@@ -180,5 +191,54 @@ class Admin(commands.Cog):
 		await ctx.send(":gear: Restarting.")
 		await self.bot.logout()
 		
+	@commands.command()
+	@commands.is_owner()
+	async def playing(self,ctx,*,game):
+		""" Change status to "playing {game}" """
+		await self.bot.change_presence(game=discord.Game(name=game,type=0))
+		await self.ctx.send(f"Set status to playing {game}")
+
+	@commands.command()
+	@commands.is_owner()
+	async def streaming(self,ctx,*,game):
+		""" Change status to "streaming {game}" """
+		await self.bot.change_presence(game=discord.Game(name=game,type=1))
+		await self.ctx.send(f"Set status to streaming {game}")
+		
+	@commands.command()
+	@commands.is_owner()
+	async def watching(self,ctx,*,game):
+		""" Change status to "watching {game}" """
+		await self.bot.change_presence(game=discord.Game(name=game,type=3))
+		await self.ctx.send(f"Set status to watching {game}")
+		
+	@commands.command()
+	@commands.is_owner()
+	async def listening(self,ctx,*,game):
+		""" Change status to "listening to {game}" """
+		await self.bot.change_presence(game=discord.Game(name=game,type=2))
+		await self.ctx.send(f"Set status to listening to {game}")		
+		
+	@commands.command()
+	@commands.is_owner()
+	async def shared(self,ctx,*,id):
+		""" Check ID for shared servers """
+		matches = []
+		id = int(id)
+		for i in self.bot.guilds:
+			if i.get_member(id) is not None:
+				matches.append(f"{i.name} ({i.id})")
+		
+		e = discord.Embed()
+		if not matches:
+			e.color = 0x00ff00
+			e.description = f"User id {id} not found on shared servers."
+			return await ctx.send(embed=e)
+		
+		user = self.bot.get_user(id)
+		e.title = f"Shared servers for {user} (ID: {id})"
+		e.description = "\n".join(matches)
+		await ctx.send(embed=e)
+	
 def setup(bot):
     bot.add_cog(Admin(bot))
