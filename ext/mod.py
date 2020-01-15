@@ -1,52 +1,110 @@
-from discord.ext.commands.cooldowns import BucketType
 from discord.ext import commands
 import discord
 import asyncio
 import json
+import typing
 import urllib
 
+### TODO: Merge hackyinfo into info
+### TODO: Merge hackban into ban
+
+	
 class Mod(commands.Cog):
-	''' Guild Moderation Commands '''
+	""" Guild Moderation Commands """
 	def __init__(self, bot):
 		self.bot = bot
+		self.bot.loop.create_task(self.update_cache())
+		self.bot.loop.create_task(self.update_prefixes())
+		self.bot.command_prefix = self.get_prefix
+	
+	def get_prefix(self,bot,message):
+		try:
+			pref = self.bot.prefix_cache[message.guild.id]
+		except KeyError:
+			pref = [".tb"]
+		except AttributeError:
+			pref = [".tb","!","-","`","!","?"]
+
+		return commands.when_mentioned_or(*pref)(self.bot, message)		
+	
+	def me_or_mod(self):
+		def predicate(ctx):
+			if ctx.author.id == bot.owner_id:
+				return True
+			if ctx.author.permissions_in(ctx.channel).manage_messages:
+				return True	
+		return commands.check(predicate)
+	
+	async def update_prefixes(self):
+		self.bot.prefix_cache = {}
+		connection = await self.bot.db.acquire()
+		async with connection.transaction():
+			records =  await connection.fetch("""
+				SELECT * FROM prefixes
+			""")
+		await self.bot.db.release(connection)
 		
-	@commands.command()
-	@commands.is_owner()
-	async def say(self,ctx,destin:discord.TextChannel = None,*,tosay):
+		for r in records:
+			guild_id = r["guild_id"]
+			prefix = r["prefix"]
+			try:
+				self.bot.prefix_cache[guild_id].append(prefix)
+			except KeyError:
+				self.bot.prefix_cache.update({guild_id : [prefix]})	
+	
+	async def update_cache(self):
+		self.bot.disabled_cache = {}
+		connection = await self.bot.db.acquire()
+		async with connection.transaction():
+			records =  await connection.fetch("""
+				SELECT * FROM ignored_commands
+			""")
+		await self.bot.db.release(connection)
+		
+		for r in records:
+			guild_id = r["guild_id"]
+			command = r["command"]
+			try:
+				self.bot.disabled_cache[guild_id].append(command)
+			except KeyError:
+				self.bot.disabled_cache.update({guild_id : [command]})
+	
+	@commands.command(usage = "say <Channel (optional)< <what you want the bot to say>")
+	@commands.check(me_or_mod)
+	async def say(self,ctx,destin:typing.Optional[discord.TextChannel] = None,*,tosay):
 		""" Say something as the bot in specified channel """
+		if destin is None:
+			destin = ctx.channel
 		try:
 			await ctx.message.delete()
-		except:
+		except discord.Forbidden():
 			pass
-		if destin is None:
-			destin = ctx
 		await destin.send(tosay)
 
-	@commands.command()
-	@commands.has_permissions(manage_messages=True)
+	@commands.command(usage = "topic <New Channel Topic>")
+	@commands.has_permissions(manage_channels=True)
+	@commands.bot_has_permissions(manage_channels=True)
 	async def topic(self,ctx,*,newtopic):
 		""" Set the topic for the current channel """
 		await ctx.channel.edit(topic=newtopic)
 		await ctx.send(f"Topic changed to: '{newtopic}'")
 		
-		
-	@commands.command()
-	@commands.has_permissions(manage_messages=True)
-	@commands.bot_has_permissions(manage_messages=True)
+	@commands.command(usage = "pin <(Message ID you want pinned) or (new message to pin.)>")
+	@commands.has_permissions(manage_channels=True)
+	@commands.bot_has_permissions(manage_channels=True)
 	async def pin(self,ctx,*,msg):
 		""" Pin a message to the current channel """
 		try:
-			m = await self.bot.fetch_message(int(msg))
-			await m.pin()
-		except:
-			await ctx.message.delete()
+			m = await ctx.channel.fetch_message(int(msg))
+		except ValueError:
 			topin = await ctx.send(f":pushpin: {ctx.author.mention}: {msg}")
 			await topin.pin()
 			await ctx.message.delete()
 	
-	@commands.command()
+	@commands.command(usage = "rename <member> <new name>")
 	@commands.has_permissions(manage_nicknames=True)
-	async def rename(self,ctx,member:discord.Member,nickname:str):
+	@commands.bot_has_permissions(manage_nicknames=True)
+	async def rename(self,ctx,member:discord.Member,nickname:commands.clean_content):
 		""" Rename a member """
 		try:
 			await member.edit(nick=nickname)
@@ -58,58 +116,58 @@ class Mod(commands.Cog):
 			await ctx.send(f"{member.mention} has been renamed.")
 		await ctx.message.delete()
 
-	@commands.command()
-	@commands.is_owner()
+	@commands.command(usage= "delete_empty_roles")
+	@commands.has_permissions(manage_roles=True)
+	@commands.bot_has_permissions(manage_roles=True)
 	async def delete_empty_roles(self,ctx):
 		""" Delete any unused roles on the server """
 		count = 0
+		deleted = []
 		for i in ctx.guild.roles:
 			# protected roles.
-			if i.name in ["muted","Moderator"]:
+			if i.name.lower() == "muted":
 				continue
 			if len(i.members) == 0:
-				print(f"Empty role: {i.name}")
 				count += 1
-				try:
-					await i.delete()
-				except discord.Forbidden:
-					continue
-		await ctx.send(f'Found and deleted {count} empty roles.')
+				await i.delete()
+				deleted.append(i.name)	
+		await ctx.send(f'Found and deleted {count} empty roles: {", ".join(deleted)}')
 	
-	@commands.command()
+	@commands.command(usage = "kick <@member1  @member2 @member3> <reason>")
 	@commands.has_permissions(kick_members=True)
-	async def kick(self,ctx,user : discord.Member,*,reason = "unspecified reason."):
+	@commands.bot_has_permissions(kick_members=True)
+	async def kick(self,ctx,members : commands.Greedy[discord.Member],*,reason = "unspecified reason."):
 		""" Kicks the user from the server """
-		try:
-			await user.kick(reason=f"{ctx.author.name}: {reason}")
-		except discord.Forbidden:
-			await ctx.send(f"⛔ Sorry {ctx.author.name} I can't kick {user.mention}.")
-		except discord.HTTPException:
-			await ctx.send('❔ Kicking failed.')
-		else:
-			await ctx.send(f"👢 {user.mention} was kicked by {ctx.author.mention} for: \"{reason}\".")
-		await ctx.message.delete()
+		for i in members:
+			try:
+				await i.kick(reason=f"{ctx.author.name}: {reason}")
+			except discord.Forbidden:
+				await i.send(f"⛔ Sorry {ctx.author.name} I can't kick {user.mention}.")
+			except discord.HTTPException:
+				await i.send(f'❔ Kicking failed for {ctx.author.name}.')
+			else:
+				await ctx.send(f"👢 {user.mention} was kicked by {ctx.author.mention} for: \"{reason}\".")
 	
-	@commands.command()
+	@commands.command(usage = "ban <@member1  @member2 @member3> <reason>")
 	@commands.has_permissions(ban_members=True)
 	@commands.bot_has_permissions(ban_members=True)
-	async def ban(self,ctx,member : discord.Member,*,reason="Not specified",days = 0):
-		""" Bans the member from the server """
-		try:
-			await member.ban(reason=f"{ctx.author.name}: {reason}",delete_message_days=days)
-		except discord.Forbidden:
-			await ctx.send(f"⛔ Sorry, I can't ban {member.mention}.")
-		except discord.HTTPException:
-			await ctx.send("❔ Banning failed.")
-		else:
-			await ctx.send(f"☠ {member.mention} was banned by {ctx.author.mention} for: \"{reason}\".")
-		await ctx.message.delete()
+	async def ban(self,ctx,members : commands.Greedy[discord.Member],delete_days: typing.Optional[int] = 0,*,reason="Not specified"):
+		""" Bans a list of members from the server, deletes all messages for the last x days """
+		for i in members:
+			try:
+				await i.ban(reason=f"{ctx.author.name}: {reason}",delete_message_days=days)
+			except discord.Forbidden:
+				await ctx.send(f"⛔ Sorry, I can't ban {i.mention}.")
+			except discord.HTTPException:
+				await ctx.send(f"❔ Banning failed for {i.mention}.")
+			else:
+				await ctx.send(f"☠ {i.mention} was banned by {ctx.author.mention} for: \"{reason}\".")
 	
-	@commands.command()
+	@commands.command(usage = "hackban <memberid1  @memberid2 @memberid3> <reason>")
 	@commands.has_permissions(ban_members=True)
 	@commands.bot_has_permissions(ban_members=True)
 	async def hackban(self, ctx, *member_ids: int):
-		"""Bans a member via their ID."""
+		"""Bans a list of members via their ID."""
 		for member_id in member_ids:
 			try:
 				await self.bot.http.ban(member_id, ctx.message.guild.id)
@@ -161,14 +219,12 @@ class Mod(commands.Cog):
 							await ctx.send(f"🆗 {who} was unbanned")
 		
 	@commands.command(aliases=['bans'])
-	@commands.guild_only()
 	@commands.has_permissions(ban_members=True)
+	@commands.bot_has_permissions(view_audit_log=True)
 	async def banlist(self,ctx):
 		""" Show the banlist for the server """
-		try:
-			banlist = await ctx.guild.bans()
-		except discord.Forbidden:
-			return await ctx.send('I don\'t have permission to view the banlist on this server.')
+		banlist = await ctx.guild.bans()
+
 		banpage = ""
 		banpages = []
 		banembeds = []
@@ -194,7 +250,6 @@ class Mod(commands.Cog):
 			e.set_footer(text=f"Page {thispage} of {len(banpages)}")
 			thispage += 1
 			banembeds.append(e)
-		
 		
 		m = await ctx.send(embed=banembeds[0])
 		if len(banembeds) == 1:
@@ -238,462 +293,175 @@ class Mod(commands.Cog):
 				await m.remove_reaction("⏭",ctx.message.author)
 			await m.edit(embed=banembeds[page - 1])
 		
-	## Mod logs.
-	async def _save(self):
-		with await self.bot.configlock:
-			with open('config.json',"w",encoding='utf-8') as f:
-				json.dump(self.bot.config,f,ensure_ascii=True,
-				sort_keys=True,indent=4, separators=(',',':'))
-	
-	@commands.Cog.listener()
-	async def on_guild_join(self,guild):
-		self.bot.config.update({f"{guild.id}":{}})
-		await self._save()
-		
-	@commands.Cog.listener()
-	async def on_guild_remove(self,guild):
-		del self.bot.config[f"{guild.id}"]
-		await self._save()		
-	
-	async def get_mod_channel(self,guild):
-		# Check if in dict.
-		try: 
-			d = self.bot.config[f"{guild.id}"]
-		except KeyError:
-			self.bot.config.update({f"{guild.id}":{"mod":{"channel":None}}})
-			return await self._save()
-			return None
-		
-		try:
-			return self.bot.get_channel(d["mod"]["channel"])
-		except KeyError:
-			self.bot.config[f"{guild.id}"].update({"mod":{"channel":None}})
-			await self._save()
-			return None
-	
-	@commands.command()
-	@commands.has_permissions(manage_guild=True)
-	@commands.guild_only()
-	async def mod(self,ctx,*,set=""):
-		""" Shows the status of various mod tools."""
-		if set == "set":
-			self.bot.config.update({f"{ctx.guild.id}":{"mod":{"channel":ctx.channel.id}}})
-			cf = f"Mod Channel for {ctx.guild.name} set to {ctx.channel.name}"
-			await ctx.send(cf)
-			await self._save()
-		
-		# Check mod is set.
-		mc = await self.get_mod_channel(ctx.guild)
-		
-		if not mc:
-			return await ctx.send("Mod channel not set.")
-			return
-		
-		e = discord.Embed(color=0x7289DA)
-		e.description = f"Mod Channel: {mc.mention}\n"
-		e.title = f"Config settings for {ctx.guild.name}"
-		
-		c = self.bot.config[f"{ctx.guild.id}"]["mod"]
-		for i in ['joins','leaves','unbans','emojis','mutes']:
-			try:
-				c[i]
-			except KeyError:
-				c[i] = "Off"
-		e.description += f"Joins: `{c['joins']}`\n"
-		e.description += f"Leaves: `{c['leaves']}`\n"
-		e.description += f"Unbans: `{c['unbans']}`\n"
-		e.description += f"Emojis: `{c['emojis']}`\n"
-		e.description += f"Mutes: `{c['mutes']}`"
-		e.set_thumbnail(url=ctx.guild.icon_url)
-		await ctx.send(embed=e)
-
 	### Mutes & Blocks
-	@commands.has_permissions(kick_members=True)
 	@commands.command()
+	@commands.has_permissions(manage_channels=True)
+	@commands.bot_has_permissions(manage_channels=True)
 	async def block(self,ctx,member:discord.Member):
 		""" Block a user from this channel (cannot be used on guild default channel) """
-		mc = await self.get_mod_channel(ctx.guild)
+		try:
+			mutechan = self.bot.get_channel(self.bot.notif_cache[ctx.guild.id]["mute_channel_id"])
+		except:
+			mutechan = None
 		
 		# Check if already muted
 		ows = ctx.channel.overwrites
 		ows = [i[0] for i in ows if isinstance(i[0],discord.Member)]
+		
 		if member in ows:
 			try:
 				await ctx.channel.set_permissions(member, overwrite=None)
 			except Exception as e:
-				await ctx.send(f"Could not unblock member from channel, Error: \n```{e}```")
-				print(e)
+				return await ctx.send(f"Could not unblock member from channel, Error: \n```{e}```")
 			else:
-				try:
-					if self.bot.config[f"{ctx.guild.id}"]["mod"]["mutes"]:
-						await mc.send(f"{member.mention} was unmuted by {ctx.author}")	
-				except KeyError:
-					self.bot.config[f"{ctx.guild.id}"]["mod"].update({"mutes":False})
-					await self._save()
+				if mutechan:
+					await mutechan.send(f"{member.mention} was unblocked from {ctx.channel.mention} by {ctx.author}")	
 				return await ctx.send(f"Unblocked {member.mention} from {ctx.channel.mention}")		
 		
 		ow = discord.PermissionOverwrite()
 		# Cannot block from default channel.
 		ow.read_messages = False
 		ow.send_messages = False
+		
 		try:
 			await ctx.channel.set_permissions(member,overwrite=ow)
 		except Exception as e:
-			print(e)
 			return await ctx.send(f"Could not block user from channel, error:\n ```{e}```")
 		else:
-			await ctx.send(f"{member.mention} has been blocked from {ctx.channel.mention}")
-			# Get Mod channel.
-			if not mc:
-				return
-			if self.bot.config[f"{ctx.guild.id}"]["mod"]["mutes"]:	
-				await mc.send(f"{member.mention} was unmuted by {ctx.author}")	
-			
-	
+			await ctx.send(f"{member.mention} has been blocked from {ctx.channel.mention} by {ctx.author}")
+			if mutechan:
+				await mutechan.send(f"{member.mention} has been blocked from {ctx.channel.mention} by {ctx.author}")
+				
 	@commands.has_permissions(manage_roles=True)
 	@commands.bot_has_permissions(manage_roles=True)
-	@commands.command()
-	@commands.guild_only()
-	async def mute(self,ctx,member:discord.Member,*,reason="No reason given."):
-		""" Toggle a user having the "Muted" role."""
-		mc = await self.get_mod_channel(ctx.guild)
+	@commands.command(usage = "mute <@user1 @user2 @user3> <reason>")
+	async def mute(self,ctx,members : commands.Greedy[discord.Member],*,reason="No reason given."):
+		""" Toggle a list of users having the "Muted" role."""
+		try:
+			mutechan = self.bot.get_channel(self.bot.notif_cache[ctx.guild.id]["mute_channel_id"])
+		except:
+			mutechan = None
 		
 		mrole = discord.utils.get(ctx.guild.roles, name='Muted')
-		# Unmute if currently muted.
-		if mrole in member.roles:
-			await member.remove_roles(*mrole)
-			await ctx.send(f"{member.mention} was unmuted.")
 			
-			# Get Mod channel.
-			if not mc:
-				return
-				
-			try:
-				if self.bot.config[fctx.guild.id]["mod"]["mutes"]:
-					return await mc.send(f"{member.mention} was unmuted by {ctx.author}")	
-			except KeyError:
-				self.bot.config[f"{ctx.guild.id}"]["mod"].update({"mutes":False})
-			return
-			
-		# Else Mute
 		if not mrole:
-			m = await ctx.send("Could not find a 'Muted' Role. Create one now?")
-			for i in ['✅','❌']:
-				await m.add_reaction(i)
-			
-			try:
-				def check(r,u):
-					if r.message.id == m.id and u == ctx.author:
-						e = str(r.emoji)
-						return e in ['✅','❌']		
-				wf = "reaction_add"
-				r = await self.bot.wait_for(wf,check=check,timeout=120)
-			except asyncio.TimeoutError:
-				try:
-					await m.clear_reactions()
-				except discord.Forbidden:
-					pass
-				
-			r = r[0]
-			if r.emoji == "✅": #Check
-				mrole = await ctx.guild.create_role(name="Muted") # Read Messages / Read mesasge history.
-				await mrole.edit(position=ctx.me.top_role.position + 1) # Move the role to the highest position under the bot, to override everything else.
-				
-				moverwrite = discord.PermissionOverwrite()
-				moverwrite.add_reactions = False
-				moverwrite.send_messages = False
-				
-				for i in ctx.guild.text_channels:
-					await i.set_permissions(mrole,overwrite=moverwrite)
-					
-			if r.emoji == "❌": #Cross
-				return await m.edit(f"Did not mute {member.mention}, \"Muted\" role does not exist and creation was cancelled."\
-									f"Use `{ctx.me.mention} disable mute` to disable this command on this server.")
-		
-		await member.add_roles(*[mrole])
+			mrole = await ctx.guild.create_role(name="Muted") # Read Messages / Read mesasge history.
+		# Unmute if currently muted.
+		for i in members:
+			if mrole in i.roles:
+				await i.remove_roles(*[mrole])
+				await ctx.send(f"{i.mention} was unmuted.")
+				await mutechan.send(f"{member.mention} was unmuted by {ctx.author}.")
+				# Get Mod channel.
+				if mutechan:
+					await mutechan.send()
+			else:
+				await i.add_roles(*[mrole])
+				await ctx.send(f"{i.mention} was muted.")
+				await mutechan.send(f"{member.mention} was muted by {ctx.author}.")
 		
 		# Reapply muted role overrides.
+		pos = max(ctx.me.top_role.position + 1,ctx.author.top_role.position + 1)
+		await mrole.edit(position=pos)		
 		moverwrite = discord.PermissionOverwrite()
 		moverwrite.add_reactions = False
 		moverwrite.send_messages = False		
 		for i in ctx.guild.text_channels:
 			await i.set_permissions(mrole,overwrite=moverwrite)
-		await ctx.send(f"{member.mention} was Muted.")
-		
-		try:
-			if self.bot.config[f"{ctx.guild.id}"]["mod"]["mutes"]:
-				await self.bot.get_channel(c["channel"]).send(f"{member.mention} was muted by {ctx.author}: {reason}")
-		except KeyError:
-			self.bot.config[f"{ctx.guild.id}"]["mod"].update({"mutes":False})
-			await self._save()
 	
-	@commands.has_permissions(manage_guild=True)
-	@commands.command()
-	@commands.guild_only()
-	async def mutes(self,ctx,*,toggle=None):
-		""" Show or hide member mutings and blockings from channel, toggle with mutes "on" or "off" """
-		# Check mod channel is set.
-		mc = await self.get_mod_channel(ctx.guild)
-		
-		if mc is None:
-			return
-		
-		# Give current info
-		if toggle is None:
-			try: 
-				m = self.bot.config[f"{ctx.guild.id}"]["mod"]["mutes"]
-			except KeyError:
-				self.bot.config[f"{ctx.guild.id}"]["mod"].update({"mutes": False})
-				await self._save()
-				m = False
-			
-			if m:
-				return await ctx.send(f"Messages will be output to {mc.mention}"\
-					f"when a member is muted. Toggle with `{ctx.prefix}mutes off`")
-			else:
-				return await ctx.send("Messages will not be output when a member is muted.."\
-					f"Toggle with `{ctx.prefix}mutes on`")
-
-		# Or update guild preference
-		elif toggle.lower() == "on":
-			self.bot.config[f"{ctx.guild.id}"]["mod"].update({"mutes": True})
-			await self._save()
-			return await ctx.send(f"A notification will be sent to {mc.mention} when a member is muted.")
-			
-		elif toggle.lower() == "off":
-			self.bot.config[f"{ctx.guild.id}"]["mod"].update({"mutes": False})
-			await self._save()
-			return await ctx.send(f"Notifications will no longer be sent to {mc.mention} when members are muted.")		
-
-	### Extended Member Join Information
-	@commands.Cog.listener()			
-	async def on_member_join(self,mem):
-		mc = await self.get_mod_channel(mem.guild)
-		# Check if in config.
-		try:
-			j = self.bot.config[f"{mem.guild.id}"]["mod"]["joins"]
-		except KeyError:
-			self.bot.config[f"{mem.guild.id}"]["mod"].update({"joins":False})
-			await self._save()
-			return
-
-		if j and mc:
-			e = discord.Embed()
-			e.color = 0x7289DA
-			s = sum(1 for m in self.bot.get_all_members() if m.id == mem.id)
-			e.set_author(name=str(mem), icon_url=mem.avatar_url)
-			status = str(mem.status).title()
-			e.add_field(name="Status",value=status,inline=True)
-			e.add_field(name='ID', value=mem.id,inline=True)
-			e.add_field(name='Servers', value=f'{s} shared',inline=True)
-			if mem.bot:
-				e.description = '**This is a bot account**'
-			e.add_field(name='Account Created', value=mem.created_at,inline=True)
-			e.set_thumbnail(url=mem.avatar_url)
-			await mc.send(embed=e)
-			
-	@commands.has_permissions(manage_guild=True)
-	@commands.command()
-	@commands.guild_only()
-	async def joins(self,ctx,*,toggle=None):
-		""" Show or hide extended member information upon joining. (Toggle with 'on' and 'off')"""
-		# Check mod channel is set.
-		mc = await self.get_mod_channel(ctx.guild)
-		
-		# Give current info
-		if toggle is None:
-			try: 
-				j = self.bot.config[f"{ctx.guild.id}"]["mod"]["joins"]
-			except KeyError:
-				self.bot.config[f"{ctx.guild.id}"]["mod"].update({"joins":False})
-				await self._save()
-				j = False
-			
-			if j:
-				return await ctx.send(f"Extended information is currently output to {mc.mention}"\
-					f"when a member joins this server. Toggle with `{ctx.prefix}joins off`")
-			else:
-				return await ctx.send("Extended information will not be output when a member joins this server."\
-					f"Toggle with `{ctx.prefix}joins on`")
-
-		# Or update guild preference
-		elif toggle.lower() == "on":
-			self.bot.config[f"{ctx.guild.id}"]["mod"].update({"joins":True})
-			await self._save()
-			return await ctx.send(f"Extended information will be output to {mc.mention} when a member joins this server.")
-			
-		elif toggle.lower() == "off":
-			self.bot.config[f"{ctx.guild.id}"]["mod"].update({"joins":False})
-			await self._save()
-			return await ctx.send(f"Extended information will no longer be output to {mc.mention} when members joins this server.")
-	
-	### Kick, Ban/Unban, and Leave information
-	@commands.Cog.listener()
-	async def on_member_unban(self,guild,user):
-		mc = await self.get_mod_channel(guild)
-			
-		try:
-			l = self.bot.config[f"{guild.id}"]["mod"]["leaves"]
-		except KeyError:
-			self.bot.config[f"{guild.id}"]["mod"].update({"leaves":False})
-			await self._save()
-		
-		if l:
-			await mc.send(f"🆗 {user.name}#{user.discrim} (ID: {user.id}) was unbanned.")
-	
-	
-	@commands.Cog.listener()
-	async def on_member_remove(self,member):
-		# Check if in mod.
-		mc = await self.get_mod_channel(member.guild)
-			
-		try:
-			l = self.bot.config[f"{member.guild.id}"]["mod"]["leaves"]
-		except KeyError:
-			l = self.bot.config[f"{member.guild.id}"]["mod"].update({"leaves":False})
-			await self._save()
-			
-		if not l or mc is None:
-			return
-		
-		async for i in member.guild.audit_logs(limit=1):
-			x = i
-			if str(x.target) == str(member):
-				if x.action.name == "kick":
-					if x.reason is not None:
-						if x.reason in ["roulete","Asked to be"]:
-							return
-					return await mc.send(f"👢 **Kick**: {member.mention} by {x.user.mention} for {x.reason}.")
-				elif x.action.name == "ban":
-					return await mc.send(f"☠ **Ban**: {member.mention} by {x.user.mention} for {x.reason}.")
-			else:
-				await mc.send(f"⬅ {member.mention} left the server.")
-				
-	@commands.has_permissions(manage_guild=True)
-	@commands.command()
-	@commands.guild_only()
-	async def leaves(self,ctx,*,toggle=None):
-		""" Show or hide a message when a member is kicked/banned or leaves """
-		# Check mod is set.
-		mc = await self.get_mod_channel(ctx.guild)
-		
-		if not mc:
-			return
-		
-		# Give current info
-		if toggle is None:
-			try: 
-				l = self.bot.config[f"{ctx.guild.id}"]["mod"]["leaves"]
-			except KeyError:
-				self.bot.config[f"{ctx.guild.id}"]["mod"].update({"leaves":False})
-				l = False
-				await self._save()
-			
-			if l:
-				return await ctx.send(f"Messages are currently output to {mc.mention}"\
-					f"when a member leaves this server. Toggle with `{ctx.prefix}leaves off`")
-			else:
-				return await ctx.send("Messages are not being output when a member leaves this server."\
-					f"Toggle with `{ctx.prefix}leaves on`")
-
-		# Or update guild preference			
-		elif toggle.lower() == "on":
-			self.bot.config[f"{ctx.guild.id}"]["mod"].update({"leaves":True})
-			await self._save()
-			return await ctx.send(f"A message will be output to {mc.mention} when a member leaves this server.")
-			
-		elif toggle.lower() == "off":
-			self.bot.config[f"{ctx.guild.id}"]["mod"].update({"leaves":False})
-			await self._save()
-			return await ctx.send(f"Messages will no longer be output to {mc.mention} when members leave this server.")
-	
-	### Emoji update information
-	@commands.Cog.listener()
-	async def on_guild_emojis_update(self,guild,before,after):
-		mc = await self.get_mod_channel(guild)
-		
-		# Check config to see if outputting.
-		try:
-			e = self.bot.config[f"{guild.id}"]["mod"]["emojis"]
-		except KeyError:
-			e = self.bot.config[f"{guild.id}"]["mod"].update({"emojis":False})
-			e = False
-			await self._save()
-			
-		if not e or mc is None:
-			return
-		
-		# Find if it was addition or removal.
-		newemoji = [i for i in after if i not in before]
-		if not newemoji:
-			try:
-				removedemoji = [i for i in before if i not in after][0]
-				await mc.send(f"The '{removedemoji.name}' emoji was removed")
-			except IndexError:
-				await ctx.send("An emoji was removed.")
-		else:
-			await mc.send(f"The {newemoji[0]} emoji was created.")
-	
-	@commands.command(aliases=["purge","clear"])
+	@commands.command(aliases=["clear"])
 	@commands.has_permissions(manage_messages=True)
 	@commands.bot_has_permissions(manage_messages=True)
 	async def clean(self,ctx,number : int = 100):
 		""" Deletes my messages from the last x messages in channel"""
 		try:
-			prefixes = tuple(self.bot.config[f"{ctx.guild.id}"]["prefix"])
+			prefixes = self.bot.prefix_cache[ctx.guild.id]
 		except KeyError:
 			prefixes = ctx.prefix
 		
 		def is_me(m):
 			return m.author == ctx.me or m.content.startswith(prefixes)
-				
-		try:
-			mc = self.bot.config[f"{ctx.guild.id}"]['mod']['channel']
-			mc = self.bot.get_channel(mc)
-		except KeyError:
-			pass
-		else:
-			if ctx.channel == mc:
-				await ctx.send("🚫 'Clean' is disabled for moderator channels.",delete_after=10)
 
 		deleted = await ctx.channel.purge(limit=number, check=is_me)
 		s = "s" if len(deleted) > 1 else ""
 		await ctx.send(f'♻️ {ctx.author.mention}: Deleted {len(deleted)} bot and command messages{s}',delete_after=10)	
-	
-	@commands.has_permissions(manage_guild=True)
-	@commands.command()
+
+	@commands.command(usage = "Normal user: List all prefixes for the server \n"
+							+ "Moderators: prefix <'yourprefix'> to toggle a bot prefix for the server")
 	@commands.guild_only()
-	async def emojis(self,ctx,*,toggle=None):
-		""" Show or hide messages when guild emojis are updated. Toggle with mod emojis on/off """
-		# Check mod is set.
-		mc = await self.get_mod_channel(ctx.guild)
-			
-		# Give current info
-		if toggle is None:
-			try: 
-				e = self.bot.config[f"{ctx.guild.id}"]["mod"]["emojis"]
-			except KeyError:
-				self.bot.config[f"{ctx.guild.id}"]["mod"].update({"emojis":False})
-				await self._save()
-				e = False
-			
-			if e:
-				return await ctx.send(f"Messages are currently output to {mc.mention}"\
-					f"when an emojis are updated on this server. Toggle with ``emojis off`")
-			else:
-				return await ctx.send("Messages are not being output when an emojis are updated on this server."\
-					f"Toggle with `{ctx.prefix}emojis on`")
-					
-		# Or update guild preference		
-		elif toggle.lower() == "on":
-			self.bot.config[f"{ctx.guild.id}"]["mod"].update({"emojis":True})
-			await self._save()
-			return await ctx.send(f"A message will be output to {mc.mention} when emojis are updated on this server.")
-			
-		elif toggle.lower() == "off":
-			self.bot.config[f"{ctx.guild.id}"]["mod"].update({"emojis":False})
-			await self._save()
-			return await ctx.send(f"Messages will no longer be output to {mc.mention} when emojis are updated on this server.")
+	async def prefix(self,ctx,*,prefix=""):
+		""" Add, remove, or List bot prefixes for this server."""
+		try:
+			prefixes = self.bot.prefix_cache[ctx.guild.id]
+		except KeyError:
+			prefixes = ['.tb']
 		
+		if prefix:
+			# Server Admin only.
+			if  ctx.channel.permissions_for(ctx.author).manage_guild:				
+				if prefix not in prefixes:
+					connection = await self.bot.db.acquire()
+					async with connection.transaction():
+						records =  await connection.execute("""
+							INSERT INTO prefixes (guild_id,prefix) VALUES ($1,$2) 
+						""",ctx.guild.id,prefix)
+					await self.bot.db.release(connection)
+					await ctx.send(f'Added {prefix} to {ctx.guild.name} prefix list.')
+				else:
+					connection = await self.bot.db.acquire()	
+					async with connection.transaction():
+						records =  await connection.execute("""
+							DELETE FROM prefixes WHERE (guild_id,prefix) = ($1,$2) 
+						""",ctx.guild.id,prefix)
+					await self.bot.db.release(connection)
+					await ctx.send(f'Removed {prefix} from {ctx.guild.name} prefix list.')
+		
+		await self.update_prefixes()
+		await ctx.send(f"Current Command prefixes for this server: ```{' '.join(prefixes)}```")
+
+	@commands.command(aliases=["enable"],usage= "<'disable' or 'enable'> <command name>")
+	@commands.has_permissions(manage_guild=True)
+	async def disable(self, ctx, command: str):
+		"""Disables a command for this server."""
+		command = command.lower()
+		
+		if ctx.invoked_with == "enable":
+			if command not in self.bot.disabled_cache[ctx.guild.id]:
+				return await ctx.send("That command isn't disabled on this server.")
+			else:
+				connection = await self.bot.db.acquire()
+				async with connection.transaction():
+					await connection.execute(""" 
+						DELETE FROM ignored_commands WHERE (guild_id,command) = ($1,$2)
+						""",ctx.guild.id,command)
+				await self.bot.db.release(connection)			
+				await self.update_cache()
+				return await ctx.send(f"The {command} command was re-enabled for {ctx.guild.name}")
+
+		if command in ('disable','enable'):
+			return await ctx.send('Cannot disable the disable command.')
+		elif command not in [i.name for i in list(self.bot.commands)]:
+			return await ctx.send('Unrecognised command name.')
+		
+		connection = await self.bot.db.acquire()
+		async with connection.transaction():
+			await connection.execute(""" 
+				INSERT INTO ignored_commands (guild_id,command) VALUES ($1,$2)
+				""",ctx.guild.id,command)
+		await self.bot.db.release(connection)			
+		await self.update_cache()
+		return await ctx.send(f"The {command} command was disabled for {ctx.guild.name}")
+
+	@commands.command(usage = "disabled")
+	@commands.has_permissions(manage_guild=True)
+	async def disabled(self,ctx):
+		""" Check which commands are disabled on this server """
+		try:
+			commands = self.bot.disabled_cache[ctx.guild.id]
+			await ctx.send(f"The following commands are disabled on this server: ```{' ,'.join(commands)}```")
+		except KeyError:
+			return await ctx.send(f'No commands are currently disabled on {ctx.guild.name}')
+		
+			
 def setup(bot):
 	bot.add_cog(Mod(bot))

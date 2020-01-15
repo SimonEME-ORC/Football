@@ -25,7 +25,7 @@ class Fixtures(commands.Cog):
 	""" Rewrite of fixture & result lookups. """
 	def __init__(self, bot):
 		self.bot = bot
-	
+
 	# Spawn an instance of headerless chrome.
 	def spawn_chrome(self):
 		caps = DesiredCapabilities().CHROME
@@ -74,10 +74,6 @@ class Fixtures(commands.Cog):
 			return await m.edit(content=f"No results for query: {qry}")
 		
 		if len(resdict) == 1:
-			try:
-				await m.delete()
-			except:
-				pass
 			return f'https://www.flashscore.com/{resdict["0"]["url"]}'
 			
 		outtext = ""
@@ -89,44 +85,81 @@ class Fixtures(commands.Cog):
 		except discord.HTTPException:
 			### TODO: Paginate.
 			return await m.edit(content=f"Too many matches to display, please be more specific.")
-		
+			
 		def check(message):
 			if message.author.id == ctx.author.id and message.content in resdict:
 				return True
 		try:
 			match = await self.bot.wait_for("message",check=check,timeout=30)
 		except asyncio.TimeoutError:
-			return await m.delete()
+			return await m.delete()	
 		
 		mcontent = match.content
+		await m.edit(content=f"Grabbing data...")
+		
 		try:
-			await m.delete()
 			await match.delete()
 		except:
 			pass
 		return f'https://www.flashscore.com/{resdict[mcontent]["url"]}'
 
+	async def get_default(self,ctx,mode):
+		# Get
+		connection = await self.bot.db.acquire()
+		record = await connection.fetchrow(
+		"""
+			SELECT default_team FROM scores_settings
+			WHERE default_team is NOT NULL AND (guild_id) = $1
+		""",ctx.guild.id)
+		try:
+			team = record["default_team"]
+		except TypeError:
+			team = ""
+			
+		record = await connection.fetchrow(
+		"""
+			SELECT default_league FROM scores_settings
+			WHERE default_league is NOT NULL AND (guild_id) = $1
+		""",ctx.guild.id)
+		
+		try:
+			league = record["default_league"]
+		except TypeError:
+			league = ""
+		
+		# Release
+		await self.bot.db.release(connection)
+		
+		# Decide
+		if mode == "team":
+			return team if team else league
+		else:
+			return league if league else team
+
 	@commands.command()
-	async def table(self,ctx,*,qry=None):
+	async def table(self,ctx,*,qry:commands.clean_content =None):
 		""" Get table for a league """
 		async with ctx.typing():
-			if qry is None:
-				return await ctx.send("Please specify a search query.")
-			else:
-				qry = discord.utils.escape_mentions(qry)
+			url = await self.get_default(ctx,"league") if qry is None else ""
+				
+			if url == "" and qry is not None:
 				m = await ctx.send(f"Searching for {qry}...")
 				url = await self._search(ctx,m,qry)
-			
-			if url is None:
-				return # rip
-				
-			m = await ctx.send(f"Grabbing table from {url}...")
-			await ctx.trigger_typing()
+			elif qry is None:
+				return await ctx.send(f'Specify a search query. A default team or league can be set by server moderators using {ctx.prefix}default <"team" or "league"> <search string>')
+			elif url is None:
+				return #rip
+			else:
+				m = await ctx.send(f"Grabbing table from <{url}>...")
+
 			p = await self.bot.loop.run_in_executor(None,self.parse_table,url)
+			
 			try:
 				await ctx.send(file=p)
 			except discord.HTTPException:
-				return await m.edit(content=f"Failed to grab table from {url}")
+				await m.edit(content=f"Failed to grab table from <{url}>")
+			
+			await m.delete()	
 	
 	def parse_table(self,url):
 		url += "/standings/"
@@ -162,111 +195,112 @@ class Fixtures(commands.Cog):
 		return df
 
 	@commands.command()
-	async def bracket(self,ctx,*,qry=None):
+	async def bracket(self,ctx,*,qry:commands.clean_content=None):
 		""" Get btacket for a tournament """
 		async with ctx.typing():
-			if qry is None:
-				return await ctx.send("Specify a search query.")
-			else:
-				qry = discord.utils.escape_mentions(qry)
+			url =  await self.get_default(ctx,"league") if qry is None else ""
+			
+			if url == "" and qry is not None:
 				m = await ctx.send(f"Searching for {qry}...")
 				url = await self._search(ctx,m,qry)
+			elif qry is None:
+				return await ctx.send(f'Specify a search query. A default team or league can be set by server moderators using {ctx.prefix}default <"team" or "league"> <search string>')
+			elif url is None:
+				return #rip
+			else:	
+				await ctx.send(f'Grabbing competition bracket for {qry}...',delete_after=5)	
 				
-			if url is None:
-				return #rip	
-			m = await ctx.send(f"Grabbing bracket from {url}...")
 			p = await self.bot.loop.run_in_executor(None,self.parse_bracket,url)
-			await m.delete()
-			await ctx.send(file=p)
+			
+			try:
+				await ctx.send(file=p)
+			except discord.HTTPException:
+				return await m.edit(content=f"Failed to grab table from <{url}>")		
 		
 	@commands.command(aliases=["fx"])
-	async def fixtures(self,ctx,*,qry=None):
+	async def fixtures(self,ctx,*,qry:commands.clean_content=None ):
 		""" Displays upcoming fixtures for a team or league.
 			Navigate with reactions.
 		"""
 		async with ctx.typing():
-			if qry is None:
-				if ctx.guild is not None:
-					if ctx.guild.id == 332159889587699712:
-						url = "https://www.flashscore.com/team/newcastle-utd/p6ahwuwJ"
-					else:
-						return await ctx.send("Specify a search query.")
-				else:
-					return await ctx.send("Specify a search query.")
-			else:
-				qry = discord.utils.escape_mentions(qry)
+			url = await self.get_default(ctx,"team") if qry is None else ""
+				
+			if url == "" and qry is not None:
 				m = await ctx.send(f"Searching for {qry}...")
 				url = await self._search(ctx,m,qry)
+			elif qry is None:
+				return await ctx.send(f'Specify a search query. A default team or league can be set by server moderators using {ctx.prefix}default <"team" or "league"> <search string>')
+			elif url is None:
+					return #rip
+			else:
+				await ctx.send(f'Grabbing fixtures data for {qry}...',delete_after=5)			
+			
 			pages = await self.bot.loop.run_in_executor(None,self.parse_fixtures,url,ctx.author.name)
 		await self.paginate(ctx,pages)
 
 	@commands.command(aliases=['sc'])
-	async def scorers(self,ctx,*,qry=None):
+	async def scorers(self,ctx,*,qry:commands.clean_content=None ):
 		""" Displays top scorers for a team or league.
 			Navigate with reactions.
 		"""
 		async with ctx.typing():
-			if qry is None:
-				if ctx.guild is not None:
-					if ctx.guild.id == 332159889587699712:
-						url = "https://www.flashscore.com/soccer/england/premier-league"
-				else:
-					return await ctx.send("Specify a search query.")
-			else:
-				qry = discord.utils.escape_mentions(qry)
+			url =  await self.get_default(ctx,preferred="team") if qry is None else ""
+				
+			if url == "" and qry is not None:
 				m = await ctx.send(f"Searching for {qry}...")
 				url = await self._search(ctx,m,qry)
+			elif qry is None:
+				return await ctx.send(f'Specify a search query. A default team or league can be set by server moderators using {ctx.prefix}default <"team" or "league"> <search string>')				
+			elif url is None:
+				return #rip
+			else:
+				await ctx.send(f'Grabbing scorers data for {qry}...',delete_after=5)					
+				
 			pages = await self.bot.loop.run_in_executor(None,self.parse_scorers,url,ctx.author.name)
-		await self.paginate(ctx,pages)		
+		await self.paginate(ctx,pages)	
 		
 	@commands.command(aliases=["rx"])
-	async def results(self,ctx,*,qry=None):
+	async def results(self,ctx,*,qry:commands.clean_content=None ):
 		""" Displays previous results for a team or league.
 			Navigate with reactions.
 		"""
 		async with ctx.typing():
-			if qry is None:
-				if ctx.guild is not None:
-					if ctx.guild.id == 332159889587699712:
-						url = "https://www.flashscore.com/team/newcastle-utd/p6ahwuwJ"
-				else:
-					return await ctx.send("Specify a search query.")
-		
-			qry = discord.utils.escape_mentions(qry)
-			m = await ctx.send(f"Searching for {qry}...")
-			url = await self._search(ctx,m,qry)
-			
-			if url is None:
+			url =  await self.get_default(ctx,"team") if qry is None else ""
+
+			if url == "" and qry is not None:
+				m = await ctx.send(f"Searching for {qry}...")
+				url = await self._search(ctx,m,qry)
+			elif qry is None:
+				return await ctx.send(f'Specify a search query. A default team or league can be set by server moderators using {ctx.prefix}default <"team" or "league"> <search string>')				
+			elif url is None:
 				return #rip
-			
+			else:
+				await ctx.send(f'Grabbing results data for {qry}...',delete_after=5)	
 			pages = await self.bot.loop.run_in_executor(None,self.parse_results,url,ctx.author.name)
-		await self.paginate(ctx,pages)	
+		await self.paginate(ctx,pages)
 	
 	@commands.command(aliases=["suspensions"])
-	async def injuries(self,ctx,*,qry=None):
+	async def injuries(self,ctx,*,qry:commands.clean_content = None):
 		""" Get a team's current injuries """
 		async with ctx.typing():
-			if qry is None:
-				return await ctx.send("Specify a search query.")
-			
-			qry = discord.utils.escape_mentions(qry)
-			m = await ctx.send(f"Searching for {qry}...")
-			url = await self._search(ctx,m,qry,mode="team")
-			
-			if url is None:
+			url = await self.get_default(ctx,"team") if qry is None else ""
+
+			if url == "" and qry is not None:
+				m = await ctx.send(f"Searching for {qry}...")
+				url = await self._search(ctx,m,qry)
+			elif qry is None:
+				return await ctx.send(f'Specify a search query. A default team or league can be set by server moderators using {ctx.prefix}default <"team" or "league"> <search string>')				
+			elif url is None:
 				return #rip
-			
-			m = await ctx.send(f'Grabbing injury data for {qry}...')
+			else:
+				await ctx.send(f'Grabbing injury data for {qry}...',delete_after=5)
 			
 			e = await self.bot.loop.run_in_executor(None,self.parse_injuries,url,ctx.author.name)
-			await m.delete()
-			await ctx.send(embed = e)
+			await m.edit(content="",embed = e)
 	
 	def parse_injuries(self,url,au):
 		t,e,driver = self.get_html(url)
-		
 		url += "/squad"
-		
 		driver.get(url)
 		WebDriverWait(driver,2)
 		driver.save_screenshot("injuries.png")
@@ -657,5 +691,52 @@ class Fixtures(commands.Cog):
 			count += 1
 		return embeds
 	
+	@commands.has_permissions(manage_guild=True)
+	@commands.command(usage = "default <'team' or 'league'> <(Your Search Query) or ('None' to unset default.)")
+	async def default(self,ctx,type,*,qry:commands.clean_content = None):
+		""" Set a default team or league for your server's lookup commands """
+		# Validate
+		type = type.lower()
+		if type not in ["league","team"]:
+			return await ctx.send(':no_entry_sign: Invalid default type specified, valid types are "league" or "team"')
+		xtype = "default_team" if type == "team" else "default_league"
+		
+		if qry is None:
+			try:
+				return await ctx.send(self.defaults[ctx.guild.id][type])
+			except:
+				return await ctx.send(f"Your current {type} is not set! Set it with {ctx.prefix}{ctx.	command.usage}")
+
+		# Find
+		if qry == "none":
+			url = None
+		elif qry.lower() is not "none":
+			m = await ctx.send(f'Searching for {qry}...')
+			url = await self._search(ctx,m,qry,mode=type)
+			if not url:
+				return await ctx.send("Couldn't find anything for {qry}, try searching for something else.")
+		
+		connection = await self.bot.db.acquire()
+		
+		async with connection.transaction():
+			await connection.execute(
+			f"""INSERT INTO scores_settings (guild_id,{xtype})
+				VALUES ($1,$2)
+				
+				ON CONFLICT (guild_id) DO UPDATE SET 
+					{xtype} = $2
+				WHERE excluded.guild_id = $1
+			""",ctx.guild.id,url)
+		
+		await self.bot.db.release(connection)
+		
+		if qry is not None:
+			return await ctx.send(f'Your commands will now use <{url}> as a default {type}')
+		else:
+			return await ctx.send(f'Your commands will no longer use a default {type}')
+			
+
+
+			
 def setup(bot):
 	bot.add_cog(Fixtures(bot))

@@ -22,6 +22,7 @@ from selenium.common.exceptions import TimeoutException
 
 class Sidebar(commands.Cog):
 	def __init__(self, bot):
+		bot.reddit = praw.Reddit(**bot.credentials["Reddit"])
 		self.bot = bot
 		self.sidebaron = True
 		self.nextrun = "Not defined"

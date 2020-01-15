@@ -2,6 +2,7 @@ from discord.ext import commands
 import discord
 import asyncio
 import datetime
+import typing
 import json
 import re
 
@@ -47,21 +48,28 @@ class Timers(commands.Cog):
 		e = discord.Embed()
 		e.timestamp = ts
 		e.color = 0x00ff00
-				
-		if hasattr(values,"message"):
+		
+		if "message" in values:
 			message = values['message']
 			e.title = f"⏰ Reminder"
 			e.description = message
-			
-		elif hasattr(values,"mode"):
+			try: # Jump to message if found.
+				e.description += f"\n\n[⬆️ Jump to message.]({values['jumpurl']})"
+			except AttributeError as f:
+				print(f"Attribute Error {f}")
+		if "mode" in values:
 			if values["mode"] == "unban":
-				await self.bot.http.unban(values["target"], values["destination"])
-				e.description = f'Userid {values["target"]} was unbanned'
-		
+				try:
+					await self.bot.http.unban(values["target"], self.bot.get_channel(values["destination"]).guild)
+					e.description = f'Userid {values["target"]} was unbanned'
+				except discord.NotFound:
+					e.description = f"Failed to unban userid {values['target']} - are they already unbanned?"
+				
+		await destin.send(member,embed=e)
 		del self.bot.reminders[msgid]
 		await self._save()
 		
-		await destin.send(member,embed=e)
+		
 		
 	async def parse_time(self,time):
 		delta = datetime.timedelta()	
@@ -103,7 +111,8 @@ class Timers(commands.Cog):
 				"destination":ctx.channel.id,
 				"message":message,
 				"time":str(remindat),
-				"ts":str(ctx.message.created_at)
+				"ts":str(ctx.message.created_at),
+				"jumpurl":ctx.message.jump_url
 			}
 		}
 		
@@ -130,32 +139,46 @@ class Timers(commands.Cog):
 			e.description +=  "**`" + str(delta).split(".")[0] + "`** " + self.bot.reminders[i]['message'] + "\n"
 		await ctx.send(embed=e)
 	
-	
 	@commands.command()
 	@commands.has_permissions(ban_members=True)
-	async def tempban(self,ctx,time,member:discord.Member,*, reason: commands.clean_content):
+	async def tempban(self,ctx,arg1: typing.Union[discord.Member,str],arg2: typing.Union[discord.Member,str],*, reason: commands.clean_content = None):
 		""" Temporarily ban a member from the server """
+		if isinstance(arg1,discord.Member):
+			member = arg1
+			time = arg2
+		elif isinstance(arg2,discord.Member):
+			member = arg2
+			time = arg1
+		else:
+			return await ctx.send("That doesn't look right. try again.")
+			
 		delta = await self.parse_time(time.lower())
+		remindat = datetime.datetime.now() + delta
+		human_time = datetime.datetime.strftime(remindat,"%H:%M:%S on %a %d %b")		
 		id = member.id
 		try:
-			await ctx.ban(member)
+			await ctx.guild.ban(member,reason=reason)
 		except:
 			return await ctx.send('🚫 Banning failed.')
 		
 		reminder = {
 			ctx.message.id:{
 				"user":ctx.author.id,
-				"destination":ctx.guild.id,
+				"destination":ctx.channel.id,
+				"message":f"Temporary ban ending for {member}",
 				"target":id,
 				"mode":"unban",
 				"time":str(remindat),
-				"ts":str(ctx.message.created_at)
+				"ts":str(ctx.message.created_at),
+				"jumpurl":ctx.message.jump_url
 			}
 		}			
 			
 		self.bot.reminders.update(reminder)
 		await self._save()
-		await ctx.send(f'☠️ Banned {member.mention} for {time}')
+		await ctx.send(f'☠️ Banned {member.mention} until {human_time}')
+		for k,v in reminder.items():
+			self.bot.loop.create_task(self.spool_reminders(k,v))
 
 
 def setup(bot):

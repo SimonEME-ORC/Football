@@ -4,10 +4,42 @@ import discord
 import asyncio
 import copy
 
+## TODO: Merge Info/hackyinfo.
 class Info(commands.Cog):
 	""" Get information about users or servers. """
 	def __init__(self, bot):
 		self.bot = bot
+		self.bot.commands_used = Counter()
+	
+	@commands.command(aliases=['botstats',"uptime"])
+	async def about(self,ctx):
+		"""Tells you information about the bot itself."""
+		e = discord.Embed(colour = 0x111111,timestamp = self.bot.user.created_at)
+		e.set_footer(text = "Toonbot was created on")
+		owner = self.bot.get_user((await self.bot.application_info()).owner.id)
+		e.set_author(name=f"Owner: {owner}", icon_url=owner.avatar_url)
+		
+		# statistics
+		total_members = sum(len(s.members) for s in self.bot.guilds)
+		total_online  = sum(1 for m in self.bot.get_all_members() if m.status != discord.Status.offline)
+		voice = sum(len(g.text_channels) for g in self.bot.guilds)
+		text = sum(len(g.voice_channels) for g in self.bot.guilds)
+		memory_usage = psutil.Process().memory_full_info().uss / 1024**2
+		
+		members = f"{total_members} Members\n{total_online} Online\n{len(self.bot.users)} unique"
+		e.add_field(name='Members', value=members)
+		e.add_field(name='Channels', value=f'{text + voice} total\n{text} text\n{voice} voice')
+		e.add_field(name='Servers', value=len(self.bot.guilds))
+		e.add_field(name='Uptime', value=self.get_bot_uptime(),inline=False)
+		e.add_field(name='Commands this run', value=sum(self.bot.commands_used.values()))
+		e.add_field(name='Memory Usage', value='{:.2f} MiB'.format(memory_usage))
+		e.add_field(name='Python Version',value=sys.version)
+
+		m = await ctx.send(embed=e)
+		await m.edit(content=" ",embed=e) # to grab ping.
+		time = f"{str((m.edited_at - m.created_at).microseconds)[:3]}ms"
+		e.add_field(name="Ping",value=time)
+		await m.edit(content=None,embed=e)
 
 	@commands.command(aliases=["lastmsg","lastonline","lastseen"])
 	async def seen(self,ctx,t : discord.Member = None):

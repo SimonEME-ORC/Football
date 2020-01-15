@@ -38,7 +38,6 @@ class Twitter(commands.Cog):
 		ts = self.pclient.stream.statuses.filter.post(follow=ids)
 		
 		async with ts as stream:
-			print(f"Tracking {len(self.track.items())} twitter users.")
 			async for t in stream:
 				# Break loop if bot not running.
 				if self.bot.is_closed():

@@ -21,9 +21,9 @@ class quotedb(commands.Cog):
 		if ctx.guild:
 			return ctx.guild.id in [238704683340922882,332159889587699712]
 	
-	async def make_embed(self,data):
+	async def make_embed(self,ctx,data):
 		# Get data from ids
-		# Stored by [id,content,channelid,timestamp,submitterid]
+		# Stored by [authorid,content,channelid,timestamp,submitterid]
 		try:
 			author = await self.bot.fetch_user(data[1])
 		except:
@@ -36,9 +36,20 @@ class quotedb(commands.Cog):
 			submitter = await self.bot.fetch_user(data[5])
 		except:
 			submitter = "<Deleted User>"
-		submittern = submitter.display_name if submitter is not None else "deleted user"
+		try:
+			guild = self.bot.get_guild(data[7])
+		except:
+			guild = "<Deleted Guild>"
+		
+		jumpurl = data[6]
+			
+		submittern = submitter.display_name if submitter is not None else "<Deleted User>"
 		
 		e = discord.Embed(color=0x7289DA,description=data[2])
+		
+		if ctx.guild.id == data[7] and jumpurl:
+			e.description += f"\n\n [⬆️ Jump to message.]({jumpurl})"
+		
 		e.set_author(name=f"Quote #{data[0]}",
 			icon_url="https://discordapp.com/assets/2c21aeda16de354ba5334551a883b481.png")
 		if author:
@@ -63,14 +74,14 @@ class quotedb(commands.Cog):
 				if x == None:
 					return await ctx.send(f"No quotes found from user {member.mention}")
 			elif member == None: # Display a random quote.
-				c.execute("SELECT rowid, * FROM quotes ORDER BY RANDOM()")
+				c.execute(f"SELECT rowid, * FROM quotes WHERE guildid='{ctx.guild.id}' ORDER BY RANDOM()")
 				x = c.fetchone()
 				if x == None:
 					return await ctx.send("Quote DB appears to be empty.")
 				else:
 					await ctx.send("Displaying random quote:")
 		
-		e = await self.make_embed(x)
+		e = await self.make_embed(ctx,x)
 		await ctx.send(embed=e)
 
 	@quote.command()
@@ -80,7 +91,7 @@ class quotedb(commands.Cog):
 			m = await ctx.send('Searching...')
 			localconn = sqlite3.connect('quotes.db')
 			lc = localconn.cursor()
-			lc.execute(f"SELECT rowid, * FROM quotes WHERE quotetext LIKE (?)",(f'%{qry}%',))
+			lc.execute(f"SELECT rowid, * FROM quotes WHERE quotetext LIKE (?) AND guildid={ctx.guild.id}",(f'%{qry}%',))
 			x = lc.fetchall()
 			lc.close()
 			localconn.close()
@@ -88,7 +99,7 @@ class quotedb(commands.Cog):
 		numquotes = len(x)
 		embeds = []
 		for i in x:
-			y = await self.make_embed(i)
+			y = await self.make_embed(ctx,i)
 			embeds.append(y)
 		
 		# Do we need to paginate?
@@ -159,7 +170,7 @@ class quotedb(commands.Cog):
 		x = c.fetchone()
 		if x is None:
 			return await ctx.send(f"Quote {number} does not exist.")
-		e = await self.make_embed(x)
+		e = await self.make_embed(ctx,x)
 		await ctx.send(embed=e)
 				
 	@quote.command(invoke_without_command=True)
@@ -183,12 +194,12 @@ class quotedb(commands.Cog):
 		if m.author.id == ctx.author.id:
 			return await ctx.send('You can\'t quote yourself you virgin.')
 		n = await ctx.send("Attempting to add quote to db...")
-		insert_tuple = (m.author.id,m.clean_content,m.channel.id,m.created_at,ctx.author.id)
-		c.execute("INSERT INTO quotes VALUES (?,?,?,?,?)",insert_tuple)
+		insert_tuple = (m.author.id,m.clean_content,m.channel.id,m.created_at,ctx.author.id,m.jump_url,ctx.guild.id)
+		c.execute("INSERT INTO quotes VALUES (?,?,?,?,?,?,?)",insert_tuple)
 		conn.commit()
 		c.execute("SELECT rowid, * FROM quotes ORDER BY rowid DESC")
 		x = c.fetchone()
-		e = await self.make_embed(x)
+		e = await self.make_embed(ctx,x)
 		await n.edit(content=":white_check_mark: Successfully added to database",embed=e)
 	
 	@quote.command()
@@ -201,12 +212,12 @@ class quotedb(commands.Cog):
 				await ctx.send("No quotes found.")
 				return
 		else:
-			c.execute(f"SELECT rowid, * FROM quotes WHERE userid = {arg.id} ORDER BY rowid DESC")
+			c.execute(f"SELECT rowid, * FROM quotes WHERE userid = {arg.id} AND guildid = {ctx.guild.id} ORDER BY rowid DESC")
 			x = c.fetchone()
 			if x == None:
 				await ctx.send(f"No quotes found for user {arg.mention}.")
 				return
-		e = await self.make_embed(x)
+		e = await self.make_embed(ctx,x)
 		await ctx.send(embed=e)
 	
 	@quote.command(name="del")
@@ -217,12 +228,12 @@ class quotedb(commands.Cog):
 		if not id.isdigit():
 			await ctx.send("That doesn't look like a valid ID")
 		else:
-			c.execute(f"SELECT rowid, * FROM quotes WHERE rowid = {id}")
+			c.execute(f"SELECT rowid, * FROM quotes WHERE rowid = {id} AND guildid = {ctx.guild.id}")
 			x = c.fetchone()
 			if x is None:
-				await ctx.send(f"No quote found with ID #{id}")
+				await ctx.send(f"No quote found with ID #{id}, or it's from another server.")
 				return
-			e = await self.make_embed(x)
+			e = await self.make_embed(ctx,x)
 			m = await ctx.send("Delete this quote?",embed=e)
 			await m.add_reaction("👍")
 			await m.add_reaction("👎")
@@ -249,9 +260,9 @@ class quotedb(commands.Cog):
 		""" See how many times you've been quoted, and how many quotes you've added"""
 		if arg == None:
 			arg = ctx.author
-		c.execute(f"SELECT COUNT(*) FROM quotes WHERE quoterid = {arg.id}")
+		c.execute(f"SELECT COUNT(*) FROM quotes WHERE quoterid = {arg.id} AND guildid = {ctx.guild.id}")
 		y = c.fetchone()[0]
-		c.execute(f"SELECT COUNT(*) FROM quotes WHERE userid = {arg.id}")
+		c.execute(f"SELECT COUNT(*) FROM quotes WHERE userid = {arg.id} AND guildid = {ctx.guild.id}")
 		x = c.fetchone()[0]
 		await ctx.send(f"{arg.mention} has been quoted {x} times, and has added {y} quotes")
 		

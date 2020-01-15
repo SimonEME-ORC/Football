@@ -12,7 +12,6 @@ class Misc(commands.Cog):
 	def __init__(self, bot):
 		self.bot = bot
 	
-	
 	@commands.command(hidden=True)
 	async def itscominghome(self,ctx):
 		""" Football's coming home """
@@ -21,36 +20,15 @@ class Misc(commands.Cog):
 	@commands.command(name="8ball",aliases=["8"])
 	async def eightball(self,ctx):
 		""" Magic Geordie 8ball """
-		res = [ 
-			# Affirmative
-			"probably",
-			"Aye",
-			"aye mate",
-			"wey aye.",
-			"aye trust is pal.",
-			"Deffo m8",
-			"fuckin aye.",
-			"fucking rights",
-			"think so",
-			"absofuckinlutely",
+		
+		res = ["probably","Aye","aye mate","wey aye.","aye trust is pal.",
+			"Deffo m8",	"fuckin aye.","fucking rights","think so","absofuckinlutely",
 			# Negative
-			"me pal says nar.",
-			"divn't think so",
-			"probs not like.",
-			"nar pal soz",
-			"fuck no",
-			"deffo not.",
-			"nar",
-			"wey nar",
-			"fuck off ya daftie",
-			"absofuckinlutely not",
-			
+			"me pal says nar.","divn't think so","probs not like.","nar pal soz","fuck no",
+			"deffo not.","nar","wey nar","fuck off ya daftie","absofuckinlutely not",
 			# later
-			"am not sure av just had a bucket",
-			"al tel you later",
-			"giz a minute to figure it out",
-			"mebbe like",
-			"dain't bet on it like"
+			"am not sure av just had a bucket","al tel you later","giz a minute to figure it out",
+			"mebbe like","dain't bet on it like"
 		]
 		await ctx.send(f":8ball: {ctx.author.mention} {random.choice(res)}")
 	
@@ -62,27 +40,13 @@ class Misc(commands.Cog):
 		await ctx.send(random.choice(lennys))
 	
 	@commands.command(aliases=["horo"])
-	async def horoscope(self,ctx,*,sign):
+	async def horoscope(self,ctx,*,sign : commands.clean_content):
 		""" Find out your horoscope for this week """
 		sign = sign.title()
 		horos = {
-			"Aquarius":"♒",
-			"Aries":"♈",
-			"Cancer":"♋",
-			"Capricorn":"♑",
-			"Gemini":"♊",
-			"Leo":"♌",
-			"Libra":"♎",
-			"Scorpius":"♏",
-			"Scorpio":"♏",
-			"Sagittarius":"♐",
-			"Pisces":"♓",
-			"Taurus":"♉",
-			"Virgo":"♍",
+			"Aquarius":"♒","Aries":"♈","Cancer":"♋","Capricorn":"♑","Gemini":"♊","Leo":"♌",	"Libra":"♎",
+			"Scorpius":"♏","Scorpio":"♏","Sagittarius":"♐","Pisces":"♓",	"Taurus":"♉","Virgo":"♍",
 		}
-		
-		if sign not in horos:
-			return
 		
 		# Get Sunday Just Gone.
 		sun = datetime.datetime.now().date() - datetime.timedelta(days=datetime.datetime.now().weekday() + 1)
@@ -95,13 +59,16 @@ class Misc(commands.Cog):
 		e = discord.Embed()
 		e.color = 0x7289DA
 		e.description = "*\"The stars and planets will not affect your life in any way\"*"
-		e.title = f"{horos[sign]} {sign}"
+		try:
+			e.title = f"{horos[sign]} {sign}"
+		except KeyError:
+			e.title = f"{sign} {sign}"
 		ftstr = f"Horoscope for {sunstring} - {satstring}"
 		e.set_footer(text=ftstr)
 		await ctx.send(embed=e)
 	
 	@commands.command()
-	async def poll(self,ctx,*,arg):
+	async def poll(self,ctx,*,arg : commands.clean_content):
 		""" Thumbs up / Thumbs Down """
 		try:
 			await ctx.message.delete()
@@ -109,7 +76,6 @@ class Misc(commands.Cog):
 			pass
 		e = discord.Embed(color=0x7289DA)
 		e.title = f"Poll"
-		arg = discord.utils.escape_mentions(arg)
 		e.description = arg
 		e.set_footer(text=f"Poll created by {ctx.author.name}")
 		
@@ -187,8 +153,6 @@ class Misc(commands.Cog):
 		""" Make a decision for me (seperate choices with commas)"""
 		choices = discord.utils.escape_mentions(choices)
 		x = choices.split(",")
-		if len(x) == 1:
-			return
 		await ctx.send(f"{ctx.author.mention}: {random.choice(x)}")
 	
 	@commands.command(hidden=True)
@@ -213,7 +177,7 @@ class Misc(commands.Cog):
 		await ctx.send(random.choice(["Heads","Tails"]))
 	
 	@commands.command(hidden=True)
-	@commands.guild_only()
+	@commands.bot_has_permissions(kick_members=True)
 	async def kickme(self,ctx):
 		""" Stop kicking yourself. """
 		try:
@@ -226,7 +190,7 @@ class Misc(commands.Cog):
 			await ctx.send(f"👢 {ctx.author.mention} kicked themself")
 
 	@commands.command(hidden=True,aliases=["bamme"])
-	@commands.guild_only()
+	@commands.bot_has_permissions(ban_members=True)
 	async def banme(self,ctx):
 		""" Ban yourself. """
 		try:
@@ -250,7 +214,6 @@ class Misc(commands.Cog):
 			await asyncio.sleep(1)
 	
 	@commands.command(hidden=True)
-	@commands.guild_only()
 	@commands.has_permissions(add_reactions=True)
 	async def uprafa(self,ctx):
 		""" Adds an upvote reaction to the last 10 messages """
@@ -258,7 +221,6 @@ class Misc(commands.Cog):
 			await message.add_reaction(":upvote:332196220460072970")
 	
 	@commands.command(hidden=True)
-	@commands.guild_only()
 	@commands.has_permissions(add_reactions=True)
 	async def downrafa(self,ctx):
 		""" Adds a downvote reaction to the last 10 messages """
@@ -266,19 +228,20 @@ class Misc(commands.Cog):
 			await message.add_reaction(":downvote:332196251959427073")
 	
 	@commands.command(hidden=True)
-	@commands.has_permissions(manage_messages=True)
-	@commands.guild_only()
+	@commands.has_permissions(manage_reactions=True)
 	async def norafa(self,ctx,*,msgs=30):
 		""" Remove reactions from last x messages """
 		async for message in ctx.channel.history(limit=msgs):
 			await message.clear_reactions()
 			
 	@commands.command(aliases=["ttj"],hidden=True)
+	@commands.is_owner()
 	async def thatsthejoke(self,ctx):
 		""" MENDOZAAAAAAAAAAAAA """
 		await ctx.send("https://www.youtube.com/watch?v=xECUrlnXCqk")
 
 	@commands.command(aliases=["alreadydead"],hidden=True)
+	@commands.is_owner()
 	async def dead(self,ctx):
 		""" STOP STOP HE'S ALREADY DEAD """
 		await ctx.send("https://www.youtube.com/watch?v=mAUY1J8KizU")
@@ -369,52 +332,6 @@ class Misc(commands.Cog):
 				await m.clear_reactions()
 				await m.delete()
 			await m.edit(embed=embeds[page])
-			
-	@commands.command(hidden=True)
-	@commands.is_owner()
-	async def ircle(self,ctx):
-		""" Generate Shitposts of the week """
-		await ctx.trigger_typing()
-		url = "https://www.reddit.com/r/nufcirclejerk/top/?sort=top&t=week"
-		async with self.bot.session.get(url) as resp:
-			if resp.status != 200:
-				await ctx.send(f"{resp.status} error accessing top posts.")
-				return
-			posts = html.fromstring(await resp.text())
-			posts = posts.xpath('.//div[contains(@class, "thing")]')
-			table = [("\💩 r/nufcirclejerk Shitposts of the week roundup."
-					 "\n\n Score | Link | Direct | Author \n--|--|--|--|")]
-			for i in posts:
-				title = i.xpath(".//a[contains(@class, 'title')]/text()")
-				x = (".//ul[@class='flat-list buttons']/li[@class='first']//@href")
-				comme = i.xpath(x)
-				link  = i.xpath(".//a[contains(@class, 'title')]/@href")
-				authn = i.xpath(".//a[contains(@class, 'author')]/text()")
-				if len(authn) == 0:
-					authn = "[Deleted]"
-				else:
-					authn = "u/{}".format(authn[0])
-				score = i.xpath(".//div[@class='score unvoted']/text()")
-				sc = score[0]
-				t = title[0]
-				c = comme[0]
-				l = link[0]
-				table.append(f"{sc}|[{t}]({c}) | [Direct]({l}) | {authn}")
-			table = "\n".join(table)
-			await ctx.send(table[:2000])
-			await ctx.send(table[2001:4000])
-			
-	@commands.command(hidden=True)
-	async def emojitext(self,ctx,*,string):
-		""" Convert message to emojis """
-		await ctx.trigger_typing()
-		await ctx.message.delete()
-		
-		string = "".join([f":regional_indicator_{i.lower()}:" if i.isalpha()
-						else f"{i}⃣" if i.isdigit() else i for i in string])
-						
-		string = discord.utils.escape_mentions(string)
-		await ctx.send(string)	
 		
 def setup(bot):
     bot.add_cog(Misc(bot))

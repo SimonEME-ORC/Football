@@ -25,7 +25,6 @@ from selenium.webdriver.support import expected_conditions as EC
 from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
 
-
 #### TO DO:
 # >>> Convert Subinfo to same format as goals.
 # >>> Convert upcoming matches to dict
@@ -47,10 +46,8 @@ class MatchThreadCommands(commands.Cog):
 	async def scrape(self,bbclink,subhasicons=False):
 		matchdata = {"uktv":"","tvlink":""}
 		
-		
 		async with self.bot.session.get(bbclink) as resp:
 			if resp.status != 200:
-				print(f"MATCH THREAD LOOP - ERROR SCRAPING: {resp.status}")
 				return
 				
 			tree = html.fromstring(await resp.text(encoding="utf-8"))
@@ -408,8 +405,13 @@ class MatchThreadCommands(commands.Cog):
 		
 		fm = ""
 		matchpictures = ""		
-		if "Premier League" in matchdata["competition"]:	
-			premlink = await self.bot.loop.run_in_executor(None,get_premlink,driver)
+		if "Premier League" in matchdata["competition"]:
+			try:
+				premlink = await self.bot.loop.run_in_executor(None,get_premlink,driver)
+			except Exception as e:
+				print(e)
+				print("During matchthread loop / get premlink.")
+				premlink = ""
 			if premlink:
 				print(f"Premier league game detected. Additional Data should be parseable: {premlink}")
 				matchpictures,fm = await self.bot.loop.run_in_executor(None,get_prem_data,driver,premlink)	
@@ -627,7 +629,10 @@ class MatchThreadCommands(commands.Cog):
 		# Match Thread Loop.
 		while self.activemodule:
 			# Scrape new data
-			matchdata = await self.scrape(bbclink,subhasicons)
+			try:
+				matchdata = await self.scrape(bbclink,subhasicons)
+			except ServerDisconnectedError:
+				continue
 			
 			# Rebuild markdown
 			markdown = await write_markdown(matchdata,subhasicons,fm,prematch=prematch,mt=mt)
@@ -756,11 +761,11 @@ class MatchThreadCommands(commands.Cog):
 		e.title = "r/NUFC Scheduled Match Threads"
 		await ctx.send(embed=e)
 	
-	# @commands.is_owner()
-	# @commands.command()
-	# async def override(self,ctx,var,*,value):
-		# setattr(self,var,value)
-		# await ctx.send(f'Match Thread Bot: Setting "{var}" to "{value}"')		
+	@commands.is_owner()
+	@commands.command()
+	async def override(self,ctx,var,*,value):
+		setattr(self,var,value)
+		await ctx.send(f'Match Thread Bot: Setting "{var}" to "{value}"')		
 	
 def setup(bot):
 	bot.add_cog(MatchThreadCommands(bot))

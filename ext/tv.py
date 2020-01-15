@@ -50,9 +50,8 @@ class Tv(commands.Cog):
 			await ctx.send("Saved.")
 	
 	@commands.command()
-	async def tv(self,ctx,*,team = None):
+	async def tv(self,ctx,*,team:commands.clean_content = None):
 		""" Lookup next televised games for a team """
-		team = discord.utils.escape_mentions(team)
 		with ctx.typing():
 			if team and not team == "live":
 				matches = {i for i in self.bot.tv if team.lower() in i.lower()}
@@ -80,7 +79,7 @@ class Tv(commands.Cog):
 						await delme.delete()
 						await result.delete()
 				else:
-					team = matches[0]
+					team = list(matches)[0]
 
 				e = discord.Embed()
 				async with self.bot.session.get(self.bot.tv[team]) as resp:

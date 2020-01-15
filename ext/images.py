@@ -2,6 +2,7 @@ from PIL import Image,ImageDraw,ImageOps,ImageFont
 from discord.ext import commands
 from discord.ext.commands.cooldowns import BucketType
 from lxml import html
+from imgurpython import ImgurClient
 import datetime
 import textwrap
 import discord
@@ -15,14 +16,15 @@ from io import BytesIO
 class ImageManip(commands.Cog):
 	""" Edit images for you """
 	def __init__(self, bot):
+		bot.imgur = ImgurClient(bot.credentials["Imgur"]["Authorization"],bot.credentials["Imgur"]["Secret"])
 		self.bot = bot
 
 	@commands.command()
-	@commands.cooldown(1,120,BucketType.user) 
+	@commands.cooldown(2,90,BucketType.user) 
 	async def tinder(self,ctx):
 		""" Try to Find your next date. """
 		with ctx.typing():
-			match = random.choice([True,False,False,False])
+			match = random.choice([True,False,False])
 			if not match:
 				return await ctx.send("Nobody swiped right on you.")
 
@@ -37,6 +39,8 @@ class ImageManip(commands.Cog):
 				
 			if match == ctx.author:
 				await ctx.send("Congratulations, you matched with yourself. How pathetic.",file=df)
+			elif match == ctx.me:
+				await ctx.send("Fancy a shag?",file=df)
 			else:
 				await ctx.send(file=df)
 
@@ -104,14 +108,15 @@ class ImageManip(commands.Cog):
 		return image,respjson
 		
 	async def get_target(self,ctx,target):
-		if len(ctx.message.mentions) > 0:
-			target = ctx.message.mentions[0].avatar_url_as(format="png")
+		if ctx.message.mentions:
+			target = str(ctx.message.mentions[0].avatar_url_as(format="png"))
 		if target == None:
 			for i in ctx.message.attachments:
 				if i.height is None: # Not an image.
 					continue
 				return i.url
-			return await ctx.send(':no_entry_sign: To use this command either upload an image, tag a user, or specify a url.')			
+			await ctx.send(':no_entry_sign: To use this command either upload an image, tag a user, or specify a url.')	
+			return None
 		else:
 			return target
 
@@ -216,11 +221,10 @@ class ImageManip(commands.Cog):
 				return # rip
 			image,respjson = await self.get_faces(ctx,target)
 			if respjson is None:
-				await ctx.send("No faces were detected in your image.")
-				return
+				return await ctx.send("No faces were detected in your image.")
+				
 			# Pass it off to the executor
-			df = await self.bot.loop.run_in_executor(None,self.draw_eyes,
-														image,respjson)
+			df = await self.bot.loop.run_in_executor(None,self.draw_eyes,image,respjson)
 			await ctx.send(ctx.author.mention,file=df)
 			try:
 				await ctx.message.delete()
@@ -279,27 +283,28 @@ class ImageManip(commands.Cog):
 		
 		return df
 
-	@commands.command()
-	async def tard(self,ctx,target,*,quote):
+	@commands.command(usage = 'tard <@user> <quote>')
+	async def tard(self,ctx,target : discord.Member,*,quote):
 		""" Generate an "oh no, it's retarded" image
-		with a user's avatar and a quote 
+		with a user's avatar and a quote "
 		"""
 		with ctx.typing():
-			if ctx.message.mentions:
-				target = ctx.message.mentions[0]
-			elif target.isdigit():
-				target = await self.bot.fetch_user(target)
 			if target.id == 210582977493598208:
 				target = ctx.author
 				quote = "I think I'm smarter than Painezor"
 			cs = self.bot.session
-			async with cs.get(str(target.avatar_url_as(format="png",size=1024))) as resp:
+			async with cs.get(str(target.get_avatar_url_as(format="png",size=1024))) as resp:
 				if resp.status != 200:
 					return await ctx.send(f"Error retrieving avatar for target {target} {resp.status}")
 				image = await resp.content.read()
 			df = await self.bot.loop.run_in_executor(None,self.draw_tard,image,quote)
 			await ctx.send(file=df)
-		
+	
+	@tard.error
+	async def tard_error(self,ctx,exc):
+		if isinstance(exc,commands.BadArgument):
+			return await ctx.send("🚫 Bad argument provided: Make sure you're pinging a user or using their ID")
+	
 	def draw_tard(self,image,quote):
 		""" Draws the "it's retarded" image """
 		# Open Files
@@ -560,8 +565,11 @@ class ImageManip(commands.Cog):
 					async with self.bot.session.get(cat["file"]) as resp:
 						cat = await resp.content.read()
 						fp = discord.File(BytesIO(cat),filename="cat.png")
-						return await ctx.send("😺 Here's your cat:",file=fp)
-		await ctx.author.send("😿 Sorry, no cats want to be adopted by you.")		
+						try:
+							return await ctx.author.send("😺 Here's your cat:",file=fp)
+						except:
+							return await ctx.send("Tried to send you your cat, but I can't send you messages. Guess he's not getting adopted then.")
+		await ctx.send("😿 Sorry, no cats want to be adopted by you.")		
 			
 def setup(bot):
 	bot.add_cog(ImageManip(bot))

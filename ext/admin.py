@@ -1,10 +1,13 @@
 from discord.ext import commands
 import discord, asyncio
+from os import system
+import datetime
 import aiohttp
 import inspect
 import json
-import traceback
+import asyncpg
 import sys
+import traceback
 
 # to expose to the eval command
 import datetime
@@ -14,44 +17,32 @@ class Admin(commands.Cog):
 	"""Code debug & 1oading of modules"""
 	def __init__(self, bot):
 		self.bot = bot
-
-	# Error Handler
-	@commands.Cog.listener()
-	async def on_command_error(self,ctx,error):
-		# Let local error handling override.
-		if hasattr(ctx.command,'on_error'):
-			return
-		
-		# NoPM
-		elif isinstance(error, commands.NoPrivateMessage):
-			await ctx.send('Sorry, this command cannot be used in DMs.')
-				
-		elif isinstance(error,discord.Forbidden):
-			try:
-				print(f"Forbidden: {ctx.message.content} ({ctx.author})in {ctx.channel.name} on {ctx.guild.name}")
-				await ctx.message.add_reaction('⛔')
-			except discord.Forbidden:
-				print(f"Forbidden: {ctx.message.content} ({ctx.author})in {ctx.channel.name} on {ctx.guild.name}")
-		
-		elif isinstance(error,commands.DisabledCommand):
-			await ctx.message.add_reaction('🚫')
-		
-		elif isinstance(error,commands.BotMissingPermissions):
-			# Fail Silently.
-			pass
-			
-		elif isinstance(error, commands.CommandNotFound):
-			pass				
-		
-		elif isinstance(error, commands.CommandInvokeError):
-			print('In {0.command.qualified_name}:'.format(ctx), file=sys.stderr)
-			traceback.print_tb(error.original.__traceback__)
-			print('{0.__class__.__name__}: {0}'.format(error.original),
-				  file=sys.stderr)	
-
+		self.bot.socket_stats = Counter()
+		self.bot.loop.create_task(self.update_cache())
+	
+	async def update_cache(self):
+		pass
+	
+	@commands.command()
+	@commands.is_owner()
+	async def clearconsole(self,ctx):
+		""" Clear the command window. """
+		system('cls')
+		print(f'{self.bot.user}: {self.bot.initialised_at}\n-----------------------------------------')		
+		await ctx.send("Console cleared.")
+		print(f"Console cleared at: {datetime.datetime.utcnow()}")
+	
+	@commands.command(aliases=["releoad"])
+	@commands.is_owner()
+	async def reload(self,ctx, *, module : str):
+		"""Reloads a module."""
+		try:
+			self.bot.reload_extension(module)
+		except Exception as e:
+			await ctx.send(f':no_entry_sign: {type(e).__name__}: {e}')
 		else:
-			print(f"Error: ({ctx.author.id} on {ctx.guild.id})\n caused the following error\n{error}\nContext: {ctx.message.content}")
-		
+			await ctx.send(f':gear: Reloaded {module}')
+	
 	@commands.command()
 	@commands.is_owner()
 	async def load(self,ctx, *, module : str):
@@ -59,7 +50,7 @@ class Admin(commands.Cog):
 		try:
 			self.bot.load_extension(module)
 		except Exception as e:
-			await ctx.send(f':no_entry_sign: {type(e).__name__}: {e}')
+			await ctx.send(f':no_entry_sign: {type(e).__name__}: {e} \n{e.__traceback__	}')
 		else:
 			await ctx.send(f':gear: Loaded {module}')
 
@@ -73,17 +64,6 @@ class Admin(commands.Cog):
 			await ctx.send(f':no_entry_sign: {type(e).__name__}: {e}')
 		else:
 			await ctx.send(f':gear: Unloaded {module}')
-
-	@commands.command(name='reload',aliases=["releoad"])
-	@commands.is_owner()
-	async def _reload(self,ctx, *, module : str):
-		"""Reloads a module."""
-		try:
-			self.bot.reload_extension(module)
-		except Exception as e:
-			await ctx.send(f':no_entry_sign: {type(e).__name__}: {e}')
-		else:
-			await ctx.send(f':gear: Reloaded {module}')
 	
 	@commands.command()
 	@commands.is_owner()
@@ -144,12 +124,6 @@ class Admin(commands.Cog):
 	
 	@commands.command()
 	@commands.is_owner()
-	async def ownersay(self,ctx,channel:discord.TextChannel,*,msg):
-		await channel.send(msg)
-		await ctx.message.delete()
-	
-	@commands.command()
-	@commands.is_owner()
 	async def guilds(self,ctx):
 		guilds = []
 		for i in self.bot.guilds:
@@ -189,35 +163,19 @@ class Admin(commands.Cog):
 	async def kill(self,ctx):
 		"""Restarts the bot"""
 		await ctx.send(":gear: Restarting.")
+		await self.db.close()
 		await self.bot.logout()
 		
-	@commands.command()
+	@commands.command(aliases=['streaming','watching','listening'])
 	@commands.is_owner()
-	async def playing(self,ctx,*,game):
-		""" Change status to "playing {game}" """
-		await self.bot.change_presence(game=discord.Game(name=game,type=0))
-		await self.ctx.send(f"Set status to playing {game}")
-
-	@commands.command()
-	@commands.is_owner()
-	async def streaming(self,ctx,*,game):
-		""" Change status to "streaming {game}" """
-		await self.bot.change_presence(game=discord.Game(name=game,type=1))
-		await self.ctx.send(f"Set status to streaming {game}")
+	async def playing(self,ctx,*,msg):
+		""" Change status to <cmd> {game} """
+		values = {"playing":0,"streaming":1,"watching":2,"listening":3}
 		
-	@commands.command()
-	@commands.is_owner()
-	async def watching(self,ctx,*,game):
-		""" Change status to "watching {game}" """
-		await self.bot.change_presence(game=discord.Game(name=game,type=3))
-		await self.ctx.send(f"Set status to watching {game}")
+		act = discord.Activity(type=values[ctx.invoked_with],name=msg)
 		
-	@commands.command()
-	@commands.is_owner()
-	async def listening(self,ctx,*,game):
-		""" Change status to "listening to {game}" """
-		await self.bot.change_presence(game=discord.Game(name=game,type=2))
-		await self.ctx.send(f"Set status to listening to {game}")		
+		await self.bot.change_presence(activity=act)
+		await ctx.send(f"Set status to {ctx.invoked_with} {game}")
 		
 	@commands.command()
 	@commands.is_owner()
@@ -240,5 +198,41 @@ class Admin(commands.Cog):
 		e.description = "\n".join(matches)
 		await ctx.send(embed=e)
 	
+	@commands.command()
+	@commands.is_owner()
+	async def source(self, ctx, *, command: str = None):
+		"""Displays my full source code or for a specific command.
+		To display the source code of a subcommand you can separate it by
+		periods, e.g. tag.create for the create subcommand of the tag command
+		or by spaces.
+		"""
+		source_url = 'https://github.com/Painezor/Toonbot'
+		if command is None:
+			return await ctx.send(source_url)
+
+		obj = self.bot.get_command(command.replace('.', ' '))
+		if obj is None:
+			return await ctx.send('Could not find command.')
+
+		# since we found the command we're looking for, presumably anyway, let's
+		# try to access the code itself
+		src = obj.callback.__code__
+		lines, firstlineno = inspect.getsourcelines(src)
+		if not obj.callback.__module__.startswith('discord'):
+			# not a built-in command
+			location = os.path.relpath(src.co_filename).replace('\\', '/')
+		else:
+			location = obj.callback.__module__.replace('.', '/') + '.py'
+			source_url = 'https://github.com/Painezor/Toonbot'
+
+		final_url = f'<{source_url}/blob/master/{location}#L{firstlineno}-L{firstlineno + len(lines) - 1}>'
+		await ctx.send(final_url)
+	
+	@commands.command()
+	@commands.is_owner()
+	async def version(self,ctx):
+		""" Get Python version """
+		await ctx.send(f"Running on python versino {sys.version}")
+		
 def setup(bot):
     bot.add_cog(Admin(bot))

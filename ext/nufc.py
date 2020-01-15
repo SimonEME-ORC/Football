@@ -14,6 +14,41 @@ class NUFC(commands.Cog):
 		if ctx.guild:
 			return ctx.guild.id in [238704683340922882,332159889587699712]
 
+	@commands.command(hidden=True)
+	@commands.is_owner()
+	async def ircle(self,ctx):
+		""" Generate Shitposts of the week """
+		await ctx.trigger_typing()
+		url = "https://www.reddit.com/r/nufcirclejerk/top/?sort=top&t=week"
+		async with self.bot.session.get(url) as resp:
+			if resp.status != 200:
+				await ctx.send(f"{resp.status} error accessing top posts.")
+				return
+			posts = html.fromstring(await resp.text())
+			posts = posts.xpath('.//div[contains(@class, "thing")]')
+			table = [("\💩 r/nufcirclejerk Shitposts of the week roundup."
+					 "\n\n Score | Link | Direct | Author \n--|--|--|--|")]
+			for i in posts:
+				title = i.xpath(".//a[contains(@class, 'title')]/text()")
+				x = (".//ul[@class='flat-list buttons']/li[@class='first']//@href")
+				comme = i.xpath(x)
+				link  = i.xpath(".//a[contains(@class, 'title')]/@href")
+				authn = i.xpath(".//a[contains(@class, 'author')]/text()")
+				if len(authn) == 0:
+					authn = "[Deleted]"
+				else:
+					authn = "u/{}".format(authn[0])
+				score = i.xpath(".//div[@class='score unvoted']/text()")
+				sc = score[0]
+				t = title[0]
+				c = comme[0]
+				l = link[0]
+				table.append(f"{sc}|[{t}]({c}) | [Direct]({l}) | {authn}")
+			table = "\n".join(table)
+			await ctx.send(table[:2000])
+			await ctx.send(table[2001:4000])
+			
+
 	@commands.command(aliases=["colour"],hidden=True)
 	@commands.check(nufccheck)
 	async def color(self,ctx,color):
@@ -73,6 +108,7 @@ class NUFC(commands.Cog):
 		await ctx.send(output)
 		
 	@streams.command(name="add")
+	@commands.check(nufccheck)
 	async def stream_add(self,ctx,*,stream):
 		""" Add a stream to the stream list. """
 		stream = discord.utils.escape_mentions(stream)
@@ -94,6 +130,7 @@ class NUFC(commands.Cog):
 		await ctx.send(f"Added {stream} to stream list.")
 		
 	@streams.command(name="del")
+	@commands.check(nufccheck)
 	async def stream_del(self,ctx,*,num:int):
 		""" Delete a stream from the stream list """
 		num = num - 1
@@ -115,6 +152,7 @@ class NUFC(commands.Cog):
 		await ctx.send("https://www.youtube.com/watch?v=L4f9Y-KSKJ8")
 	
 	@commands.command(hidden=True)
+	@commands.is_owner()
 	async def metro(self,ctx):
 		""" GET. OFF. THE METRO. NOOOOOOOOOOW. """
 		await ctx.send(file=discord.File('Get off the metro now.mp3'))
@@ -196,18 +234,5 @@ class NUFC(commands.Cog):
 	async def radio(self,ctx):
 		await ctx.send("<:badge:332195611195605003>  Radio Coverage: https://www.nufc.co.uk/liveaudio.html")
 	
-	@commands.command()
-	@commands.check(nufccheck)
-	async def rules(self,ctx):
-		""" Show the rules for the r/NUFC discord """
-		e = discord.Embed(title="= r/NUFC Discord Rules",color=0x111)
-		e.description=("**1.** No [brigading](https://www.reddit.com/r/OutOfThe"
-			"Loop/comments/36xhxc/what_is_brigading_and_how_do_you_do_it/)\n"
-			"**2.** No spam (including bot commands)\n"
-			"**3.** No discrimination or harassment\n"
-			"In short, don't be a cunt and you won't get banned.")
-		e.set_thumbnail(url="https://b.thumbs.redditmedia.com/iVPl7BnL44HwSnX_aKil_NudzWffKQlPiVCZPJZDh4M.png")
-		await ctx.send(embed=e)	
-		
 def setup(bot):
 	bot.add_cog(NUFC(bot))
