@@ -41,12 +41,12 @@ class Bot(commands.Bot):
 		# Startup Modules
 		load = [	
 			'ext.admin','ext.fixtures','ext.fun','ext.images','ext.info',
-			'ext.meta','ext.mod','ext.mtb','ext.nufc','ext.quotes',
+			'ext.meta','ext.mod','ext.mtb','ext.notifications','ext.nufc','ext.quotes',
 			'ext.reactions','ext.scores', 'ext.sidebar','ext.timers','ext.twitter',
 			'ext.transfers','ext.tv',
 			
-			'ext.notifications',
-			'ext.aspg'
+			# WIP Cog.
+			'ext.automod'
 		]
 		for c in load:
 			try:

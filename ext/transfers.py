@@ -211,14 +211,13 @@ class Transfers(commands.Cog):
 				if not player_name or player_name in self.parsed:
 					continue # skip when duplicate / void.
 				else:
-					self.parsed.append(pname)
-				
-				print(f"Transfer found {player_name}")
+					self.parsed.append(player_name)
 				
 				# We don't need to output when populating after a restart.
 				if firstrun:
+					print(f"Caching {player_name}")	
 					continue
-				
+				print(f"Transfer found {player_name}")
 				# Player Info
 				player_link = "".join(i.xpath('.//td[1]//tr[1]/td[2]/a/@href'))
 				age = "".join(i.xpath('./td[2]//text()')).strip()
@@ -248,9 +247,9 @@ class Transfers(commands.Cog):
 				old_league_markdown = f"{old_league_flag}[{old_league}]({old_league_link})"
 				
 				if new_league == old_league:
-					move_info = f"{old_team} to {new_team} ({new_league_flag}{new_league_name})"
+					move_info = f"{old_team} to {new_team} ({new_league_flag}{new_league})"
 				else:
-					move_info = f"{old_team} ({old_league_flag}{old_league}) to {new_team} ({new_league_flag}{new_league_name})"			
+					move_info = f"{old_team} ({old_league_flag}{old_league}) to {new_team} ({new_league_flag}{new_league})"			
 				
 				
 				fee = "".join(i.xpath('.//td[6]//a/text()'))
@@ -260,7 +259,7 @@ class Transfers(commands.Cog):
 				e = discord.Embed()
 				e.description = ""
 				e.color = 0x1a3151
-				e.title = f"{nationality}{player_name} | {age} | {position}"
+				e.title = f"{nationality}{player_name} | {age} | {pos}"
 				e.url   = f"https://www.transfermarkt.co.uk{player_link}"
 				
 				e.description += f"**To: {new_league_markdown}\n"
@@ -274,24 +273,33 @@ class Transfers(commands.Cog):
 				th = await self.imgurify(th)
 				e.set_thumbnail(url=th)
 
-				shortstring = f"{nationality} {player_name} | {age} | {position} | {move_info} | {fee} | <{fee_link}>"
+				shortstring = f"{nationality} {player_name} | {age} | {pos} | {move_info} | {fee} | <{fee_link}>"
 
-				for g,cl in self.transfer_channel_cache:
-					for c,k in cl:
+				for g,cl in self.transfer_channel_cache.items():
+					for c,k in cl.items():
+						print(f"Attempting to get channel {c}")
 						ch = self.bot.get_channel(c)
+						print(f"Got channel {ch}")
 						try:
 							whitelisted = self.transfer_channel_whitelist_cache[c]
+							print(f"Found whitelist: {whitelisted}")
 						except KeyError:
+							print("No whitelist found.")
 							pass
 						else:
+							print(f"Comparing values for {new_team_link},{old_team_league},{new_league_link},{old_league_link}")
 							this_whitelist = whitelisted[i]
-							aliases = [i['item'] for i in whitelisted]
-							if not any (new_team_link,old_team_link,new_league_link,old_league_link) in aliases:
+							values = [i['item'] for i in whitelisted]
+							print(f"to {values}")
+							if not any (new_team_link,old_team_link,new_league_link,old_league_link) in values:
+								print("Not found. Aborting sending.")
 								continue
-						
+							print("Found. Countinuing.")
+							
+						print("Checking for shortmode.")
 						shortmode = self.transfer_channel_cache[c]["shortmode"]
+						print(f"Shortmode is {shortmode}")
 		
-						ch = self.bot.get_channel(c)
 						try:
 							if shortmode:
 								await ch.send(shortstring)
@@ -301,8 +309,9 @@ class Transfers(commands.Cog):
 							print(f"Discord.Forbidden while trying to send new transfer to {c}")
 						except AttributeError:
 							print(f"AttributeError while trying to send new transfer to {c} - Check for channel deletion.")
-						
-			firstrun = False
+			if firstrun:
+				firstrun = False
+				print("Set first run to false.")
 			await asyncio.sleep(loopiter)
 	
 	async def _pick_channels(self,ctx,channels):
@@ -331,8 +340,10 @@ class Transfers(commands.Cog):
 					try:
 						channels = await self.bot.wait_for("message",check=check,timeout=30)
 						channels = channels.channel_mentions
-					except asyncio.TimeoutError:
 						await m.delete()
+					except asyncio.TimeoutError:
+						await m.edit(content="Timed out waiting for you to reply with a channel list. No channels were modified.")
+						channels = []
 
 		return channels
 		
@@ -590,7 +601,7 @@ class Transfers(commands.Cog):
 		
 		connection = await self.bot.db.acquire()
 		replies = []
-		async with connection.transaction:
+		async with connection.transaction():
 			for i in channels:
 				if i.id not in guild_cache:
 					replies.append(f"🚫 {c.mention} was not set as transfer ticker channels..")

@@ -1,5 +1,6 @@
 from discord.ext import commands
 from collections import Counter
+import datetime
 import discord
 import asyncio
 import copy
@@ -10,37 +11,48 @@ class Info(commands.Cog):
 	def __init__(self, bot):
 		self.bot = bot
 		self.bot.commands_used = Counter()
-	
-	@commands.command(aliases=['botstats',"uptime"])
+
+	@commands.command(aliases=['botstats',"uptime","hello","inviteme"])
 	async def about(self,ctx):
 		"""Tells you information about the bot itself."""
-		e = discord.Embed(colour = 0x111111,timestamp = self.bot.user.created_at)
-		e.set_footer(text = "Toonbot was created on")
-		owner = self.bot.get_user((await self.bot.application_info()).owner.id)
-		e.set_author(name=f"Owner: {owner}", icon_url=owner.avatar_url)
+		e = discord.Embed(colour = 0x2ecc71,timestamp = self.bot.user.created_at)
+		owner = await self.bot.fetch_user(self.bot.owner_id)		
+		e.set_footer(text = f"Toonbot is coded (badly) by {owner} and was created on ")
+		e.set_thumbnail(url=ctx.me.avatar_url)
+		e.title = f"{ctx.me.display_name} ({ctx.me})" if not ctx.me.display_name == "ToonBot" else "Toonbot"
 		
 		# statistics
 		total_members = sum(len(s.members) for s in self.bot.guilds)
-		total_online  = sum(1 for m in self.bot.get_all_members() if m.status != discord.Status.offline)
-		voice = sum(len(g.text_channels) for g in self.bot.guilds)
-		text = sum(len(g.voice_channels) for g in self.bot.guilds)
-		memory_usage = psutil.Process().memory_full_info().uss / 1024**2
+		members = f"{total_members} Members across {len(self.bot.guilds)} servers."
 		
-		members = f"{total_members} Members\n{total_online} Online\n{len(self.bot.users)} unique"
-		e.add_field(name='Members', value=members)
-		e.add_field(name='Channels', value=f'{text + voice} total\n{text} text\n{voice} voice')
-		e.add_field(name='Servers', value=len(self.bot.guilds))
-		e.add_field(name='Uptime', value=self.get_bot_uptime(),inline=False)
-		e.add_field(name='Commands this run', value=sum(self.bot.commands_used.values()))
-		e.add_field(name='Memory Usage', value='{:.2f} MiB'.format(memory_usage))
-		e.add_field(name='Python Version',value=sys.version)
-
-		m = await ctx.send(embed=e)
-		await m.edit(content=" ",embed=e) # to grab ping.
-		time = f"{str((m.edited_at - m.created_at).microseconds)[:3]}ms"
-		e.add_field(name="Ping",value=time)
-		await m.edit(content=None,embed=e)
-
+		try:
+			prefixes = f"\nYou can use {self.bot.prefix_cache[ctx.guild.id][0]}help to see my commands."
+		except AttributeError:
+			prefixes = f"\nYou can use {ctx.me.mention}help to see my commands."
+		
+		e.description = f"I do football lookup related things.\n I have {members}"
+		e.description += prefixes
+		
+		technical_stats = f"{datetime.datetime.now() - self.bot.initialised_at}\n"
+		technical_stats += f"{sum(self.bot.commands_used.values())} commands ran since last reload."
+		e.add_field(name="Uptime",value=technical_stats,inline=False)
+		
+		invite_and_stuff = f"[Invite me to your server](https://discordapp.com/oauth2/authorize?client_id=250051254783311873&permissions=67488768&scope=bot)\n"
+		invite_and_stuff += f"[Join my Support Server](http://www.discord.gg/a5NHvPx)"
+		e.add_field(name="Using me",value=invite_and_stuff,inline=False)
+		await ctx.send(embed=e)
+	
+	@commands.command()
+	@commands.has_permissions(manage_roles=True)
+	@commands.bot_has_permissions(manage_roles=True)
+	async def permissions(self, ctx, *, member : discord.Member = None):
+		"""Shows a member's permissions."""
+		if member is None:
+			member = ctx.author
+		permissions = ctx.channel.permissions_for(member)
+		permissions = "\n".join([f"{i[0]} : {i[1]}" for i in permissions])
+		await ctx.send(f"```py\n{permissions}```")
+	
 	@commands.command(aliases=["lastmsg","lastonline","lastseen"])
 	async def seen(self,ctx,t : discord.Member = None):
 		""" Find the last message from a user in this channel """
@@ -100,41 +112,34 @@ class Info(commands.Cog):
 			voice = voice_fmt
 		else:
 			voice = 'Not connected.'
-
+		status = str(member.status).title()
+		if status == "Online":
+			status = "🟢 Online"
+		elif status == "Offline":
+			status = "🔴 Offline"
+		else:
+			status = f"🟡 {status}"
+		
+		if member.bot:
+			e.description = "**🤖 This user is a bot**"
+		
+		activity = member.activity
+		try:
+			activity = f"{discord.ActivityType[activity.type]} {activity.name}\n"
+		except KeyError: # Fix on custom status update.
+			activity = ""
+		
+		field_1_text = f"{status}\nID: {member.id}\n{activity}{shared} shared servers"
+		e.add_field(name="User info",value=field_1_text)
 		e.set_author(name=str(member), icon_url=member.avatar_url or member.default_avatar_url)
-		e.set_footer(text='Member since').timestamp = member.joined_at
-		e.add_field(name="Status",value=str(member.status).title(),inline=True)
-		e.add_field(name='ID', value=member.id,inline=True)
-		e.add_field(name='Servers', value='%s shared' % shared,inline=True)
-		e.add_field(name='Voice', value=voice,inline=True)
-		e.add_field(name="Is bot?",value=member.bot,inline=True)
-		if member.activity is not None:
-			e.add_field(name='Game',value=member.activity,inline=True)
-		e.add_field(name='Created at', value=member.created_at,inline=True)
-		e.add_field(name='Roles', value=', '.join(roles),inline=True)
+		e.set_footer(text='Account created').timestamp = member.created_at
+		e.add_field(name=f'Joined {ctx.guild.name}', value=member.joined_at.strftime("%d %b %Y at %H:%M:%S"),inline=False)
+		e.add_field(name='Roles', value=', '.join(roles),inline=False)
 		e.colour = member.colour
 		if member.avatar:
 			e.set_thumbnail(url=member.avatar_url)
-		try:
-			await ctx.send(embed=e)
-		except discord.Forbidden:
-			outstr = "```"
-			outstr = f"Member: {str(member)}\n"
-			outstr += f"Avatar URL: {member.avatar_url}\n"
-			outstr += f"Joined: {member.joined_at}\n"
-			outstr += f"Created: {member.created_at}"
-			outstr += f"User ID: {member.id}\n"
-			outstr += f"Mutual Servers with bot: {shared}\n"
-			if member.bot:
-				outstr += "User is a bot.\n"
-			if member.activity is not None:
-				outstr += f"Activity: {member.activity}\n"
-			if voice:
-				outstr == f"Voice Status: {voice}\n"
-			outstr += f"User Roles: {', '.join(roles)}"
-			outstr += "```"
-			await ctx.send(outstr)
-	
+		await ctx.send(embed=e)
+
 	@info.command(name='guild', aliases=["server"])
 	@commands.guild_only()
 	async def server_info(self, ctx):

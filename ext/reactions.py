@@ -98,6 +98,8 @@ class Reactions(commands.Cog):
 			pass				
 		
 		elif isinstance(error, commands.CommandInvokeError):
+			print(f"Error: ({ctx.author} ({ctx.author.id}) on {ctx.guild.name} ({ctx.guild.id}) )\nContext: {ctx.message.content}")
+			
 			print('In {0.command.qualified_name}:'.format(ctx), file=sys.stderr)
 			traceback.print_tb(error.original.__traceback__)
 			print('{0.__class__.__name__}: {0}'.format(error.original),

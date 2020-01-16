@@ -69,6 +69,12 @@ class Mod(commands.Cog):
 			except KeyError:
 				self.bot.disabled_cache.update({guild_id : [command]})
 	
+	@commands.command(aliases=['nick'])
+	@commands.has_permissions(manage_nicknames=True)
+	async def name(self,ctx,*,newname: str):
+		""" Rename the bot for your server. """
+		await ctx.me.edit(nick=newname)	
+	
 	@commands.command(usage = "say <Channel (optional)< <what you want the bot to say>")
 	@commands.check(me_or_mod)
 	async def say(self,ctx,destin:typing.Optional[discord.TextChannel] = None,*,tosay):
@@ -346,23 +352,24 @@ class Mod(commands.Cog):
 			
 		if not mrole:
 			mrole = await ctx.guild.create_role(name="Muted") # Read Messages / Read mesasge history.
+		
 		# Unmute if currently muted.
 		for i in members:
 			if mrole in i.roles:
-				await i.remove_roles(*[mrole])
+				await i.remove_roles(*[mrole],reason="unmuted.")
 				await ctx.send(f"{i.mention} was unmuted.")
 				await mutechan.send(f"{member.mention} was unmuted by {ctx.author}.")
 				# Get Mod channel.
 				if mutechan:
 					await mutechan.send()
 			else:
-				await i.add_roles(*[mrole])
+				await i.add_roles(*[mrole],reason=f"{ctx.author}: {reason}")
 				await ctx.send(f"{i.mention} was muted.")
-				await mutechan.send(f"{member.mention} was muted by {ctx.author}.")
+				await mutechan.send(f"{member.mention} was muted by {ctx.author} for {reason}.")
 		
 		# Reapply muted role overrides.
-		pos = max(ctx.me.top_role.position + 1,ctx.author.top_role.position + 1)
-		await mrole.edit(position=pos)		
+		
+		await mrole.edit(position=ctx.me.top_role.position - 1)		
 		moverwrite = discord.PermissionOverwrite()
 		moverwrite.add_reactions = False
 		moverwrite.send_messages = False		

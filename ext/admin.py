@@ -25,6 +25,17 @@ class Admin(commands.Cog):
 	
 	@commands.command()
 	@commands.is_owner()
+	async def setavatar(self,ctx,newpic : str):
+		""" Change the bot's avatar """
+		async with self.bot.session.get(newpic) as resp:
+			if resp.status != 200:
+				await ctx.send(f"HTTP Error: Status Code {resp.status}")
+				return None
+			profileimg = await resp.read()
+			await self.bot.user.edit(avatar=profileimg)
+	
+	@commands.command()
+	@commands.is_owner()
 	async def clearconsole(self,ctx):
 		""" Clear the command window. """
 		system('cls')
@@ -168,14 +179,14 @@ class Admin(commands.Cog):
 		
 	@commands.command(aliases=['streaming','watching','listening'])
 	@commands.is_owner()
-	async def playing(self,ctx,*,msg):
-		""" Change status to <cmd> {game} """
+	async def playing(self,ctx,*,status):
+		""" Change status to <cmd> {status} """
 		values = {"playing":0,"streaming":1,"watching":2,"listening":3}
 		
 		act = discord.Activity(type=values[ctx.invoked_with],name=msg)
 		
 		await self.bot.change_presence(activity=act)
-		await ctx.send(f"Set status to {ctx.invoked_with} {game}")
+		await ctx.send(f"Set status to {ctx.invoked_with} {status}")
 		
 	@commands.command()
 	@commands.is_owner()

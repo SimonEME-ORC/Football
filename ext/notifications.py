@@ -19,7 +19,6 @@ class Notifications(commands.Cog):
 	### TODO: CODE KICK / BAN ON MENTION
 		# DB is already set up	
 
-	
 	async def update_cache(self):
 		self.bot.notif_cache = {}
 		connection = await self.bot.db.acquire()
@@ -37,7 +36,7 @@ class Notifications(commands.Cog):
 					continue
 				if v is not None:
 					self.bot.notif_cache[guild_id].update({k:v})
-					
+	
 	# Listeners
 	@commands.Cog.listener()
 	async def on_guild_join(self,guild):
