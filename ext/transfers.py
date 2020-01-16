@@ -215,9 +215,8 @@ class Transfers(commands.Cog):
 				
 				# We don't need to output when populating after a restart.
 				if firstrun:
-					print(f"Caching {player_name}")	
 					continue
-				print(f"Transfer found {player_name}")
+
 				# Player Info
 				player_link = "".join(i.xpath('.//td[1]//tr[1]/td[2]/a/@href'))
 				age = "".join(i.xpath('./td[2]//text()')).strip()
@@ -236,7 +235,7 @@ class Transfers(commands.Cog):
 				new_league_link = "".join(i.xpath('.//td[5]/table//tr[2]/td/a/@href'))
 				new_league_link = f"https://www.transfermarkt.co.uk{new_league_link}" if new_league_link else ""
 				new_league_flag = self.get_flag("".join(i.xpath('.//td[5]/table//tr[2]/td//img/@alt')))
-				new_league_markdown = f"{new_league_flag}[{new_league}]({new_league_link})"
+
 				
 				old_team = "".join(i.xpath('.//td[4]/table//tr[1]/td/a/text()'))
 				old_team_link = "".join(i.xpath('.//td[4]/table//tr[1]/td/a/@href'))
@@ -244,24 +243,31 @@ class Transfers(commands.Cog):
 				old_league_link = "".join(i.xpath('.//td[4]/table//tr[2]/td/a/@href'))
 				old_league_link = f"https://www.transfermarkt.co.uk{new_league_link}" if old_league_link else ""
 				old_league_flag = self.get_flag("".join(i.xpath('.//td[4]/table//tr[2]/td//img/@alt')))
+				
+				# Markdown.
+				new_league_markdown = f"{new_league_flag} [{new_league}]({new_league_link})"
+				new_team_markdown = f"[{new_team}]({new_team_link})"
 				old_league_markdown = f"{old_league_flag}[{old_league}]({old_league_link})"
+				old_team_markdown = f"[{old_team}]({old_team_link})"
 				
 				if new_league == old_league:
-					move_info = f"{old_team} to {new_team} ({new_league_flag}{new_league})"
+					move_info = f"{old_team} to {new_team} ({new_league_flag} {new_league})"
 				else:
-					move_info = f"{old_team} ({old_league_flag}{old_league}) to {new_team} ({new_league_flag}{new_league})"			
+					move_info = f"{old_team} ({old_league_flag} {old_league}) to {new_team} ({new_league_flag} {new_league})"			
 				
+				move_info = moveinfo.replace(" ( None)","")
 				
 				fee = "".join(i.xpath('.//td[6]//a/text()'))
-				fee_link = "".join(i.xpath('.//td[6]//a/@href'))
+				fee_link = "https://www.transfermarkt.co.uk" + "".join(i.xpath('.//td[6]//a/@href'))
 				fee_markdown =  f"[{fee}]({fee_link})"
 				
 				e = discord.Embed()
 				e.description = ""
 				e.color = 0x1a3151
-				e.title = f"{nationality}{player_name} | {age} | {pos}"
+				e.title = f"{nationality} {player_name} | {age}"
 				e.url   = f"https://www.transfermarkt.co.uk{player_link}"
 				
+				e.description = pos
 				e.description += f"**To: {new_league_markdown}\n"
 				e.description += f"**From: {old_league_markdown}"		
 
@@ -273,7 +279,7 @@ class Transfers(commands.Cog):
 				th = await self.imgurify(th)
 				e.set_thumbnail(url=th)
 
-				shortstring = f"{nationality} {player_name} | {age} | {pos} | {move_info} | {fee} | <{fee_link}>"
+				shortstring = f"{player_name} | {fee} | <{fee_link}>\n{move_info}"
 
 				for g,cl in self.transfer_channel_cache.items():
 					for c,k in cl.items():
@@ -292,12 +298,8 @@ class Transfers(commands.Cog):
 							values = [i['item'] for i in whitelisted]
 							print(f"to {values}")
 							if not any (new_team_link,old_team_link,new_league_link,old_league_link) in values:
-								print("Not found. Aborting sending.")
 								continue
-							print("Found. Countinuing.")
-							
-						print("Checking for shortmode.")
-						shortmode = self.transfer_channel_cache[c]["shortmode"]
+						shortmode = self.transfer_channel_cache[g][c]["shortmode"]
 						print(f"Shortmode is {shortmode}")
 		
 						try:
@@ -311,7 +313,6 @@ class Transfers(commands.Cog):
 							print(f"AttributeError while trying to send new transfer to {c} - Check for channel deletion.")
 			if firstrun:
 				firstrun = False
-				print("Set first run to false.")
 			await asyncio.sleep(loopiter)
 	
 	async def _pick_channels(self,ctx,channels):

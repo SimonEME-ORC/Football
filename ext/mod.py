@@ -382,7 +382,7 @@ class Mod(commands.Cog):
 	async def clean(self,ctx,number : int = 100):
 		""" Deletes my messages from the last x messages in channel"""
 		try:
-			prefixes = self.bot.prefix_cache[ctx.guild.id]
+			prefixes = tuple(self.bot.prefix_cache[ctx.guild.id])
 		except KeyError:
 			prefixes = ctx.prefix
 		
