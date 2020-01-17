@@ -311,7 +311,10 @@ class Misc(commands.Cog):
 				wf = "reaction_add"
 				res = await self.bot.wait_for(wf,check=check,timeout=120)
 			except asyncio.TimeoutError:
-				await m.clear_reactions()
+				try:
+					await m.clear_reactions()
+				except discord.Forbidden:
+					pass
 				break
 			res = res[0]
 			if res.emoji == "⏮": #first

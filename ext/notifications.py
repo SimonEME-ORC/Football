@@ -45,6 +45,9 @@ class Notifications(commands.Cog):
 			await connection.execute(""" 
 				INSERT INTO guild_settings (guild_id) VALUES ($1)
 				""",guild.id)
+			await connection.execute(""" 
+				INSERT INTO prefixes (guild_id,prefix) VALUES ($1,$2)
+				""",guild.id)				
 		await self.bot.db.release(connection)
 		
 	@commands.Cog.listener()

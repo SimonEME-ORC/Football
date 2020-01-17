@@ -3,9 +3,9 @@ from collections import Counter
 import datetime
 import discord
 import asyncio
+import typing
 import copy
 
-## TODO: Merge Info/hackyinfo.
 class Info(commands.Cog):
 	""" Get information about users or servers. """
 	def __init__(self, bot):
@@ -78,64 +78,61 @@ class Info(commands.Cog):
 					return
 			await m.edit(content="Couldn't find a recent message from that user.")		
 		
-	@commands.command()
-	async def hackyinfo(self,ctx,*,id):
-		""" Get info about a user by their ID #"""
-		user = await self.bot.fetch_user(id)
-		e = discord.Embed()
-		e.color = 0x7289DA
-		e.set_author(name=str(user))
-		e.add_field(name='ID', value=user.id,inline=True)
-		e.add_field(name='Created at', value=user.created_at,inline=True)
-		e.add_field(name="Is bot?",value=user.bot)
-		e.set_thumbnail(url=user.avatar_url)
-		await ctx.send(embed=e)
-	
 	@commands.group(invoke_without_command=True)
 	@commands.guild_only()
-	async def info(self,ctx,*,member: discord.Member = None):
+	async def info(self,ctx,*,member: typing.Union[discord.Member,int] = None):
 		"""Shows info about a member.
 		This cannot be used in private messages. If you don't specify
 		a member then the info returned will be yours.
 		"""
 		if member is None:
 			member = ctx.author
+		elif isinstance(member,int):
+			member = await self.bot.fetch_user(member)
 
 		e = discord.Embed()
-		roles = [role.name.replace('@', '@\u200b') for role in member.roles]
+		
 		shared = sum(1 for m in self.bot.get_all_members() if m.id == member.id)
-		voice = member.voice
-		if voice is not None:
-			voice = voice.channel
-			other_people = len(voice.members) - 1
-			voice_fmt = f'{voice.name} with {other_people} others' if other_people else f'{voice.name} alone'
-			voice = voice_fmt
-		else:
-			voice = 'Not connected.'
-		status = str(member.status).title()
-		if status == "Online":
-			status = "🟢 Online"
-		elif status == "Offline":
-			status = "🔴 Offline"
-		else:
-			status = f"🟡 {status}"
+
+		e.set_footer(text='Account created').timestamp = member.created_at
+		
+		try:
+			roles = [role.name.replace('@', '@\u200b') for role in member.roles]
+			e.add_field(name='Roles', value=', '.join(roles),inline=False)
+			voice = member.voice			
+			if voice is not None:
+				voice = voice.channel
+				other_people = len(voice.members) - 1
+				voice_fmt = f'{voice.name} with {other_people} others' if other_people else f'{voice.name} alone'
+				voice = voice_fmt
+				e.add_field(name='Voice Chat', value=voice_fmt,inline=False)
+			status = str(member.status).title()
+			if status == "Online":
+				status = "🟢 Online\n"
+			elif status == "Offline":
+				status = "🔴 Offline\n"
+			else:
+				status = f"🟡 {status}\n"
+
+			activity = member.activity
+			try:
+				activity = f"{discord.ActivityType[activity.type]} {activity.name}\n"
+			except KeyError: # Fix on custom status update.
+				activity = ""
+			e.add_field(name=f'Joined {ctx.guild.name}', value=member.joined_at.strftime("%d %b %Y at %H:%M:%S"),inline=False)
+			e.colour = member.colour
+		except AttributeError:
+			status = ""
+			activity = ""
+			pass
+		
+		field_1_text = f"{status}ID: {member.id}\n{activity}{shared} shared servers"
+		e.add_field(name="User info",value=field_1_text)
+		e.set_author(name=str(member), icon_url=member.avatar_url or member.default_avatar_url)
 		
 		if member.bot:
 			e.description = "**🤖 This user is a bot**"
-		
-		activity = member.activity
-		try:
-			activity = f"{discord.ActivityType[activity.type]} {activity.name}\n"
-		except KeyError: # Fix on custom status update.
-			activity = ""
-		
-		field_1_text = f"{status}\nID: {member.id}\n{activity}{shared} shared servers"
-		e.add_field(name="User info",value=field_1_text)
-		e.set_author(name=str(member), icon_url=member.avatar_url or member.default_avatar_url)
-		e.set_footer(text='Account created').timestamp = member.created_at
-		e.add_field(name=f'Joined {ctx.guild.name}', value=member.joined_at.strftime("%d %b %Y at %H:%M:%S"),inline=False)
-		e.add_field(name='Roles', value=', '.join(roles),inline=False)
-		e.colour = member.colour
+			
 		if member.avatar:
 			e.set_thumbnail(url=member.avatar_url)
 		await ctx.send(embed=e)

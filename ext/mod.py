@@ -398,10 +398,17 @@ class Mod(commands.Cog):
 	@commands.guild_only()
 	async def prefix(self,ctx,*,prefix=""):
 		""" Add, remove, or List bot prefixes for this server."""
+		prefix = prefix.replace("add ","").replace("remove ","")
 		try:
 			prefixes = self.bot.prefix_cache[ctx.guild.id]
 		except KeyError:
 			prefixes = ['.tb']
+			connection = await self.bot.db.acquire()
+			async with connection.transaction():
+				records =  await connection.execute("""
+					INSERT INTO prefixes (guild_id,prefix) VALUES ($1,$2) 
+				""",ctx.guild.id,prefix)
+			await self.bot.db.release(connection)		
 		
 		if prefix:
 			# Server Admin only.
@@ -413,7 +420,7 @@ class Mod(commands.Cog):
 							INSERT INTO prefixes (guild_id,prefix) VALUES ($1,$2) 
 						""",ctx.guild.id,prefix)
 					await self.bot.db.release(connection)
-					await ctx.send(f'Added {prefix} to {ctx.guild.name} prefix list.')
+					await ctx.send(f'Added "{prefix}" to {ctx.guild.name}\'s prefixes list.')
 				else:
 					connection = await self.bot.db.acquire()	
 					async with connection.transaction():
@@ -421,10 +428,11 @@ class Mod(commands.Cog):
 							DELETE FROM prefixes WHERE (guild_id,prefix) = ($1,$2) 
 						""",ctx.guild.id,prefix)
 					await self.bot.db.release(connection)
-					await ctx.send(f'Removed {prefix} from {ctx.guild.name} prefix list.')
+					await ctx.send(f'Removed "{prefix}" from {ctx.guild.name}\'s prefix list.')
 		
 		await self.update_prefixes()
-		await ctx.send(f"Current Command prefixes for this server: ```{' '.join(prefixes)}```")
+		prefixes = ', '.join(["'{i}'" for i in self.bot.prefix_cache[ctx.guild.id]])
+		await ctx.send(f"Current Command prefixes for this server: ```{prefixes}```")
 
 	@commands.command(aliases=["enable"],usage= "<'disable' or 'enable'> <command name>")
 	@commands.has_permissions(manage_guild=True)

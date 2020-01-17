@@ -71,7 +71,6 @@ class Scores(commands.Cog):
 
 		self.bot.flashscore = self.bot.loop.create_task(self.fsloop())
 		self.messagedict = {}
-		self.loopdriver = self.spawn_chrome()
 		
 		# Loop frequency // Debug 15, normal 60.
 		self.intervaltimer = 60
@@ -98,7 +97,6 @@ class Scores(commands.Cog):
 	async def update_cache(self):
 		self.score_channel_cache = {}
 		self.score_channel_league_cache = {}
-		
 		connection = await self.bot.db.acquire()
 		async with connection.transaction():
 			channels =  await connection.fetch("""SELECT * FROM scores_channels""")
@@ -109,7 +107,7 @@ class Scores(commands.Cog):
 			try:
 				self.score_channel_cache[r["guild_id"]].append(r["channel_id"])
 			except KeyError:
-				self.score_channel_cache[r["guild_id"]] = [r["channel_id"]]		
+				self.score_channel_cache.update({r["guild_id"] : [r["channel_id"]]})
 		
 		for r in whitelists:
 			try:
@@ -367,7 +365,6 @@ class Scores(commands.Cog):
 			await ctx.send(f'{ctx.guild.name} does not have any live scores channels set.')
 			channels = []
 		else:
-
 			# Channel picker for invoker.
 			def check(message):
 				return ctx.author.id == message.author.id and message.channel_mentions		
@@ -396,6 +393,9 @@ class Scores(commands.Cog):
 	async def add(self,ctx,channels : commands.Greedy[discord.TextChannel],*,qry : commands.clean_content = None):
 		""" Add a league to your live-scores channel """
 		channels = await self._pick_channels(ctx,channels)
+		
+		if not channels:
+			return # rip
 		
 		if qry is None:	
 			return await ctx.send("Specify a competition name to search for.")
@@ -442,13 +442,16 @@ class Scores(commands.Cog):
 	@commands.has_permissions(manage_channels=True)
 	async def remove(self,ctx,channels : commands.Greedy[discord.TextChannel],*,target : commands.clean_content):
 		""" Remove a competition from your live-scores channels """
-		channels = await self._pick_channels(ctx,channel)
+		channels = await self._pick_channels(ctx,channels)
 		
+		if not channels:
+			return # rip
+			
 		replies = []
 		connection = await self.bot.db.acquire()
 		async with connection.transaction():		
 			for c in channels:
-				if i.id not in self.score_channel_cache[ctx.guild.id]:
+				if c	.id not in self.score_channel_cache[ctx.guild.id]:
 					replies.append(f'{c.mention} is not set as a scores channel.')
 					continue
 				try:
@@ -478,6 +481,9 @@ class Scores(commands.Cog):
 	async def reset(self,ctx,channels : commands.Greedy[discord.TextChannel]):	
 		""" Reset live-scores channels to the list of default competitions """
 		channels = await self._pick_channels(ctx,channels) 
+		
+		if not channels:
+			return #rip
 		
 		connection = await self.bot.db.acquire()
 		replies = []

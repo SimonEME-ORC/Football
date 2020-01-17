@@ -245,9 +245,9 @@ class Transfers(commands.Cog):
 				old_league_flag = self.get_flag("".join(i.xpath('.//td[4]/table//tr[2]/td//img/@alt')))
 				
 				# Markdown.
-				new_league_markdown = f"{new_league_flag} [{new_league}]({new_league_link})"
+				new_league_markdown = f"{new_league_flag} [{new_league}]({new_league_link})" if new_league != "None" else ""
 				new_team_markdown = f"[{new_team}]({new_team_link})"
-				old_league_markdown = f"{old_league_flag}[{old_league}]({old_league_link})"
+				old_league_markdown = f"{old_league_flag} [{old_league}]({old_league_link})" if old_league != "None" else ""
 				old_team_markdown = f"[{old_team}]({old_team_link})"
 				
 				if new_league == old_league:
@@ -255,7 +255,7 @@ class Transfers(commands.Cog):
 				else:
 					move_info = f"{old_team} ({old_league_flag} {old_league}) to {new_team} ({new_league_flag} {new_league})"			
 				
-				move_info = moveinfo.replace(" ( None)","")
+				move_info = move_info.replace(" ( None)","")
 				
 				fee = "".join(i.xpath('.//td[6]//a/text()'))
 				fee_link = "https://www.transfermarkt.co.uk" + "".join(i.xpath('.//td[6]//a/@href'))
@@ -267,9 +267,9 @@ class Transfers(commands.Cog):
 				e.title = f"{nationality} {player_name} | {age}"
 				e.url   = f"https://www.transfermarkt.co.uk{player_link}"
 				
-				e.description = pos
-				e.description += f"**To: {new_league_markdown}\n"
-				e.description += f"**From: {old_league_markdown}"		
+				e.description = f"{pos}\n"
+				e.description += f"**To**: {new_team_markdown} {new_league_markdown}\n"
+				e.description += f"**From**: {old_team_markdown} {old_league_markdown}"		
 
 				if fee:
 					e.add_field(name="Reported Fee",value=fee_markdown,inline=False)
@@ -283,14 +283,11 @@ class Transfers(commands.Cog):
 
 				for g,cl in self.transfer_channel_cache.items():
 					for c,k in cl.items():
-						print(f"Attempting to get channel {c}")
 						ch = self.bot.get_channel(c)
-						print(f"Got channel {ch}")
 						try:
 							whitelisted = self.transfer_channel_whitelist_cache[c]
 							print(f"Found whitelist: {whitelisted}")
 						except KeyError:
-							print("No whitelist found.")
 							pass
 						else:
 							print(f"Comparing values for {new_team_link},{old_team_league},{new_league_link},{old_league_link}")
@@ -300,7 +297,6 @@ class Transfers(commands.Cog):
 							if not any (new_team_link,old_team_link,new_league_link,old_league_link) in values:
 								continue
 						shortmode = self.transfer_channel_cache[g][c]["shortmode"]
-						print(f"Shortmode is {shortmode}")
 		
 						try:
 							if shortmode:
@@ -361,7 +357,7 @@ class Transfers(commands.Cog):
 				replies.append(f"{i.mention} is not set as one of {ctx.guild.name}'s transfer tickers.")
 			
 			mode = guild_cache[i.id]["shortmode"]
-			mode = "short" if True else "Embed"
+			mode = "short" if mode is True else "Embed"
 			
 			try:
 				wl = []

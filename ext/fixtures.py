@@ -147,7 +147,8 @@ class Fixtures(commands.Cog):
 				url = await self._search(ctx,m,qry)
 			elif qry is None:
 				return await ctx.send(f'Specify a search query. A default team or league can be set by server moderators using {ctx.prefix}default <"team" or "league"> <search string>')
-			elif url is None:
+			
+			if url is None:
 				return #rip
 			else:
 				m = await ctx.send(f"Grabbing table from <{url}>...")
@@ -272,12 +273,13 @@ class Fixtures(commands.Cog):
 				url = await self._search(ctx,m,qry)
 			elif qry is None:
 				return await ctx.send(f'Specify a search query. A default team or league can be set by server moderators using {ctx.prefix}default <"team" or "league"> <search string>')				
-			elif url is None:
+			
+			if url is None:
 				return #rip
 			else:
 				await ctx.send(f'Grabbing results data for {qry}...',delete_after=5)	
 			pages = await self.bot.loop.run_in_executor(None,self.parse_results,url,ctx.author.name)
-		await self.paginate(ctx,pages)
+			await self.paginate(ctx,pages)
 	
 	@commands.command(aliases=["suspensions"])
 	async def injuries(self,ctx,*,qry:commands.clean_content = None):
