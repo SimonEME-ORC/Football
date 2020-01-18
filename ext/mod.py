@@ -161,7 +161,7 @@ class Mod(commands.Cog):
 		""" Bans a list of members from the server, deletes all messages for the last x days """
 		for i in members:
 			try:
-				await i.ban(reason=f"{ctx.author.name}: {reason}",delete_message_days=days)
+				await i.ban(reason=f"{ctx.author.name}: {reason}",delete_message_days=delete_days)
 			except discord.Forbidden:
 				await ctx.send(f"⛔ Sorry, I can't ban {i.mention}.")
 			except discord.HTTPException:
@@ -422,6 +422,8 @@ class Mod(commands.Cog):
 					await self.bot.db.release(connection)
 					await ctx.send(f'Added "{prefix}" to {ctx.guild.name}\'s prefixes list.')
 				else:
+					if prefix == ".tb":
+						return await ctx.send("The .tb prefix cannot be removed.")
 					connection = await self.bot.db.acquire()	
 					async with connection.transaction():
 						records =  await connection.execute("""

@@ -255,7 +255,7 @@ class Transfers(commands.Cog):
 				else:
 					move_info = f"{old_team} ({old_league_flag} {old_league}) to {new_team} ({new_league_flag} {new_league})"			
 				
-				move_info = move_info.replace(" ( None)","")
+				move_info = move_info.replace(" (None )","")
 				
 				fee = "".join(i.xpath('.//td[6]//a/text()'))
 				fee_link = "https://www.transfermarkt.co.uk" + "".join(i.xpath('.//td[6]//a/@href'))
@@ -747,7 +747,10 @@ class Transfers(commands.Cog):
 		e.url = str(resp.url)
 		e.set_author(name="".join(tree.xpath(f".//div[@class='table-header'][contains(text(),'{categ}')]/text()")))
 		e.description = ""
-		numpages = int("".join([i for i in e.author.name if i.isdigit()])) // 10 + 1
+		try:
+			numpages = int("".join([i for i in e.author.name if i.isdigit()])) // 10 + 1
+		except ValueError:
+			numpages = 0
 		e.set_footer(text=f"Page {page} of {numpages}")
 		return e,tree.xpath(matches),numpages
 	

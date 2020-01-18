@@ -87,6 +87,7 @@ class Scores(commands.Cog):
 			"ENGLAND: FA Cup",
 			"ENGLAND: EFL Cup",
 			"FRANCE: Ligue 1",
+			"FRANCE: Coupe de France",
 			"GERMANY: Bundesliga",
 			"ITALY: Serie A",
 			"NETHERLANDS: Eredivisie",

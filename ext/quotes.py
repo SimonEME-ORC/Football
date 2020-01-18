@@ -2,269 +2,245 @@ import discord
 from discord.ext import commands
 from datetime import datetime
 
+import typing
 import asyncio
-import sqlite3
-
-# Create database connection
-conn = sqlite3.connect('quotes.db')
-c = conn.cursor()
+import asyncpg
 
 class quotedb(commands.Cog):
 	""" Quote Database module """
 	def __init__(self,bot):
 		self.bot = bot
-		
-	def cog_unload(bot):	
-		conn.close()
-	
-	def nufccheck(ctx):
-		if ctx.guild:
-			return ctx.guild.id in [238704683340922882,332159889587699712]
-	
-	async def make_embed(self,ctx,data):
-		# Get data from ids
-		# Stored by [authorid,content,channelid,timestamp,submitterid]
+				
+	async def make_embed(self,ctx,r):
 		try:
-			author = await self.bot.fetch_user(data[1])
-		except:
-			author = "<Deleted User>"
-		try:
-			channel = self.bot.get_channel(data[3])
-		except:
-			channel = "<Deleted Channel>"
-		try:
-			submitter = await self.bot.fetch_user(data[5])
-		except:
-			submitter = "<Deleted User>"
-		try:
-			guild = self.bot.get_guild(data[7])
-		except:
-			guild = "<Deleted Guild>"
-		
-		jumpurl = data[6]
-			
+			author = await self.bot.fetch_user(r["author_user_id"])
+		except TypeError:
+			author = "Deleted User"
+		channel = self.bot.get_channel(r["channel_id"])
+		submitter = await self.bot.fetch_user(r["submitter_user_id"])
+		guild = self.bot.get_guild(r["guild_id"])
+		message_id = r["message_id"]
 		submittern = submitter.display_name if submitter is not None else "<Deleted User>"
 		
-		e = discord.Embed(color=0x7289DA,description=data[2])
+		e = discord.Embed(color=0x7289DA,description=r["message_content"])
 		
-		if ctx.guild.id == data[7] and jumpurl:
+		try:
+			jumpurl = f"https://discordapp.com/channels/{guild.id}/{channel.id}/{message_id}"
 			e.description += f"\n\n [⬆️ Jump to message.]({jumpurl})"
+		except AttributeError:
+			pass
 		
-		e.set_author(name=f"Quote #{data[0]}",
-			icon_url="https://discordapp.com/assets/2c21aeda16de354ba5334551a883b481.png")
-		if author:
-			e.set_thumbnail(url=author.avatar_url)
+		e.set_author(name=f"Quote #{r['quoteid']}")
+		
+		try:
 			e.title = f"{author.display_name} in #{channel}"
-		else:
-			e.set_thumbnail(url="https://discordapp.com/assets/2c21aeda16de354ba5334551a883b481.png")
-			e.title = f"Deleted user in #{channel}"
+		except AttributeError:
+			e.title = f"Deleted User in #{channel}"
+		e.set_thumbnail(url="https://discordapp.com/assets/2c21aeda16de354ba5334551a883b481.png")
 		
 		e.set_footer(text=f"Added by {submittern}",icon_url=submitter.avatar_url)
-		e.timestamp = datetime.strptime(data[4],"%Y-%m-%d %H:%M:%S.%f")
+		e.timestamp =r["timestamp"]
 		return e
 		
 	@commands.group(invoke_without_command=True,aliases=["quotes"])
-	@commands.check(nufccheck)	
+	@commands.guild_only()
 	async def quote(self,ctx,*,member:discord.Member = None):
 		""" Show random quote (optionally from specific user). Use ".help quote" to view subcommands. """
-		if ctx.invoked_subcommand is None:
-			if member is not None: # If member provided, show random quote from member.
-				c.execute(f"SELECT rowid, * FROM quotes WHERE userid = {member.id} ORDER BY RANDOM()")
-				x = c.fetchone()
-				if x == None:
-					return await ctx.send(f"No quotes found from user {member.mention}")
-			elif member == None: # Display a random quote.
-				c.execute(f"SELECT rowid, * FROM quotes WHERE guildid='{ctx.guild.id}' ORDER BY RANDOM()")
-				x = c.fetchone()
-				if x == None:
-					return await ctx.send("Quote DB appears to be empty.")
-				else:
-					await ctx.send("Displaying random quote:")
-		
-		e = await self.make_embed(ctx,x)
-		await ctx.send(embed=e)
+		connection = await self.bot.db.acquire()
+		if member is not None: # If member provided, show random quote from member.
+			r = await connection.fetchrow("SELECT * FROM quotes WHERE (guild_id,author_user_id) = ($1,$2) ORDER BY RANDOM()",ctx.guild.id,member.id)
+			if not r:
+				return await ctx.send(f"No quotes found from {member} on {ctx.guild.name}")
+		else: # Display a random quote.
+			r = await connection.fetchrow("SELECT * FROM quotes WHERE (guild_id) = ($1) ORDER BY RANDOM()",ctx.guild.id)
+			if not r:
+				return await ctx.send(f"{ctx.guild.name} doesn't have any quotes.")
+		await self.bot.db.release(connection)
+		e = await self.make_embed(ctx,r)
+		await ctx.send(f"Displaying random quote from {ctx.guild.name}:",embed=e)
 
 	@quote.command()
-	@commands.check(nufccheck)	
-	async def search(self,ctx,*,qry):
-		with ctx.typing():
-			m = await ctx.send('Searching...')
-			localconn = sqlite3.connect('quotes.db')
-			lc = localconn.cursor()
-			lc.execute(f"SELECT rowid, * FROM quotes WHERE quotetext LIKE (?) AND guildid={ctx.guild.id}",(f'%{qry}%',))
-			x = lc.fetchall()
-			lc.close()
-			localconn.close()
-		
-		numquotes = len(x)
-		embeds = []
-		for i in x:
-			y = await self.make_embed(ctx,i)
-			embeds.append(y)
-		
-		# Do we need to paginate?
-		if numquotes == 0:
-			return await m.edit(content = f'No quotes matching {qry} found.')
-		
-		if numquotes == 1:
-			return await m.edit(content=f"{ctx.author.mention}: 1 quote found",embed=embeds[0])
-		else:
-			await m.edit(content=f"{ctx.author.mention}: {numquotes} quotes found",embed=embeds[0])
-		# Paginate then.
-		page = 0
-		if numquotes > 2:
-			await m.add_reaction("⏮") # first
-		if numquotes > 1:
-			await m.add_reaction("◀") # prev
-		if numquotes > 1:
-			await m.add_reaction("▶") # next
-		if numquotes > 2:
-			await m.add_reaction("⏭") # last
-		
-		def check(reaction,user):
-			if reaction.message.id == m.id and user == ctx.author:
-				e = str(reaction.emoji)
-				return e.startswith(('⏮','◀','▶','⏭'))
-					
-		# Reaction Logic Loop.
-		while True:
-			try:
-				res = await self.bot.wait_for("reaction_add",check=check,timeout=30)
-			except asyncio.TimeoutError:
-				await m.clear_reactions()
-				break
-			res = res[0]
-			if res.emoji == "⏮": #first
-				page = 1
-				await m.remove_reaction("⏮",ctx.message.author)
-			elif res.emoji == "◀": #prev
-				await m.remove_reaction("◀",ctx.message.author)
-				if page > 1:
-					page = page - 1
-			elif res.emoji == "▶": #next	
-				await m.remove_reaction("▶",ctx.message.author)
-				if page < numquotes:
-					page = page + 1
-			elif res.emoji == "⏭": #last
-				page = numquotes
-				await m.remove_reaction("⏭",ctx.message.author)	
-			await m.edit(embed=embeds[page - 1])
+	@commands.guild_only()
+	async def search(self,ctx,*,qry : commands.clean_content):
+		async with ctx.typing():
+			connection = await self.bot.db.acquire()
+			records = await connection.fetch(f"SELECT * FROM quotes WHERE message_content LIKE $1 AND guild_id = $2",qry,ctx.guild.id)
+			await self.bot.db.release(connection)	
+			numquotes = len(r)
+			embeds = []
+			for row in records:
+				em = await self.make_embed(ctx,row)
+				embeds.append(em)
+				
+			# Do we need to paginate?
+			if numquotes: # 0 is Falsey.
+				return await m.edit(content = f'No quotes matching {qry} found.')
 			
-		
-	@quote.command()
-	@commands.is_owner()
-	async def export(self,ctx):
-		c.execute("SELECT rowid, * from quotes")
-		x = c.fetchall()
-		with open("out.txt", "wb") as fp:
-			fp.write("\n".join([f"#{i[0]} @ {i[4]}: <{i[1]}> {i[2]} (Added by: {i[3]})" for i in x]).encode('utf8'))
-		await ctx.send("Quotes exported.",file=discord.File("out.txt","quotes.txt"))
+			if numquotes == 1:
+				return await m.edit(content=f"{ctx.author.mention}: 1 quote found",embed=embeds[0])
+			else:
+				await m.edit(content=f"{ctx.author.mention}: {numquotes} quotes found",embed=embeds[0])
+			
+			# Paginate then.
+			page = 0
+			if numquotes > 2:
+				await m.add_reaction("⏮") # first
+			if numquotes > 1:
+				await m.add_reaction("◀") # prev
+			if numquotes > 1:
+				await m.add_reaction("▶") # next
+			if numquotes > 2:
+				await m.add_reaction("⏭") # last
+			
+			def check(reaction,user):
+				if reaction.message.id == m.id and user == ctx.author:
+					e = str(reaction.emoji)
+					return e.startswith(('⏮','◀','▶','⏭'))
+						
+			# Reaction Logic Loop.
+			while True:
+				try:
+					res = await self.bot.wait_for("reaction_add",check=check,timeout=30)
+				except asyncio.TimeoutError:
+					await m.clear_reactions()
+					break
+				res = res[0]
+				if res.emoji == "⏮": #first
+					page = 1
+					await m.remove_reaction("⏮",ctx.message.author)
+				elif res.emoji == "◀": #prev
+					await m.remove_reaction("◀",ctx.message.author)
+					if page > 1:
+						page = page - 1
+				elif res.emoji == "▶": #next	
+					await m.remove_reaction("▶",ctx.message.author)
+					if page < numquotes:
+						page = page + 1
+				elif res.emoji == "⏭": #last
+					page = numquotes
+					await m.remove_reaction("⏭",ctx.message.author)	
+				await m.edit(embed=embeds[page - 1])
 
 	@quote.command(aliases=["id","fetch"])
-	@commands.check(nufccheck)	
-	async def get(self,ctx,number):
+	async def get(self,ctx,number:int):
 		""" Get a quote by it's QuoteID number """
-		if not number.isdigit():
-			return
-		c.execute(f"SELECT rowid, * FROM quotes WHERE rowid = {number}")
-		x = c.fetchone()
-		if x is None:
+		connection = await self.bot.db.acquire()
+		r = await connection.fetchrow(f"SELECT * FROM quotes WHERE quoteid = $1",number)
+		await self.bot.db.release(connection)
+		if not r:
 			return await ctx.send(f"Quote {number} does not exist.")
-		e = await self.make_embed(ctx,x)
+		e = await self.make_embed(ctx,r)
 		await ctx.send(embed=e)
 				
 	@quote.command(invoke_without_command=True)
-	@commands.check(nufccheck)
-	async def add(self,ctx,target):
+	async def add(self,ctx,target : typing.Union[discord.Member,discord.Message]):
 		""" Add a quote, either by message ID or grabs the last message a user sent """
-		if ctx.message.mentions:
+		if isinstance(target,discord.Member):
 			messages = await ctx.history(limit=123).flatten()
-			user = ctx.message.mentions[0]
-			if ctx.message.author == user:
-				return await ctx.send("You can't quote yourself.")
 			m = discord.utils.get(messages,channel=ctx.channel,author=user)
-		elif target.isdigit():
-			try:
-				m = await ctx.channel.fetch_message(int(target))
-			except discord.errors.NotFound:
-				return await ctx.send('Message not found. Are you sure that\'s a valid ID?')
-		if m is None:
-			await ctx.send(f":no_entry_sign: Could not find message with id {target}")
-			return
+		elif isinstance(target,discord.Message):
+			m = target
+
 		if m.author.id == ctx.author.id:
-			return await ctx.send('You can\'t quote yourself you virgin.')
+			return await ctx.send('You can\'t quote yourself.')
 		n = await ctx.send("Attempting to add quote to db...")
-		insert_tuple = (m.author.id,m.clean_content,m.channel.id,m.created_at,ctx.author.id,m.jump_url,ctx.guild.id)
-		c.execute("INSERT INTO quotes VALUES (?,?,?,?,?,?,?)",insert_tuple)
-		conn.commit()
-		c.execute("SELECT rowid, * FROM quotes ORDER BY rowid DESC")
-		x = c.fetchone()
-		e = await self.make_embed(ctx,x)
-		await n.edit(content=":white_check_mark: Successfully added to database",embed=e)
+		
+		connection = await self.bot.db.acquire()
+		
+		(m.author.id,m.clean_content,m.channel.id,m.created_at,ctx.author.id,m.id,ctx.guild.id)
+		await connection.execute("""
+		INSERT INTO quotes
+		(channel_id,guild_id,message_id,author_user_id,submitter_user_id,message_content,timestamp)
+		VALUES ($1,$2,$3,$4,$5,$6,$7)"""
+		,m.channel.id,m.guild.id,m.id,m.author.id,ctx.author.id,m.clean_content,m.created_at)
+		r = await connection.fetchrow("SELECT * FROM quotes ORDER BY quoteid DESC")
+		await self.bot.db.release(connection)	
+		e = await self.make_embed(ctx,r)
+		await n.edit(content=":white_check_mark: Successfully added quote to database",embed=e)
 	
 	@quote.command()
 	async def last(self,ctx,arg : discord.Member = None):
-		""" Gets the last saved message (optionally from user) """
-		if arg == None:
-			c.execute("SELECT rowid, * FROM quotes ORDER BY rowid DESC")
-			x = c.fetchone()
-			if x == None:
-				await ctx.send("No quotes found.")
-				return
+		""" Gets the last quoted message (optionally from user) """
+		connection = await self.bot.db.acquire()
+		if arg is None:
+			r = await connection.fetchrow("""SELECT * FROM quotes WHERE guild_id = $1 ORDER BY quoteid DESC""",ctx.guild.id)
 		else:
-			c.execute(f"SELECT rowid, * FROM quotes WHERE userid = {arg.id} AND guildid = {ctx.guild.id} ORDER BY rowid DESC")
-			x = c.fetchone()
-			if x == None:
-				await ctx.send(f"No quotes found for user {arg.mention}.")
-				return
-		e = await self.make_embed(ctx,x)
+			r = await connection.fetchrow( """SELECT * FROM quotes WHERE (user_id,guild_id) = ($1,$2) ORDER BY quoteid DESC""")
+			if not r:
+				return await ctx.send(f"No quotes found for user {arg.mention}.") 
+		e = await self.make_embed(ctx,r)
 		await ctx.send(embed=e)
 	
 	@quote.command(name="del")
 	@commands.has_permissions(manage_messages=True)
-	@commands.check(nufccheck)
-	async def _del(self,ctx,id):
+	async def _del(self,ctx,id:int):
 		""" Delete quote by quote ID """
-		if not id.isdigit():
-			await ctx.send("That doesn't look like a valid ID")
-		else:
-			c.execute(f"SELECT rowid, * FROM quotes WHERE rowid = {id} AND guildid = {ctx.guild.id}")
-			x = c.fetchone()
-			if x is None:
-				await ctx.send(f"No quote found with ID #{id}, or it's from another server.")
-				return
-			e = await self.make_embed(ctx,x)
-			m = await ctx.send("Delete this quote?",embed=e)
-			await m.add_reaction("👍")
-			await m.add_reaction("👎")
-			def check(reaction,user):
-				if reaction.message.id == m.id and user == ctx.author:
-					e = str(reaction.emoji)
-					return e.startswith(("👍","👎"))
-			try:
-				res = await self.bot.wait_for("reaction_add",check=check,timeout=30)
-			except asyncio.TimeoutError:
-				return await ctx.send("Response timed out after 30 seconds, quote not deleted",delete_after=30)
-			res = res[0]
-			if res.emoji.startswith("👎"):
-				await ctx.send("OK, quote not deleted",delete_after=20)
-			elif res.emoji.startswith("👍"):
-				c.execute(f"DELETE FROM quotes WHERE rowid = {id}")
-				await ctx.send(f"Quote #{id} has been deleted.")
-				await m.delete()
-				await ctx.message.delete()
-				conn.commit()
+		connection = await self.bot.db.acquire()
+		r = await connection.fetchrow(f"SELECT * FROM quotes WHERE quoteid = $1",id)
+		if r is None:
+			return await ctx.send(f"No quote found with ID #{id}")
+		
+		if r["guild_id"] != ctx.guild.id:
+			if ctx.author.id != bot.owner_id:
+				return await ctx.send(f"You can't delete quotes from other servers!")
+		
+		e = await self.make_embed(ctx,r)
+		m = await ctx.send("Delete this quote?",embed=e)
+		await m.add_reaction("👍")
+		await m.add_reaction("👎")
+		def check(reaction,user):
+			if reaction.message.id == m.id and user == ctx.author:
+				e = str(reaction.emoji)
+				return e.startswith(("👍","👎"))
+		try:
+			res = await self.bot.wait_for("reaction_add",check=check,timeout=30)
+		except asyncio.TimeoutError:
+			return await ctx.send("Response timed out after 30 seconds, quote not deleted",delete_after=30)
+		res = res[0]
+		
+		if res.emoji.startswith("👎"):
+			await ctx.send("Quote {id} was not deleted",delete_after=5)
+			
+		elif res.emoji.startswith("👍"):
+			await connection.execute("DELETE FROM quotes WHERE quoteid = $1",id)
+			await ctx.send(f"Quote #{id} has been deleted.")
+		await self.bot.db.release(connection)
+		await m.delete()	
 
+	@quote.command()
+	@commands.is_owner()
+	async def fix(self,ctx):
+		connection = await self.bot.db.acquire()
+		e = discord.Embed()
+		counter = 0
+		failed = 0
+		async with connection.transaction():
+			records = await connection.fetch("""SELECT * FROM quotes WHERE message_id IS NULL""")
+			for r in records:
+				messageid = [i.id for i in self.bot.channelhistory if i.created_at == r["timestamp"]]
+				try:
+					messageid = messageid[0]
+				except IndexError:
+					print(f"Failed to find a match for {r['message_content']}")
+					failed += 1
+					await asyncio.sleep(1)
+					continue
+				await connection.execute("""UPDATE quotes SET message_id = $1 WHERE timestamp = $2""",messageid,r["timestamp"])
+				counter += 1
+				print(f"Updated: {r['message_content']} : {messageid}")
+		e.description = f"I searched through fucking {len(self.bot.channelhistory)} messages for you cunts. Fixed {counter} quotes, failed to fix {failed} quotes."
+		await ctx.send(embed=e)
+		
 	@quote.command()
 	async def stats(self,ctx,arg:discord.Member = None):
 		""" See how many times you've been quoted, and how many quotes you've added"""
-		if arg == None:
+		if arg is None:
 			arg = ctx.author
-		c.execute(f"SELECT COUNT(*) FROM quotes WHERE quoterid = {arg.id} AND guildid = {ctx.guild.id}")
-		y = c.fetchone()[0]
-		c.execute(f"SELECT COUNT(*) FROM quotes WHERE userid = {arg.id} AND guildid = {ctx.guild.id}")
-		x = c.fetchone()[0]
-		await ctx.send(f"{arg.mention} has been quoted {x} times, and has added {y} quotes")
+		
+		connection = await self.bot.db.acquire()		
+		quotes = await connection.fetchrow("SELECT COUNT(*) FROM quotes WHERE (submitter_user_id,guild_id) = ($1,$2)",arg.id,ctx.guild.id)
+		quoted = await connection.fetchrow("SELECT COUNT(*) FROM quotes WHERE (author_user_id,guild_id) = ($1,$2)",arg.id,ctx.guild.id)
+		await ctx.send(f"In {ctx.guild.name} {arg.mention} has been quoted {quotes} times, and has added {quoted} quotes")
 		
 def setup(bot):
 	bot.add_cog(quotedb(bot))
