@@ -198,9 +198,9 @@ class Reactions(commands.Cog):
 					rm = ("*Reminder: Please do not vote on submissions or "
 						  "comments in other subreddits.*")
 					await m.channel.send(rm)			
-			# Emoji reactions
-			if "toon toon" in c:
-				await m.channel.send("**BLACK AND WHITE ARMY**")
+		# Emoji reactions
+		if "toon toon" in c:
+			await m.channel.send("**BLACK AND WHITE ARMY**")
 			
 		
 def setup(bot):

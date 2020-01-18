@@ -25,8 +25,6 @@ from selenium.webdriver.support import expected_conditions as EC
 from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
 
-#### TO DO:
-# >>> Convert Subinfo to same format as goals.
 # >>> Convert upcoming matches to dict
 # >>> Convert upcoming matches to get bbc data.
 
@@ -45,19 +43,15 @@ class MatchThreadCommands(commands.Cog):
 	
 	async def scrape(self,bbclink,subhasicons=False):
 		matchdata = {"uktv":"","tvlink":""}
-		
 		async with self.bot.session.get(bbclink) as resp:
 			if resp.status != 200:
 				return
-				
 			tree = html.fromstring(await resp.text(encoding="utf-8"))
 	
 			# Date & Time
 			kodate = "".join(tree.xpath('.//div[@class="fixture_date-time-wrapper"]/time/text()')).title()
 			kotime = "".join(tree.xpath('.//span[@class="fixture__number fixture__number--time"]/text()'))
-			
 			matchdata["kickoff"] = f"{kotime} {kodate}"
-			
 			
 			# Teams
 			matchdata["hometeam"] = tree.xpath('.//span[@class="fixture__team-name-wrap"]//abbr/@title')[0]
@@ -81,17 +75,16 @@ class MatchThreadCommands(commands.Cog):
 				stadium = self.bot.teams[matchdata["hometeam"]]['stadium']
 			except KeyError:
 				stadium = ""
-			try:	
-				stadiumlink = self.bot.teams[matchdata["hometeam"]]['stadlink']
-			except KeyError:
-				stadiumlink = ""
-			if stadium and stadiumlink:
-				matchdata["stadium"] = f"[{stadium}]({stadiumlink})"
+			else:
+				try:
+					stadiumlink = self.bot.teams[matchdata["hometeam"]]['stadlink']
+					matchdata["stadium"] = f"[{stadium}]({stadiumlink})"
+				except KeyError:
+					matchdata["stadium"] = stadium
 			
 			# Goals
-			matchdata["score"] = score = " - ".join(tree.xpath("//span[contains(@class,'fixture__number')]//text()")[0:2])
-			goals = tree.xpath('.//ul[contains(@class,"fixture__scorers")]//li')
-			goals = ["".join(i.xpath(".//text()")) for i in goals]
+			matchdata["score"] = " - ".join(tree.xpath("//span[contains(@class,'fixture__number')]//text()")[0:2])
+			goals = ["".join(i.xpath(".//text()")) for i in tree.xpath('.//ul[contains(@class,"fixture__scorers")]//li')]
 			matchdata["goals"] = [i.replace(' minutes','').replace('pen','p.') for i in goals]
 			
 			# Penalty Win Bar
@@ -153,8 +146,10 @@ class MatchThreadCommands(commands.Cog):
 
 				return squad
 
-			matchdata["homexi"] = parse_players(tree.xpath('.//div[preceding-sibling::h2/text()="Line-ups"]//div[1]//ul/li'))
-			matchdata["awayxi"] = parse_players(tree.xpath('.//div[preceding-sibling::h2/text()="Line-ups"]//div[2]//ul/li'))
+			matchdata["homexi"] = parse_players(tree.xpath('(.//div[preceding-sibling::h2/text()="Line-ups"]//div//ul)[1]/li'))
+			matchdata["homesubs"] = ", ".join(parse_players(tree.xpath('(.//div[preceding-sibling::h2/text()="Line-ups"]//div//ul)[2]/li')))
+			matchdata["awayxi"] = parse_players(tree.xpath('(.//div[preceding-sibling::h2/text()="Line-ups"]//div//ul)[3]/li'))
+			matchdata["awaysubs"] = ", ".join(parse_players(tree.xpath('(.//div[preceding-sibling::h2/text()="Line-ups"]//div//ul)[4]/li')))
 
 			# Stats
 			statlookup = tree.xpath("//dl[contains(@class,'percentage-row')]")
@@ -226,7 +221,7 @@ class MatchThreadCommands(commands.Cog):
 				
 				elif "full time" in header.lower().replace('-',' '):
 					header = f"**{time} Full Time"
-					content = f"{matchdata['hometeam']} {score} {matchdata['awayteam']}**"
+					content = f"{matchdata['hometeam']} {matchdata['score']} {matchdata['awayteam']}**"
 				elif "penalties in progress" in header.lower().strip():
 					penmode = True
 					header = "# Penalty Shootout\n\n"
@@ -401,7 +396,7 @@ class MatchThreadCommands(commands.Cog):
 				fm = im.save("formations.png")
 			except:
 				fm = ""
-			return matchpictures,fm
+			return matchpictures.reverse(),fm
 		
 		fm = ""
 		matchpictures = ""		
@@ -470,7 +465,7 @@ class MatchThreadCommands(commands.Cog):
 		
 		matchdata = await fetch_tv(matchdata)
 		
-		async def write_markdown(matchdata,subhasicons,formations,prematch="",mt="",pm="",ispostmatch=False):
+		async def write_markdown(matchdata,subhasicons,fm,prematch="",mt="",pm="",ispostmatch=False):
 			markdown = ""
 			# Date and Competion bar
 			markdown += f"#### {matchdata['kickoff']} | {matchdata['competition']}\n\n"
@@ -528,28 +523,30 @@ class MatchThreadCommands(commands.Cog):
 					markdown += f"📺🌍 **TV** (Intl): [Click here for International Coverage]({matchdata['tvlink']})\n\n"					
 			
 			if any([matchdata['homexi'],matchdata['awayxi']]):
-				markdown += "---\n\n# Lineups"
-				if formations:
-					markdown += f"([Formations]({formations}))"
-				markdown += "\n\n	"
-				markdown += f"{homeicon} {matchdata['hometeam']} | {matchdata['awayteam']} {awayicon}\n"
+				markdown += "---\n\n# Lineups\n"
+				if fm:
+					markdown += f"([Formations]({fm}))"
+					markdown += ""
+				markdown += f"{homeicon} **{matchdata['hometeam']}** | **{matchdata['awayteam']}** {awayicon}\n"
 				markdown += "--:|:--\n"
-				
-				# >>> Convert Subinfo to same format as goals.
-				scorers = [i.split(' ',1) for i in matchdata["goals"]]
-				for i,j in list(zip(matchdata['homexi'],matchdata['awayxi'])):
-					for k,l in scorers:
-						l = l.strip(",")
-						if k in i.split(' ')[1]:
-							i += f" [⚽](#icon-ball) {l}".strip(",") if subhasicons else f" ⚽ {l}".strip(",")
-						if k in j.split(' ')[1]:
-							j += f" [⚽](#icon-ball) {l}".strip(",") if subhasicons else f" ⚽ {l}".strip(",")
-					for k,l in matchdata["subs"]:
-						if k in i.split(' ')[1]:
-							i += f" [🔄](#icon-sub) {l}" if subhasicons else f"🔄 {l}"
-						if k in j.split(' ')[1]:
-							j += f" [🔄](#icon-sub) {l}" if subhasicons else f"🔄 {l}"
-					markdown += f"{i} | {j}\n"			
+								
+				def insert_goals(input):
+					output = []
+					for i in input:
+						for k,l in [i.split(' ',1) for i in matchdata["goals"]]:
+							l = l.strip(",")
+							if k in i.split(' ')[1]:
+								i += f" [⚽](#icon-ball) {l}".strip(",") if subhasicons else f" ⚽ {l}".strip(",")
+						for k,l in matchdata["subs"]:
+							if k in i.split(' ')[1]:
+								i += f" [🔄](#icon-sub) {l}" if subhasicons else f"🔄 {l}"
+						output.append(i)
+					return output
+			
+			formattedhome = ", ".join(insert_goals(matchdata['homexi']))
+			formattedaway = ", ".join(insert_goals(matchdata['awayxi']))
+			markdown += f"{formattedhome} | {formattedaway}\n"			
+			markdown += f"{matchdata['homesubs']} | {matchdata['awaysubs']}\n"
 			
 			if matchdata["matchstats"]:
 				markdown += f"---\n\n# Match Stats	"
@@ -652,7 +649,7 @@ class MatchThreadCommands(commands.Cog):
 		matchdata = await self.scrape(bbclink,subhasicons)
 		
 		# Rebuild markdown
-		markdown = await write_markdown(matchdata,subhasicons,formations,prematch=prematch,mt=mt)
+		markdown = await write_markdown(matchdata,subhasicons,fm,prematch=prematch,mt=mt)
 		threadname = f"Post-Match Thread: {matchdata['hometeam']} {matchdata['score']} {matchdata['awayteam']}"
 		
 		
@@ -665,10 +662,10 @@ class MatchThreadCommands(commands.Cog):
 		pm = f"[Post-Match Thread]({pmpost.url})"
 		
 		# One final edit to update postmatch into both threads.
-		markdown = await write_markdown(matchdata,subhasicons,formations,prematch=prematch,mt=mt,pm=pm,ispostmatch=True)
+		markdown = await write_markdown(matchdata,subhasicons,fm,prematch=prematch,mt=mt,pm=pm,ispostmatch=True)
 		await self.bot.loop.run_in_executor(None,editpost,pmpost,markdown)
 		
-		markdown = await write_markdown(matchdata,subhasicons,formations,prematch=prematch,mt=mt,pm=pm)
+		markdown = await write_markdown(matchdata,subhasicons,fm,prematch=prematch,mt=mt,pm=pm)
 		await self.bot.loop.run_in_executor(None,editpost,post,markdown)
 
 		e.description = (f"[{pmpost.title}]({pmpost.url}) created.")
@@ -734,7 +731,7 @@ class MatchThreadCommands(commands.Cog):
 		
 	# Debug command - Force Test
 	@commands.command()
-	@commands.is_owner()
+	@commands.has_permissions(manage_channels=True)
 	async def forcemt(self,ctx,*,subreddit=""):
 		if not subreddit:
 			return await ctx.send("Which subreddit dickhead?")
@@ -746,13 +743,13 @@ class MatchThreadCommands(commands.Cog):
 		post = await self.match_thread(bbclink="newcastle-united",subreddit=subreddit,discordchannel=ctx.channel)
 	
 	@commands.command()
-	@commands.is_owner()
+	@commands.has_permissions(manage_channels=True)
 	async def resume(self,ctx,*,linkorbase64):
 		await ctx.send(f'Resuming match thread {linkorbase64}')
 		post = await self.match_thread(bbclink="newcastle-united",subreddit="nufc",discordchannel=ctx.channel,resume=linkorbase64)
 
 	@commands.command(aliases=["mtbcheck"])
-	@commands.is_owner()	
+	@commands.has_permissions(manage_channels=True)
 	async def checkmtb(self,ctx):
 		e = discord.Embed()
 		e.color = 0x000000
@@ -762,7 +759,7 @@ class MatchThreadCommands(commands.Cog):
 		await ctx.send(embed=e)
 	
 	@commands.is_owner()
-	@commands.command()
+	@commands.has_permissions(manage_channels=True)
 	async def override(self,ctx,var,*,value):
 		setattr(self,var,value)
 		await ctx.send(f'Match Thread Bot: Setting "{var}" to "{value}"')		

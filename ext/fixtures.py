@@ -95,7 +95,7 @@ class Fixtures(commands.Cog):
 			return await m.delete()	
 		
 		mcontent = match.content
-		await m.edit(content=f"Grabbing data...")
+		await m.edit(content=f"Grabbing data...",delete_after=5)
 		
 		try:
 			await match.delete()
@@ -140,26 +140,22 @@ class Fixtures(commands.Cog):
 	async def table(self,ctx,*,qry:commands.clean_content =None):
 		""" Get table for a league """
 		async with ctx.typing():
-			url = await self.get_default(ctx,"league") if qry is None else ""
-				
+			url = await self.get_default(ctx,"league") if qry is None else ""		
 			if url == "" and qry is not None:
 				m = await ctx.send(f"Searching for {qry}...")
 				url = await self._search(ctx,m,qry)
+			elif url:
+				pass
 			elif qry is None:
 				return await ctx.send(f'Specify a search query. A default team or league can be set by server moderators using {ctx.prefix}default <"team" or "league"> <search string>')
-			
-			if url is None:
-				return #rip
-			else:
-				m = await ctx.send(f"Grabbing table from <{url}>...")
-
+				
+			m = await ctx.send(f"Grabbing table from <{url}>...")
 			p = await self.bot.loop.run_in_executor(None,self.parse_table,url)
 			
 			try:
 				await ctx.send(file=p)
 			except discord.HTTPException:
 				await m.edit(content=f"Failed to grab table from <{url}>")
-			
 			await m.delete()	
 	
 	def parse_table(self,url):
@@ -204,12 +200,12 @@ class Fixtures(commands.Cog):
 			if url == "" and qry is not None:
 				m = await ctx.send(f"Searching for {qry}...")
 				url = await self._search(ctx,m,qry)
-			elif qry is None:
+			elif qry is None and not url:
 				return await ctx.send(f'Specify a search query. A default team or league can be set by server moderators using {ctx.prefix}default <"team" or "league"> <search string>')
 			elif url is None:
 				return #rip
-			else:	
-				await ctx.send(f'Grabbing competition bracket for {qry}...',delete_after=5)	
+
+			await ctx.send(f'Grabbing competition bracket for {qry}...',delete_after=5)	
 				
 			p = await self.bot.loop.run_in_executor(None,self.parse_bracket,url)
 			
@@ -229,13 +225,12 @@ class Fixtures(commands.Cog):
 			if url == "" and qry is not None:
 				m = await ctx.send(f"Searching for {qry}...")
 				url = await self._search(ctx,m,qry)
-			elif qry is None:
+			elif qry is None and not url:
 				return await ctx.send(f'Specify a search query. A default team or league can be set by server moderators using {ctx.prefix}default <"team" or "league"> <search string>')
 			elif url is None:
 					return #rip
-			else:
-				await ctx.send(f'Grabbing fixtures data for {qry}...',delete_after=5)			
-			
+
+			await ctx.send(f'Grabbing fixtures data for {qry}...',delete_after=5)			
 			pages = await self.bot.loop.run_in_executor(None,self.parse_fixtures,url,ctx.author.name)
 		await self.paginate(ctx,pages)
 
@@ -250,12 +245,12 @@ class Fixtures(commands.Cog):
 			if url == "" and qry is not None:
 				m = await ctx.send(f"Searching for {qry}...")
 				url = await self._search(ctx,m,qry)
-			elif qry is None:
+			elif qry is None and not url:
 				return await ctx.send(f'Specify a search query. A default team or league can be set by server moderators using {ctx.prefix}default <"team" or "league"> <search string>')				
 			elif url is None:
 				return #rip
-			else:
-				await ctx.send(f'Grabbing scorers data for {qry}...',delete_after=5)					
+				
+			await ctx.send(f'Grabbing scorers data for {qry}...',delete_after=5)					
 				
 			pages = await self.bot.loop.run_in_executor(None,self.parse_scorers,url,ctx.author.name)
 		await self.paginate(ctx,pages)	
@@ -271,13 +266,12 @@ class Fixtures(commands.Cog):
 			if url == "" and qry is not None:
 				m = await ctx.send(f"Searching for {qry}...")
 				url = await self._search(ctx,m,qry)
-			elif qry is None:
+			elif qry is None and not url:
 				return await ctx.send(f'Specify a search query. A default team or league can be set by server moderators using {ctx.prefix}default <"team" or "league"> <search string>')				
-			
 			if url is None:
 				return #rip
-			else:
-				await ctx.send(f'Grabbing results data for {qry}...',delete_after=5)	
+				
+			await ctx.send(f'Grabbing results data for {qry}...',delete_after=5)	
 			pages = await self.bot.loop.run_in_executor(None,self.parse_results,url,ctx.author.name)
 			await self.paginate(ctx,pages)
 	
@@ -290,12 +284,12 @@ class Fixtures(commands.Cog):
 			if url == "" and qry is not None:
 				m = await ctx.send(f"Searching for {qry}...")
 				url = await self._search(ctx,m,qry)
-			elif qry is None:
+			elif qry is None and not url:
 				return await ctx.send(f'Specify a search query. A default team or league can be set by server moderators using {ctx.prefix}default <"team" or "league"> <search string>')				
 			elif url is None:
 				return #rip
-			else:
-				await ctx.send(f'Grabbing injury data for {qry}...',delete_after=5)
+
+			await ctx.send(f'Grabbing injury data for {qry}...',delete_after=5)
 			
 			e = await self.bot.loop.run_in_executor(None,self.parse_injuries,url,ctx.author.name)
 			await m.edit(content="",embed = e)
@@ -641,7 +635,7 @@ class Fixtures(commands.Cog):
 			except asyncio.TimeoutError:
 				try:
 					await m.clear_reactions()
-				except discord.Forbidden:
+				except (discord.Forbidden,discord.NotFound):
 					pass
 				break
 			r = r[0]
@@ -731,6 +725,7 @@ class Fixtures(commands.Cog):
 			""",ctx.guild.id,url)
 		
 		await self.bot.db.release(connection)
+		await self.update_cache()
 		
 		if qry is not None:
 			return await ctx.send(f'Your commands will now use <{url}> as a default {type}')

@@ -253,7 +253,7 @@ class Scores(commands.Cog):
 				for j in leagues:
 					if j not in self.games:
 						continue
-					if len(rawtext) + len (self.games[j]["raw"]) < 2045:
+					if len(rawtext) + len (self.games[j]["raw"]) < 1999:
 						rawtext += self.games[j]["raw"] + "\n"
 					else:
 						self.msgdict[c]["rawdata"] += [rawtext]
@@ -282,8 +282,11 @@ class Scores(commands.Cog):
 					continue
 				for d in self.msgdict[c]["rawdata"]:
 					# Append message ID to our list
-					m = await ch.send(d)
-					self.msgdict[c]["msglist"].append(m)
+					try:
+						m = await ch.send(d)
+						self.msgdict[c]["msglist"].append(m)
+					except discord.Forbidden:
+						pass
 			else:
 				# Edit message pairs if pre-existing.
 				tuples = list(zip(self.msgdict[c]["msglist"],self.msgdict[c]["rawdata"]))

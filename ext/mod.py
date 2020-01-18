@@ -27,12 +27,11 @@ class Mod(commands.Cog):
 
 		return commands.when_mentioned_or(*pref)(self.bot, message)		
 	
-	def me_or_mod(self):
+	def me_or_mod():
 		def predicate(ctx):
-			if ctx.author.id == bot.owner_id:
+			if ctx.author.id == 210582977493598208:
 				return True
-			if ctx.author.permissions_in(ctx.channel).manage_messages:
-				return True	
+			return ctx.author.permissions_in(ctx.channel).manage_channels
 		return commands.check(predicate)
 	
 	async def update_prefixes(self):
@@ -76,14 +75,14 @@ class Mod(commands.Cog):
 		await ctx.me.edit(nick=newname)	
 	
 	@commands.command(usage = "say <Channel (optional)< <what you want the bot to say>")
-	@commands.check(me_or_mod)
+	@me_or_mod()
 	async def say(self,ctx,destin:typing.Optional[discord.TextChannel] = None,*,tosay):
 		""" Say something as the bot in specified channel """
 		if destin is None:
 			destin = ctx.channel
 		try:
 			await ctx.message.delete()
-		except discord.Forbidden():
+		except discord.Forbidden:
 			pass
 		await destin.send(tosay)
 
