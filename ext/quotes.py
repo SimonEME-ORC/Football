@@ -12,33 +12,35 @@ class quotedb(commands.Cog):
 		self.bot = bot
 				
 	async def make_embed(self,ctx,r):
-		try:
-			author = await self.bot.fetch_user(r["author_user_id"])
-		except TypeError:
-			author = "Deleted User"
+		# Fetch data.
 		channel = self.bot.get_channel(r["channel_id"])
 		submitter = await self.bot.fetch_user(r["submitter_user_id"])
 		guild = self.bot.get_guild(r["guild_id"])
 		message_id = r["message_id"]
-		submittern = submitter.display_name if submitter is not None else "<Deleted User>"
-		
-		e = discord.Embed(color=0x7289DA,description=r["message_content"])
+
+		e = discord.Embed(color=0x7289DA)
+		quoteimg = "https://discordapp.com/assets/2c21aeda16de354ba5334551a883b481.png"
+		try:
+			author = await self.bot.fetch_user(r["author_user_id"])
+			e.set_author(name=f"{author.display_name} in #{channel}",icon_url=quoteimg)
+			e.set_thumbnail(url=author.avatar_url)
+		except TypeError:
+			e.set_author(name="Deleted User in #{channel}")
+			e.set_thumbnail(url=quoteimg)
+			
+
+		try:
+			jumpurl = f"https://discordapp.com/channels/{guild.id}/{r['channel_id']}/{message_id}"
+			e.description = f"**[Quote #{r['quoteid']}]({jumpurl})**\n"
+		except AttributeError:
+			e.description = f"**Quote #{r['quoteid']}**\n"
+		e.description += r["message_content"]
 		
 		try:
-			jumpurl = f"https://discordapp.com/channels/{guild.id}/{channel.id}/{message_id}"
-			e.description += f"\n\n [⬆️ Jump to message.]({jumpurl})"
-		except AttributeError:
-			pass
-		
-		e.set_author(name=f"Quote #{r['quoteid']}")
-		
-		try:
-			e.title = f"{author.display_name} in #{channel}"
-		except AttributeError:
-			e.title = f"Deleted User in #{channel}"
-		e.set_thumbnail(url="https://discordapp.com/assets/2c21aeda16de354ba5334551a883b481.png")
-		
-		e.set_footer(text=f"Added by {submittern}",icon_url=submitter.avatar_url)
+			e.set_footer(text=f"Added by {submitter}",icon_url=submitter.avatar_url)
+		except TypeError:
+			e.set_footer(text=f"Added by Deleted User")
+
 		e.timestamp =r["timestamp"]
 		return e
 		
