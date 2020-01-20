@@ -17,25 +17,22 @@ class AutoMod(commands.Cog):
 		await self.bot.db.release(connection)
 		
 		for r in records:
-			thisrecord = r['guild_id'] = {mention_threshold : r["mention_threshold"], mention_action : r['mention_action']}
+			thisrecord = {r['guild_id'] :{"mention_threshold" : r["mention_threshold"], "mention_action" : r['mention_action']}}
 			self.automod_cache.update(thisrecord)
 
-	@commands.has_permissions(kick_members=True)
-	@commands.bot_has_permissions(ban_members=False)
+	@commands.has_permissions(kick_members=True,ban_members=True)
 	@commands.command(usage="mentionspam <number of pings> <'kick', 'mute' or 'ban'>",aliases=["pingspam"])	
-	async def mentionspam(self,ctx,threshhold : typing.Optional[int] = None,action=None):
-		""" Automatically kick or ban a member for pinging more than x users in a message. Use '0' for threshhold to turn off."""
-		guild_cache = self.bot.automod_cache[ctx.guild.id]
-		if threshhold is None:
+	async def mentionspam(self,ctx,threshold : typing.Optional[int] = None,action=None):
+		""" Automatically kick or ban a member for pinging more than x users in a message. Use '0' for threshold to turn off."""
+		if threshold is None:
 			# Get current data.
 			try:
-				output = f"I will {guild_cache['mention_action']} members who ping {guild_cache['mention_threshold']} or more other users in a message."
+				guild_cache = self.automod_cache[ctx.guild.id]
+				return await ctx.send(f"I will {guild_cache['mention_action']} members who ping {guild_cache['mention_threshold']} or more other users in a message.")	
 			except KeyError:
-				output = f"No action is currently being taken against users who spam mentions. Use {ctx.prefix}mentionspam <number> <action ('kick', 'ban' or 'mute')> to change this"
-			return await ctx.send(output)
+				return await ctx.send(f"No action is currently being taken against users who spam mentions. Use {ctx.prefix}mentionspam <number> <action ('kick', 'ban' or 'mute')> to change this")
 		elif threshold < 4:
-			return await ctx.send()
-		
+			return await ctx.send("Please set a limit higher than 3.")
 		
 		if action is None or action.lower() not in ['kick','ban','mute']:
 			return await ctx.send("🚫 Invalid action specified, valid actions are 'kick', 'ban', or 'mute'.")
@@ -44,29 +41,34 @@ class AutoMod(commands.Cog):
 		if action == "kick":
 			if not ctx.me.permissions_in(ctx.channel).kick_members:
 				return await ctx.send("🚫 I need the 'kick_members' permission to do that.")
+			if not ctx.author.permissions_in(ctx.channel).kick_members:
+				return await ctx.send("🚫 You need the 'kick_members' permission to do that.")
 		elif action == "ban":
 			if not ctx.me.permissions_in(ctx.channel).ban_members:
 				return await ctx.send("🚫 I need the 'ban_members' permission to do that.")
+			if not ctx.author.permissions_in(ctx.channel).ban_members:
+				return await ctx.send("🚫 You need the 'ban_members' permission to do that.")				
 		
-		connection = await self.db.acquire()
+		connection = await self.bot.db.acquire()
 		await connection.execute("""
-		INSERT INTO mention_spam (mention_threshold,mention_action)
-		VALUES ($1,$2)
-		ON CONFLICT DO UPDATE SET
-			(mention_threshold,mention_action = $1,$2)
-		""",threshhold,action)
-		
-		return await ctx.send(f"✅ I will {action} users who ping {threshhold} other users in a message.")
+		INSERT INTO mention_spam (guild_id,mention_threshold,mention_action)
+		VALUES ($1,$2,$3)
+		ON CONFLICT (guild_id) DO UPDATE SET
+			(mention_threshold,mention_action) = ($2,$3)
+		WHERE
+			EXCLUDED.guild_id = $1
+		""",ctx.guild.id,threshold,action)
+		await self.update_cache()
+		return await ctx.send(f"✅ I will {action} users who ping {threshold} other users in a message.")
 
 	@commands.Cog.listener()
 	async def on_message(self,message):
 		try:
 			guild_cache = self.automod_cache[message.guild.id]
 		except (KeyError,AttributeError):
-			return
+			return	
 		if guild_cache["mention_threshold"] > len(message.mentions):
 			return
-		
 		if guild_cache["action"] == "kick":
 			await message.author.kick(reason=f"Mentioning {guild_cache['mention_threshold']} members in a message.")
 			return await message.channel.send(f"{message.author.mention} was kicked for mention spamming.")

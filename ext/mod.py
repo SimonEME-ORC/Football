@@ -4,10 +4,6 @@ import asyncio
 import json
 import typing
 import urllib
-
-### TODO: Merge hackyinfo into info
-### TODO: Merge hackban into ban
-
 	
 class Mod(commands.Cog):
 	""" Guild Moderation Commands """
@@ -143,43 +139,43 @@ class Mod(commands.Cog):
 	@commands.bot_has_permissions(kick_members=True)
 	async def kick(self,ctx,members : commands.Greedy[discord.Member],*,reason = "unspecified reason."):
 		""" Kicks the user from the server """
+		replies = []
 		for i in members:
 			try:
 				await i.kick(reason=f"{ctx.author.name}: {reason}")
 			except discord.Forbidden:
-				await i.send(f"⛔ Sorry {ctx.author.name} I can't kick {user.mention}.")
+				replies.append(f"⛔ I can't kick {user.mention}.")
 			except discord.HTTPException:
 				await i.send(f'❔ Kicking failed for {ctx.author.name}.')
-			else:
-				await ctx.send(f"👢 {user.mention} was kicked by {ctx.author.mention} for: \"{reason}\".")
+				await ctx.send(f"👢 {user.mention} was kicked by {ctx.author} for: \"{reason}\".")
 	
-	@commands.command(usage = "ban <@member1  @member2 @member3> <reason>")
+	@commands.command(usage = "ban <@member1 userid2 @member3 @member4> <(Optional: Days to delete messages from)> <(Optional: reason)>",aliases=["hackban"])
 	@commands.has_permissions(ban_members=True)
 	@commands.bot_has_permissions(ban_members=True)
-	async def ban(self,ctx,members : commands.Greedy[discord.Member],delete_days: typing.Optional[int] = 0,*,reason="Not specified"):
-		""" Bans a list of members from the server, deletes all messages for the last x days """
-		for i in members:
-			try:
-				await i.ban(reason=f"{ctx.author.name}: {reason}",delete_message_days=delete_days)
-			except discord.Forbidden:
-				await ctx.send(f"⛔ Sorry, I can't ban {i.mention}.")
-			except discord.HTTPException:
-				await ctx.send(f"❔ Banning failed for {i.mention}.")
+	async def ban(self,ctx,targets : commands.Greedy[typing.Union[discord.Member,int]],delete_days: typing.Optional[int] = 0,*,reason="Not specified"):
+		""" Bans a list of members (or User IDs) from the server, deletes all messages for the last x days """
+		replies = []
+		for i in targets:
+			if isinstance(i,discord.Member):
+				try:
+					await i.ban(reason=f"{ctx.author.name}: {reason}",delete_message_days=delete_days)
+				except discord.Forbidden:
+					replies.append(f"⛔ Sorry, I can't ban {i.mention}.")
+				except discord.HTTPException:
+					replies.append(f"❔ Banning failed for {i.mention}.")
+				else:
+					replies.append(f"☠ {i.mention} was banned by {ctx.author} for: \"{reason}\".")
 			else:
-				await ctx.send(f"☠ {i.mention} was banned by {ctx.author.mention} for: \"{reason}\".")
-	
-	@commands.command(usage = "hackban <memberid1  @memberid2 @memberid3> <reason>")
-	@commands.has_permissions(ban_members=True)
-	@commands.bot_has_permissions(ban_members=True)
-	async def hackban(self, ctx, *member_ids: int):
-		"""Bans a list of members via their ID."""
-		for member_id in member_ids:
-			try:
-				await self.bot.http.ban(member_id, ctx.message.guild.id)
-			except discord.HTTPException:
-				pass
-		await ctx.send(f'☠ Did some bans. Showing new banlist. {ctx.author.mention}')
-		await ctx.invoke(self.banlist)
+				try:
+					await self.bot.http.ban(i, ctx.message.guild.id)
+					target = await self.bot.fetch_user(i)
+					replies.append(f"☠ UserID {i} (target) was banned")
+				except discord.HTTPException:
+					replies.append(f"❔ Banning failed for UserID# {i}.")
+				except Exception as e:
+					print(e)
+					print("Failed while banning ID#.")
+		await ctx.send("\n".join(replies))
 	
 	@commands.command()
 	@commands.has_permissions(ban_members=True)
@@ -229,7 +225,6 @@ class Mod(commands.Cog):
 	async def banlist(self,ctx):
 		""" Show the banlist for the server """
 		banlist = await ctx.guild.bans()
-
 		banpage = ""
 		banpages = []
 		banembeds = []
@@ -398,6 +393,7 @@ class Mod(commands.Cog):
 	async def prefix(self,ctx,*,prefix=""):
 		""" Add, remove, or List bot prefixes for this server."""
 		prefix = prefix.replace("add ","").replace("remove ","")
+		prefix = prefix.replace("set ","").replace("delete ","")
 		try:
 			prefixes = self.bot.prefix_cache[ctx.guild.id]
 		except KeyError:

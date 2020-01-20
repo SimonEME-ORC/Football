@@ -10,14 +10,10 @@ class Notifications(commands.Cog):
 		self.bot.loop.create_task(self.update_cache())
 
 	### TODO: Code Bot notifications messages. (db columns exist)
-	### TODO: Code mention_spam (db columns exist)
 	### TODO: On Channel Delete - Cascades!
 	### TODO: Port on_message_delete
 	### TODO: Custom Reactions.
 	### TODO: on member name change
-	### TODO: Code Bad Word kick / bans 
-	### TODO: CODE KICK / BAN ON MENTION
-		# DB is already set up	
 
 	async def update_cache(self):
 		self.bot.notif_cache = {}
@@ -49,7 +45,7 @@ class Notifications(commands.Cog):
 				INSERT INTO prefixes (guild_id,prefix) VALUES ($1,$2)
 				""",guild.id)				
 		await self.bot.db.release(connection)
-		
+	
 	@commands.Cog.listener()
 	async def on_guild_remove(self,guild):
 		connection = await self.bot.db.acquire()

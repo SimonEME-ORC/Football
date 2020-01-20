@@ -2,344 +2,50 @@ import asyncio
 import discord
 from discord.ext import commands
 
+# Scraping
 import aiohttp
 import requests
 import html
 from lxml import html as htmlc
 from selenium import webdriver
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium.common.exceptions import NoSuchElementException, WebDriverException
-from selenium.webdriver.chrome.options import Options
+from selenium.common.exceptions import NoSuchElementException, WebDriverException, TimeoutException
+from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
-from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
 
+import json
+
+# Imaging.
 from colorthief import ColorThief
-import datetime
 from copy import deepcopy
 from PIL import Image
 from io import BytesIO
 import os
-import json
+
+# Misc utils
+import datetime
+
 
 class Fixtures(commands.Cog):
 	""" Rewrite of fixture & result lookups. """
 	def __init__(self, bot):
 		self.bot = bot
+		self.spawn_ff()
 
-	# Spawn an instance of headerless chrome.
-	def spawn_chrome(self):
-		caps = DesiredCapabilities().CHROME
-		caps["pageLoadStrategy"] = "normal"  #  complete
-		chrome_options = Options()
-		chrome_options.add_argument("--headless")
-		chrome_options.add_argument("--window-size=1920x1200")
-		chrome_options.add_argument('--no-proxy-server')
-		chrome_options.add_argument("--proxy-server='direct://'")
-		chrome_options.add_argument("--proxy-bypass-list=*")
-		chrome_options.add_argument("--disable-extensions")
-		chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
+	def cog_unload(self):
+		self.driver.quit()
 		
-		driver_path = os.getcwd() +"\\chromedriver.exe"
-		prefs = {'profile.default_content_setting_values': {'images': 2, 'javascript': 2}}
-		chrome_options.add_experimental_option('prefs', prefs)
-		driver = webdriver.Chrome(desired_capabilities=caps,chrome_options=chrome_options, executable_path=driver_path)
-		driver.set_page_load_timeout(20)
-		return driver
+	def spawn_ff(self):
+		caps = DesiredCapabilities().FIREFOX
+		caps["pageLoadStrategy"] = "normal" 
+		options = Options()
+		options.add_argument("--headless")
+		driver_path = os.getcwd() +"\\geckodriver.exe"
+		self.driver = webdriver.Firefox(options=options, desired_capabilities = caps,executable_path = driver_path)
 		
-	async def _search(self,ctx,m,qry,mode=None):
-		# aiohttp lookup for json.
-		qry = qry.replace("'","")
-
-		qryurl = f"https://s.flashscore.com/search/?q={qry}&l=1&s=1&f=1%3B1&pid=2&sid=1"
-		async with self.bot.session.get(qryurl) as resp:
-			res = await resp.text()
-			res = res.lstrip('cjs.search.jsonpCallback(').rstrip(");")
-			res = json.loads(res)
-		
-		resdict = {}
-		key = 0
-		# Remove irrel.
-		for i in res["results"]:
-			if i["participant_type_id"] == 0: # League
-				if mode is not "team":
-					# Sample League URL: https://www.flashscore.com/soccer/england/premier-league/
-					resdict[str(key)] = {"Match":i['title'],"url":f"soccer/{i['country_name'].lower()}/{i['url']}"}	
-			elif i["participant_type_id"] == 1: # Team
-				if mode is not "league":
-					# Sample Team URL: https://www.flashscore.com/team/thailand-stars/jLsL0hAF/
-					resdict[str(key)] = {"Match":i["title"],"url":f"team/{i['url']}/{i['id']}"}
-			key += 1
-		
-		if not resdict:
-			return await m.edit(content=f"No results for query: {qry}")
-		
-		if len(resdict) == 1:
-			return f'https://www.flashscore.com/{resdict["0"]["url"]}'
-			
-		outtext = ""
-		for i in resdict:
-			outtext += f"{i}: {resdict[i]['Match']}\n"
-		
-		try:
-			await m.edit(content=f"Please type matching id: ```{outtext}```")
-		except discord.HTTPException:
-			### TODO: Paginate.
-			return await m.edit(content=f"Too many matches to display, please be more specific.")
-			
-		def check(message):
-			if message.author.id == ctx.author.id and message.content in resdict:
-				return True
-		try:
-			match = await self.bot.wait_for("message",check=check,timeout=30)
-		except asyncio.TimeoutError:
-			return await m.delete()	
-		
-		mcontent = match.content
-		await m.edit(content=f"Grabbing data...",delete_after=5)
-		
-		try:
-			await match.delete()
-		except:
-			pass
-		return f'https://www.flashscore.com/{resdict[mcontent]["url"]}'
-
-	async def get_default(self,ctx,mode):
-		# Get
-		connection = await self.bot.db.acquire()
-		record = await connection.fetchrow(
-		"""
-			SELECT default_team FROM scores_settings
-			WHERE default_team is NOT NULL AND (guild_id) = $1
-		""",ctx.guild.id)
-		try:
-			team = record["default_team"]
-		except TypeError:
-			team = ""
-			
-		record = await connection.fetchrow(
-		"""
-			SELECT default_league FROM scores_settings
-			WHERE default_league is NOT NULL AND (guild_id) = $1
-		""",ctx.guild.id)
-		
-		try:
-			league = record["default_league"]
-		except TypeError:
-			league = ""
-		
-		# Release
-		await self.bot.db.release(connection)
-		
-		# Decide
-		if mode == "team":
-			return team if team else league
-		else:
-			return league if league else team
-
-	@commands.command()
-	async def table(self,ctx,*,qry:commands.clean_content =None):
-		""" Get table for a league """
-		async with ctx.typing():
-			url = await self.get_default(ctx,"league") if qry is None else ""		
-			if url == "" and qry is not None:
-				m = await ctx.send(f"Searching for {qry}...")
-				url = await self._search(ctx,m,qry)
-			elif url:
-				pass
-			elif qry is None:
-				return await ctx.send(f'Specify a search query. A default team or league can be set by server moderators using {ctx.prefix}default <"team" or "league"> <search string>')
-				
-			m = await ctx.send(f"Grabbing table from <{url}>...")
-			p = await self.bot.loop.run_in_executor(None,self.parse_table,url)
-			
-			try:
-				await ctx.send(file=p)
-			except discord.HTTPException:
-				await m.edit(content=f"Failed to grab table from <{url}>")
-			await m.delete()	
-	
-	def parse_table(self,url):
-		url += "/standings/"
-		driver = self.spawn_chrome()
-		driver.get(url)
-		driver.save_screenshot('screenie.png')
-		xp = './/div[@id="glib-stats-data"]'
-		
-		try:
-			tbl = driver.find_element_by_xpath(xp)
-		except NoSuchElementException:
-			WebDriverWait(driver, 2)
-			try:
-				tbl = driver.find_element_by_xpath(xp)
-			except NoSuchElementException:
-				driver.quit()
-				return # Rip
-		
-		# Perform cropoperations.
-		location = tbl.location
-		size = tbl.size
-		im = Image.open("screenie.png")
-		left = location['x']
-		top = location['y']
-		right = location['x'] + size['width']
-		bottom = location['y'] + size['height']
-		im = im.crop((left, top, right, bottom))
-		output = BytesIO()
-		im.save(output,"PNG")
-		output.seek(0)
-		df = discord.File(output,filename="table.png")
-		driver.quit()
-		return df
-
-	@commands.command()
-	async def bracket(self,ctx,*,qry:commands.clean_content=None):
-		""" Get btacket for a tournament """
-		async with ctx.typing():
-			url =  await self.get_default(ctx,"league") if qry is None else ""
-			
-			if url == "" and qry is not None:
-				m = await ctx.send(f"Searching for {qry}...")
-				url = await self._search(ctx,m,qry)
-			elif qry is None and not url:
-				return await ctx.send(f'Specify a search query. A default team or league can be set by server moderators using {ctx.prefix}default <"team" or "league"> <search string>')
-			elif url is None:
-				return #rip
-
-			await ctx.send(f'Grabbing competition bracket for {qry}...',delete_after=5)	
-				
-			p = await self.bot.loop.run_in_executor(None,self.parse_bracket,url)
-			
-			try:
-				await ctx.send(file=p)
-			except discord.HTTPException:
-				return await m.edit(content=f"Failed to grab table from <{url}>")		
-		
-	@commands.command(aliases=["fx"])
-	async def fixtures(self,ctx,*,qry:commands.clean_content=None ):
-		""" Displays upcoming fixtures for a team or league.
-			Navigate with reactions.
-		"""
-		async with ctx.typing():
-			url = await self.get_default(ctx,"team") if qry is None else ""
-				
-			if url == "" and qry is not None:
-				m = await ctx.send(f"Searching for {qry}...")
-				url = await self._search(ctx,m,qry)
-			elif qry is None and not url:
-				return await ctx.send(f'Specify a search query. A default team or league can be set by server moderators using {ctx.prefix}default <"team" or "league"> <search string>')
-			elif url is None:
-					return #rip
-
-			await ctx.send(f'Grabbing fixtures data for {qry}...',delete_after=5)			
-			pages = await self.bot.loop.run_in_executor(None,self.parse_fixtures,url,ctx.author.name)
-		await self.paginate(ctx,pages)
-
-	@commands.command(aliases=['sc'])
-	async def scorers(self,ctx,*,qry:commands.clean_content=None ):
-		""" Displays top scorers for a team or league.
-			Navigate with reactions.
-		"""
-		async with ctx.typing():
-			url =  await self.get_default(ctx,preferred="team") if qry is None else ""
-				
-			if url == "" and qry is not None:
-				m = await ctx.send(f"Searching for {qry}...")
-				url = await self._search(ctx,m,qry)
-			elif qry is None and not url:
-				return await ctx.send(f'Specify a search query. A default team or league can be set by server moderators using {ctx.prefix}default <"team" or "league"> <search string>')				
-			elif url is None:
-				return #rip
-				
-			await ctx.send(f'Grabbing scorers data for {qry}...',delete_after=5)					
-				
-			pages = await self.bot.loop.run_in_executor(None,self.parse_scorers,url,ctx.author.name)
-		await self.paginate(ctx,pages)	
-		
-	@commands.command(aliases=["rx"])
-	async def results(self,ctx,*,qry:commands.clean_content=None ):
-		""" Displays previous results for a team or league.
-			Navigate with reactions.
-		"""
-		async with ctx.typing():
-			url =  await self.get_default(ctx,"team") if qry is None else ""
-
-			if url == "" and qry is not None:
-				m = await ctx.send(f"Searching for {qry}...")
-				url = await self._search(ctx,m,qry)
-			elif qry is None and not url:
-				return await ctx.send(f'Specify a search query. A default team or league can be set by server moderators using {ctx.prefix}default <"team" or "league"> <search string>')				
-			if url is None:
-				return #rip
-				
-			await ctx.send(f'Grabbing results data for {qry}...',delete_after=5)	
-			pages = await self.bot.loop.run_in_executor(None,self.parse_results,url,ctx.author.name)
-			await self.paginate(ctx,pages)
-	
-	@commands.command(aliases=["suspensions"])
-	async def injuries(self,ctx,*,qry:commands.clean_content = None):
-		""" Get a team's current injuries """
-		async with ctx.typing():
-			url = await self.get_default(ctx,"team") if qry is None else ""
-
-			if url == "" and qry is not None:
-				m = await ctx.send(f"Searching for {qry}...")
-				url = await self._search(ctx,m,qry)
-			elif qry is None and not url:
-				return await ctx.send(f'Specify a search query. A default team or league can be set by server moderators using {ctx.prefix}default <"team" or "league"> <search string>')				
-			elif url is None:
-				return #rip
-
-			await ctx.send(f'Grabbing injury data for {qry}...',delete_after=5)
-			
-			e = await self.bot.loop.run_in_executor(None,self.parse_injuries,url,ctx.author.name)
-			await m.edit(content="",embed = e)
-	
-	def parse_injuries(self,url,au):
-		t,e,driver = self.get_html(url)
-		url += "/squad"
-		driver.get(url)
-		WebDriverWait(driver,2)
-		driver.save_screenshot("injuries.png")
-		tree = htmlc.fromstring(driver.page_source)
-		driver.quit()
-		rows = tree.xpath('.//div[contains(@id,"overall-all-table")]/div[contains(@class,"profileTable__row")]')
-		matches = []
-		position = ""
-		
-		for i in rows:
-			pos = "".join(i.xpath('./text()')).strip()
-			if pos:
-				try:
-					position = pos.rsplit('s')[0]
-				except IndexError:
-					position = pos
-			
-			injury = "".join(i.xpath('.//span[contains(@class,"absence injury")]/@title'))
-			if not injury: 
-				continue
-						
-			player = "".join(i.xpath('.//div[contains(@class,"")]/a/text()'))
-			link = "".join(i.xpath('.//div[contains(@class,"")]/a/@href'))
-			if link:
-				link = "http://www.flashscore.com" + link
-			
-			# Put name in the right order.
-			playersplit = player.split(' ',1)
-			try:
-				player = f"{playersplit[1]} {playersplit[0]}"
-			except IndexError:
-				pass
-			matches.append(f"[{player}]({link}) ({position}): {injury}")
-		
-		title = "".join(t.xpath('.//div[@class="teamHeader__name"]/text()')).strip()
-		e.title = f"Injuries for {title}"
-		e.url = url
-		if matches:
-			e.description = "\n".join(matches)
-		else:
-			e.description = "No injuries found!"
-		return e
-			
 	def get_color(self,url):
 		url = url.strip('"')
 		r = requests.get(url).content
@@ -351,30 +57,63 @@ class Fixtures(commands.Cog):
 		return int('%02x%02x%02x' % rgb,16)	
 		
 	def get_html(self,url):
-		driver = self.spawn_chrome()		
+		self.driver.get(url)
 		try:
-			driver.get(url)
-		except TimeoutException:
-			driver.execute_script("window.stop();")
-			 
-		e = discord.Embed()
-		try:
-			th = driver.find_element_by_xpath(".//div[contains(@class,'logo')]")
-			th = th.value_of_css_property('background-image')
+			xp = ".//div[contains(@class,'logo')]"
+			th = WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.XPATH,xp)))
+			self.driver.execute_script("window.stop();")
+			th = th.value_of_css_property('background-image') 
 			th = th.strip("url(").strip(")")
 			e.set_thumbnail(url=th.strip('"'))
 			e.color = self.get_color(th)
 		except:
 			pass
-		
+		e = discord.Embed()
+		e.set_thumbnail(url=th.strip('"'))
+		e.color = self.get_color(th)		
 		e.url = url
-		t = htmlc.fromstring(driver.page_source)
-		return t,e,driver
+		t = htmlc.fromstring(self.driver.page_source)
+		return t,e
+		
+	def parse_table(self,url):
+		url += "/standings/"
+		self.driver.get(url)
+		
+		try:
+			xp = './/div[@class="glib-stats-box-table-overall"]'
+			tbl = WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.XPATH,xp)))
+			self.driver.execute_script("window.stop();")
+			# Kill cookie disclaimer.
+			try:
+				z = self.driver.find_element_by_xpath(".//span[@class='button cookie-law-accept']")
+				z.click()
+			except:
+				pass
+				
+			try:
+				self.driver.execute_script("arguments[0].scrollIntoView();", tbl)
+			except NoSuchElementException:
+				pass
+			
+			location = tbl.location
+			size = tbl.size
+			im = Image.open(BytesIO(tbl.screenshot_as_png))
+	
+		except TimeoutException:
+			print("Timed out.")
+		except Exception as e:
+			print(e)
+
+
+		output = BytesIO()
+		im.save(output,"PNG")
+		output.seek(0)
+		df = discord.File(output,filename="table.png")
+		return df
 
 	def parse_results(self,url,au):
 		url += "/results"
-		t,e,driver = self.get_html(url)
-		driver.quit()
+		t,e = self.get_html(url)
 		matches = []
 		results = t.xpath(".//div[contains(@class,'sportName soccer')]/div")
 		
@@ -424,8 +163,7 @@ class Fixtures(commands.Cog):
 		
 	def parse_fixtures(self,url,au):
 		url = f"{url}/fixtures"
-		t,e,driver = self.get_html(url)
-		driver.quit()
+		t,e = self.get_html(url)
 		
 		title = "".join(t.xpath('.//div[@class="teamHeader__name"]/text()')).strip()
 		e.title = f"≡ Fixtures for {title}"
@@ -472,8 +210,7 @@ class Fixtures(commands.Cog):
 		return embeds
 	
 	def parse_bracket(self,bracket):
-		driver = self.spawn_chrome()
-		driver.get(bracket)
+		self.driver.get(bracket)
 
 		totwid = 0
 		xp = './/div[@class="viewport"]'
@@ -482,8 +219,8 @@ class Fixtures(commands.Cog):
 		initheight = 0
 		runnum = 0
 
-		lastrun = False
-		while True:
+		morescrolls = True
+		while not morescrolls:
 			bkt = driver.find_element_by_xpath(xp)
 			location = bkt.location
 			size = bkt.size
@@ -503,7 +240,7 @@ class Fixtures(commands.Cog):
 				z.click()
 				time.sleep(1)
 			except NoSuchElementException:
-				lastrun = True
+				morescrolls = False
 			
 			if initheight == 0:
 				initheight = size['height']
@@ -515,19 +252,59 @@ class Fixtures(commands.Cog):
 			newcanvas.paste(canvas,(0,0))
 			newcanvas.paste(im,(newcanvas.size[0] - size['width'],0,newcanvas.size[0] - size['width'] + im.size[0],0 + im.size[1]))
 			canvas = newcanvas
-			if lastrun:
-				break
 		output = BytesIO()
 		canvas.save(output,"PNG")
 		output.seek(0)
 		df = discord.File(output,filename="bracket.png")
-		driver.quit()
 		return df
+
+	def parse_injuries(self,url,au):
+		t,e = self.get_html(url)
+		url += "/squad"
+		self.driver.get(url)
+		WebDriverWait(driver,2)
+		
+		tree = htmlc.fromstring(self.driver.page_source)
+		rows = tree.xpath('.//div[contains(@id,"overall-all-table")]/div[contains(@class,"profileTable__row")]')
+		matches = []
+		position = ""
+		
+		for i in rows:
+			pos = "".join(i.xpath('./text()')).strip()
+			if pos:
+				try:
+					position = pos.rsplit('s')[0]
+				except IndexError:
+					position = pos
+			
+			injury = "".join(i.xpath('.//span[contains(@class,"absence injury")]/@title'))
+			if not injury: 
+				continue
+						
+			player = "".join(i.xpath('.//div[contains(@class,"")]/a/text()'))
+			link = "".join(i.xpath('.//div[contains(@class,"")]/a/@href'))
+			if link:
+				link = "http://www.flashscore.com" + link
+			
+			# Put name in the right order.
+			playersplit = player.split(' ',1)
+			try:
+				player = f"{playersplit[1]} {playersplit[0]}"
+			except IndexError:
+				pass
+			matches.append(f"[{player}]({link}) ({position}): {injury}")
+		
+		title = "".join(t.xpath('.//div[@class="teamHeader__name"]/text()')).strip()
+		e.title = f"Injuries for {title}"
+		e.url = url
+		if matches:
+			e.description = "\n".join(matches)
+		else:
+			e.description = "No injuries found!"
+		return e	
 	
 	def parse_scorers(self,url,au):
-		t,e,driver = self.get_html(url)
-		
-		print(url)
+		t,e = self.get_html(url)
 		
 		if "team" in url:
 			# For individual Team
@@ -560,10 +337,10 @@ class Fixtures(commands.Cog):
 			# Re-scrape!
 			
 			url += "/standings/"
-			driver.get(url)
-			WebDriverWait(driver, 2)
+			self.driver.get(url)
+			WebDriverWait(self.driver, 2)
 			try:
-				x = driver.find_element_by_link_text("Top Scorers")
+				x = self.driver.find_element_by_link_text("Top Scorers")
 				x.click()			
 				players = driver.find_element_by_id("table-type-10")
 				t = players.get_attribute('innerHTML')
@@ -587,8 +364,7 @@ class Fixtures(commands.Cog):
 					sclist.append(f"{g} [{p}]({pl})")
 					tmlist.append(f"[{tm}]({tml})")
 			except WebDriverException:
-				driver.save_screenshot('scorers_fail.png')
-		driver.quit()
+				self.driver.save_screenshot('scorers_fail.png')
 				
 		z = list(zip(sclist,tmlist))
 		# Make Embeds.
@@ -610,6 +386,208 @@ class Fixtures(commands.Cog):
 
 		return embeds	
 
+	def build_embeds(self,au,e,z,type):
+		embeds = []
+		p = [z[i:i+10] for i in range(0, len(z), 10)]
+		pages = len(p)
+		count = 1
+		for i in p:
+			j = "\n".join([j for j,k in i])
+			k = "\n".join([k for j,k in i])
+			e.add_field(name="Date",value=j,inline=True)
+			e.add_field(name=type,value=k,inline=True)
+			iu = "http://pix.iemoji.com/twit33/0056.png"
+			e.set_footer(text=f"Page {count} of {pages} ({au})",icon_url=iu)
+			te = deepcopy(e)
+			embeds.append(te)
+			e.clear_fields()
+			count += 1
+		return embeds
+	
+	async def _search(self,ctx,m,qry,preferred=None,mode=None):
+		# Check if default is set and return that.
+		if qry is None:
+			connection = await self.bot.db.acquire()
+			record = await connection.fetchrow(		"""
+				SELECT default_league FROM scores_settings
+				WHERE (guild_id) = $1
+				AND (default_league is NOT NULL OR default_team IS NOT NULL)
+			""",ctx.guild.id)		
+			await self.bot.db.release(connection)
+			
+			try:
+				team = record["default_team"]
+				league = record["default_league"]
+			except TypeError:
+				league,team = "",""
+			
+			# Decide if found, yell if not.
+			if any([league,team]):
+				if preferred == "team":
+					return team if team else league
+				else:
+					return league if league else team
+			else:
+				await m.edit(content=f'Please specify a search query. A default team or league can be set by moderators using {ctx.prefix}default <"team" or "league"> <search string>')
+				return None
+		
+		# aiohttp lookup for json.
+		qry = qry.replace("'","")
+
+		qryurl = f"https://s.flashscore.com/search/?q={qry}&l=1&s=1&f=1%3B1&pid=2&sid=1"
+		async with self.bot.session.get(qryurl) as resp:
+			res = await resp.text()
+			res = res.lstrip('cjs.search.jsonpCallback(').rstrip(");")
+			res = json.loads(res)
+		
+		resdict = {}
+		key = 0
+		# Remove irrel.
+		for i in res["results"]:
+			if i["participant_type_id"] == 0: # League
+				if mode is not "team":
+					# Sample League URL: https://www.flashscore.com/soccer/england/premier-league/
+					resdict[str(key)] = {"Match":i['title'],"url":f"soccer/{i['country_name'].lower()}/{i['url']}"}	
+			elif i["participant_type_id"] == 1: # Team
+				if mode is not "league":
+					# Sample Team URL: https://www.flashscore.com/team/thailand-stars/jLsL0hAF/
+					resdict[str(key)] = {"Match":i["title"],"url":f"team/{i['url']}/{i['id']}"}
+			key += 1
+		
+		if not resdict:
+			await m.edit(content=f"No results for query: {qry}")
+			return None
+		
+		if len(resdict) == 1:
+			return f'https://www.flashscore.com/{resdict["0"]["url"]}'
+			
+		outtext = ""
+		for i in resdict:
+			outtext += f"{i}: {resdict[i]['Match']}\n"
+		
+		try:
+			await m.edit(content=f"Please type matching id: ```{outtext}```")
+		except discord.HTTPException:
+			### TODO: Paginate.
+			await m.edit(content=f"Too many matches to display, please be more specific.")
+			return None
+		try:
+			def check(message):
+				if message.author.id == ctx.author.id and message.content in resdict:
+					return True		
+			match = await self.bot.wait_for("message",check=check,timeout=30)
+		except asyncio.TimeoutError:
+			await m.edit(content="Timed out waiting for you to select matching ID.")
+			return None			
+		
+		mcontent = match.content
+		await m.edit(content=f"Grabbing data...")
+		
+		try:
+			await match.delete()
+		except:
+			pass
+		return f'https://www.flashscore.com/{resdict[mcontent]["url"]}'
+
+	@commands.command()
+	async def table(self,ctx,*,qry:commands.clean_content =None):
+		""" Get table for a league """
+		async with ctx.typing():
+			m = await ctx.send("Searching...")
+			url = await self._search(ctx,m,qry,preferred="league")
+			if url is None:
+				return # rip.
+			
+			m = await m.edit(content=f"Grabbing table from <{url}>...")
+			p = await self.bot.loop.run_in_executor(None,self.parse_table,url)
+			try:
+				await ctx.send(file=p)
+			except discord.HTTPException:
+				await m.edit(content=f"Failed to grab table from <{url}>")
+				
+
+	@commands.command()
+	async def bracket(self,ctx,*,qry:commands.clean_content=None):
+		""" Get btacket for a tournament """
+		async with ctx.typing():
+			m = await ctx.send("Searching...")
+			url = await self._search(ctx,m,qry,preferred="league")
+			if url is None:
+				return # rip.
+
+			m = await m.edit(content=f'Grabbing competition bracket for {qry}...')	
+			p = await self.bot.loop.run_in_executor(None,self.parse_bracket,url)
+			
+			try:
+				await ctx.send(file=p)
+			except discord.HTTPException:
+				await m.edit(content=f"Failed to grab table from <{url}>")
+			else:
+				await m.delete()
+		
+	@commands.command(aliases=["fx"])
+	async def fixtures(self,ctx,*,qry:commands.clean_content=None ):
+		""" Displays upcoming fixtures for a team or league.
+			Navigate with reactions.
+		"""
+		async with ctx.typing():
+			m = await ctx.send("Searching...")
+			url = await self._search(ctx,m,qry,preferred="team")
+			if url is None:
+				return # rip.
+
+			m = await m.edit(content=f'Grabbing fixtures data from <{url}>...')			
+			pages = await self.bot.loop.run_in_executor(None,self.parse_fixtures,url,ctx.author.name)
+			await self.paginate(ctx,pages)
+			await m.delete()
+
+	@commands.command(aliases=['sc'])
+	async def scorers(self,ctx,*,qry:commands.clean_content=None ):
+		""" Displays top scorers for a team or league.
+			Navigate with reactions.
+		"""
+		async with ctx.typing():
+			m = await ctx.send("Searching...")
+			url = await self._search(ctx,m,qry,preferred="team")
+			if url is None:
+				return # rip.
+				
+			m = await m.edit(content=f'Grabbing Top Scorers scorers data from <{url}>...')					
+			pages = await self.bot.loop.run_in_executor(None,self.parse_scorers,url,ctx.author.name)
+			
+			await self.paginate(ctx,pages)
+			await m.delete()
+		
+	@commands.command(aliases=["rx"])
+	async def results(self,ctx,*,qry:commands.clean_content=None ):
+		""" Displays previous results for a team or league.
+			Navigate with reactions.
+		"""
+		async with ctx.typing():
+			m = await ctx.send("Searching...")
+			url = await self._search(ctx,m,qry,preferred="team")
+			if url is None:
+				return # rip.
+				
+			m = await m.edit(content=f'Grabbing results data from <{url}>...')	
+			pages = await self.bot.loop.run_in_executor(None,self.parse_results,url,ctx.author.name)
+			
+			await self.paginate(ctx,pages)
+			await m.delete()
+	
+	@commands.command(aliases=["suspensions"])
+	async def injuries(self,ctx,*,qry:commands.clean_content = None):
+		""" Get a team's current injuries """
+		async with ctx.typing():
+			m = await ctx.send("Searching...")
+			url = await self._search(ctx,m,qry,preferred="team")
+			if url is None:
+				return # rip.
+
+			m = await m.edit(content=f'Grabbing injury data from <{url}>...')
+			e = await self.bot.loop.run_in_executor(None,self.parse_injuries,url,ctx.author.name)
+			await m.edit(content="",embed = e)
+		
 	async def paginate(self,ctx,pages):
 		page = 0
 		if not pages:
@@ -668,24 +646,6 @@ class Fixtures(commands.Cog):
 			if r.emoji == "⏏": #eject
 				return await m.delete()
 			await m.edit(embed=pages[page])
-		
-	def build_embeds(self,au,e,z,type):
-		embeds = []
-		p = [z[i:i+10] for i in range(0, len(z), 10)]
-		pages = len(p)
-		count = 1
-		for i in p:
-			j = "\n".join([j for j,k in i])
-			k = "\n".join([k for j,k in i])
-			e.add_field(name="Date",value=j,inline=True)
-			e.add_field(name=type,value=k,inline=True)
-			iu = "http://pix.iemoji.com/twit33/0056.png"
-			e.set_footer(text=f"Page {count} of {pages} ({au})",icon_url=iu)
-			te = deepcopy(e)
-			embeds.append(te)
-			e.clear_fields()
-			count += 1
-		return embeds
 	
 	@commands.has_permissions(manage_guild=True)
 	@commands.command(usage = "default <'team' or 'league'> <(Your Search Query) or ('None' to unset default.)")
@@ -725,7 +685,6 @@ class Fixtures(commands.Cog):
 			""",ctx.guild.id,url)
 		
 		await self.bot.db.release(connection)
-		await self.update_cache()
 		
 		if qry is not None:
 			return await ctx.send(f'Your commands will now use <{url}> as a default {type}')

@@ -24,6 +24,8 @@ class ImageManip(commands.Cog):
 	async def tinder(self,ctx):
 		""" Try to Find your next date. """
 		with ctx.typing():
+			if ctx.author.id == 272722118192529409:
+				return await ctx.send("Nobody will ever swipe right on you, Kegs.")
 			match = random.choice([True,False,False])
 			if not match:
 				return await ctx.send("Nobody swiped right on you.")

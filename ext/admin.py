@@ -173,9 +173,9 @@ class Admin(commands.Cog):
 	@commands.is_owner()
 	async def kill(self,ctx):
 		"""Restarts the bot"""
-		await ctx.send(":gear: Restarting.")
-		await self.db.close()
+		await self.bot.db.close()
 		await self.bot.logout()
+		await ctx.send(":gear: Restarting.")
 		
 	@commands.command(aliases=['streaming','watching','listening'])
 	@commands.is_owner()
@@ -183,7 +183,7 @@ class Admin(commands.Cog):
 		""" Change status to <cmd> {status} """
 		values = {"playing":0,"streaming":1,"watching":2,"listening":3}
 		
-		act = discord.Activity(type=values[ctx.invoked_with],name=msg)
+		act = discord.Activity(type=values[ctx.invoked_with],name=status)
 		
 		await self.bot.change_presence(activity=act)
 		await ctx.send(f"Set status to {ctx.invoked_with} {status}")

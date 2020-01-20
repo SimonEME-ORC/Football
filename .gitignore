@@ -130,3 +130,5 @@ source.txt
 Whitney-Medium.ttf
 database layout.txt
 quotes.csv
+*.xml
+.idea/Toonbot.iml
