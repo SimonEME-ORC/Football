@@ -132,3 +132,5 @@ database layout.txt
 quotes.csv
 *.xml
 .idea/Toonbot.iml
+*.txt
+ext/test.py

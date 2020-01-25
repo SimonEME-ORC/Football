@@ -91,7 +91,6 @@ class Tv(commands.Cog):
 		return em
 
 	@commands.command()
-	@commands.is_owner()
 	async def tv(self,ctx,*,team:commands.clean_content = None):
 		""" Lookup next televised games for a team """
 		async with ctx.typing():
@@ -125,10 +124,11 @@ class Tv(commands.Cog):
 					
 					if ml == []:
 						continue
-					
+
+					date = "".join(i.xpath('.//td[@class="datecell"]//span/text()')).strip()
+					time = "".join(i.xpath('.//td[@class="timecell"]//span/text()')).strip()
+
 					if isdone != "narrow live":
-						date = "".join(i.xpath('.//td[@class="datecell"]//span/text()')).strip()
-						time = "".join(i.xpath('.//td[@class="timecell"]//span/text()')).strip()
 						# Correct TimeZone offset.
 						try:
 							time = datetime.datetime.strptime(time,'%H:%M')+ datetime.timedelta(hours=5)
@@ -143,8 +143,6 @@ class Tv(commands.Cog):
 						if dt != "HT" and not ":" in dt:
 							dt = f"LIVE {dt}'"
 					else:
-						date = "".join(i.xpath('.//td[@class="datecell"]//span/text()')).strip()
-						time = "".join(i.xpath('.//td[@class="timecell"]//span/text()')).strip()
 						if date == datetime.datetime.now().strftime("%b %d"):
 							dt = time
 						else:

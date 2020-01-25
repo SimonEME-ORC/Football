@@ -190,11 +190,13 @@ class Info(commands.Cog):
 		await ctx.send(embed=e)
 		
 	@commands.command()
-	async def avatar(self,ctx,user:discord.User = None):
+	async def avatar(self, ctx, user: typing.Union[discord.User,discord.Member] = None):
 		""" Shows a member's avatar """
 		if user == None:
 			user = ctx.author
-		await ctx.send(user.avatar_url_as(static_format="png"))
-		
+		await ctx.send(user.avatar_url)
+
+
+
 def setup(bot):
 	bot.add_cog(Info(bot))

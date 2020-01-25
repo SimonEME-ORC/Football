@@ -1,13 +1,10 @@
 from PIL import Image,ImageDraw,ImageOps,ImageFont
 from discord.ext import commands
 from discord.ext.commands.cooldowns import BucketType
-from lxml import html
-from imgurpython import ImgurClient
 import datetime
 import textwrap
 import discord
 import asyncio
-import aiohttp
 import random
 import json
 from io import BytesIO
@@ -16,7 +13,6 @@ from io import BytesIO
 class ImageManip(commands.Cog):
 	""" Edit images for you """
 	def __init__(self, bot):
-		bot.imgur = ImgurClient(bot.credentials["Imgur"]["Authorization"],bot.credentials["Imgur"]["Secret"])
 		self.bot = bot
 
 	@commands.command()
@@ -40,9 +36,9 @@ class ImageManip(commands.Cog):
 				df = await self.bot.loop.run_in_executor(None,self.dtin,target,av,name)
 				
 			if match == ctx.author:
-				await ctx.send("Congratulations, you matched with yourself. How pathetic.",file=df)
+				await ctx.send("Congratulations, you matched with yourself. How pathetic.", file=df)
 			elif match == ctx.me:
-				await ctx.send("Fancy a shag?",file=df)
+				await ctx.send("Fancy a shag?", file=df)
 			else:
 				await ctx.send(file=df)
 
@@ -523,22 +519,22 @@ class ImageManip(commands.Cog):
 	@commands.command(hidden=True)
 	async def butter(self,ctx):
 		""" What is my purpose? """
-		await ctx.send(file=discord.File("butter.png"))
+		await ctx.send(file=discord.File("Images/butter.png"))
 	
 	@commands.command(hidden=True)
 	async def fixed(self,ctx):
 		""" Fixed! """
-		await ctx.send(file=discord.File("fixed.png"))
+		await ctx.send(file=discord.File("Images/fixed.png"))
 	
 	@commands.command(hidden=True)
 	async def ructions(self,ctx):
 		""" WEW. RUCTIONS. """
-		await ctx.send(file=discord.File("ructions.png"))
+		await ctx.send(file=discord.File("Images/ructions.png"))
 	
 	@commands.command(hidden=True)
 	async def helmet(self,ctx):
 		""" Helmet"""
-		await ctx.send(file=discord.File("helmet.jpg"))
+		await ctx.send(file=discord.File("Images/helmet.jpg"))
 	
 	@commands.command(hidden=True,aliases=["f"])
 	async def pressf(self,ctx):

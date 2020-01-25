@@ -1,6 +1,6 @@
 from discord.ext import commands
 import discord
-from typing import Union,Optional
+from typing import Union, Optional
 
 class Notifications(commands.Cog):
 	""" Guild Moderation Commands """
@@ -9,11 +9,11 @@ class Notifications(commands.Cog):
 		self.bot.notif_cache = {}
 		self.bot.loop.create_task(self.update_cache())
 
-	### TODO: Code Bot notifications messages. (db columns exist)
-	### TODO: On Channel Delete - Cascades!
-	### TODO: Port on_message_delete
-	### TODO: Custom Reactions.
-	### TODO: on member name change
+	# TODO: Code Bot notifications messages. (db columns exist)
+	# TODO: On Channel Delete - Cascades!
+	# TODO: Port on_message_delete
+	# TODO: Custom Reactions.
+	# TODO: on member name change
 
 	async def update_cache(self):
 		self.bot.notif_cache = {}
@@ -43,7 +43,7 @@ class Notifications(commands.Cog):
 				""",guild.id)
 			await connection.execute(""" 
 				INSERT INTO prefixes (guild_id,prefix) VALUES ($1,$2)
-				""",guild.id)				
+				""",guild.id,".tb")
 		await self.bot.db.release(connection)
 	
 	@commands.Cog.listener()

@@ -8,6 +8,7 @@ import json
 with open('credentials.json') as f:
 	credentials = json.load(f)
 
+
 async def run():
 	db = await asyncpg.create_pool(**credentials['Postgres'])
 	bot = Bot(database=db)
@@ -17,6 +18,7 @@ async def run():
 		await db.close()
 		await bot.logout()	
 
+
 class Bot(commands.Bot):
 	def __init__(self, **kwargs):
 		super().__init__(
@@ -25,22 +27,19 @@ class Bot(commands.Bot):
 			command_prefix=".tb"
 		)
 		self.db = kwargs.pop("database")
-		self.credentials = credentials	
-		self.configlock = asyncio.Lock()
+		self.credentials = credentials
 		self.timerlock = asyncio.Lock()
+		self.initialised_at = datetime.utcnow()
+		self.session = aiohttp.ClientSession(loop=self.loop)
 
 	async def on_ready(self):
-		print(f'{self.user}: {datetime.now().strftime("%d-%m-%Y %H:%M:%S")}\n-------------------------------------')
-		if not hasattr(self, 'initialised_at'):
-			self.initialised_at = datetime.utcnow()
-		self.session = aiohttp.ClientSession(loop=self.loop)
-		
+		print(f'{self.user}: {datetime.now().strftime("%d-%m-%Y %H:%M:%S")}\n-----------------------------------')
 		# Startup Modules
 		load = [	
 			'ext.admin', 'ext.fixtures', 'ext.fun', 'ext.images', 'ext.info',
 			'ext.mod', 'ext.mtb', 'ext.notifications', 'ext.nufc', 'ext.quotes',
 			'ext.reactions', 'ext.scores', 'ext.sidebar', 'ext.timers', 'ext.twitter',
-			'ext.transfers', 'ext.tv',
+			'ext.transfer_lookup', "ext.transfer_ticker", 'ext.tv',
 			
 			# WIP Cog.
 			'ext.automod'
@@ -50,6 +49,7 @@ class Bot(commands.Bot):
 				self.load_extension(c)
 			except Exception as e:
 				print(f'Failed to load cog {c}\n{type(e).__name__}: {e}')		
+
 
 loop = asyncio.get_event_loop()
 loop.run_until_complete(run())	
