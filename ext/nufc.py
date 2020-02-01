@@ -49,6 +49,7 @@ class NUFC(commands.Cog):
 			await ctx.send(table[2001:4000])
 			
 
+	# Todo: Cleanup this pile of trash
 	@commands.command(aliases=["colour"],hidden=True)
 	@commands.check(nufccheck)
 	async def color(self,ctx,color):
@@ -63,7 +64,7 @@ class NUFC(commands.Cog):
 			if len(color) != 6:
 				await ctx.send("6 character RGB value required. <http://htmlcolorcodes.com/color-picker/>")
 				return
-			try:	
+			try:
 				rcolor = discord.Colour(int(color,16))
 			except ValueError:
 				return await ctx.send('Not a valid Hex Code. Check <http://htmlcolorcodes.com/color-picker/>')
