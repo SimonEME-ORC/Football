@@ -7,7 +7,9 @@ import json
 from lxml import html
 import html as htmlc
 import traceback
-					
+
+# TODO: convert to tasks extention
+
 class Twitter(commands.Cog):
 	""" Twitter stream commands """
 	def __init__(self, bot):
