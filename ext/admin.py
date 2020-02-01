@@ -143,16 +143,16 @@ class Admin(commands.Cog):
         for page in p.pages:
             await ctx.send(page)
 
-    @commands.command(aliases=['logout', 'restart'])
     @commands.is_owner()
+    @commands.command(aliases=['logout', 'restart'])
     async def kill(self, ctx):
         """Restarts the bot"""
         await self.bot.db.close()
         await self.bot.logout()
         await ctx.send(":gear: Restarting.")
 
-    @commands.command(aliases=['streaming', 'watching', 'listening'])
     @commands.is_owner()
+    @commands.command(aliases=['streaming', 'watching', 'listening'])
     async def playing(self, ctx, *, status):
         """ Change status to <cmd> {status} """
         values = {"playing": 0, "streaming": 1, "watching": 2, "listening": 3}
@@ -164,7 +164,7 @@ class Admin(commands.Cog):
 
     @commands.command()
     @commands.is_owner()
-    async def shared(self, ctx, *, userid: int):
+    async def shared(self, ctx, *, user_id: int):
         """ Check ID for shared servers """
         matches = []
         for i in self.bot.guilds:
@@ -173,11 +173,11 @@ class Admin(commands.Cog):
 
         e = discord.Embed(color=0x00ff00)
         if not matches:
-            e.description = f"User id {id} not found on shared servers."
+            e.description = f"User id {user_id} not found on shared servers."
             return await ctx.send(embed=e)
 
         user = self.bot.get_user(id)
-        e.title = f"Shared servers for {user} (ID: {id})"
+        e.title = f"Shared servers for {user} (ID: {user_id})"
         e.description = "\n".join(matches)
         await ctx.send(embed=e)
 
@@ -189,17 +189,18 @@ class Admin(commands.Cog):
         connection = await self.bot.db.acquire()
         for i in users:
             if i.id in self.bot.ignored:
-                sql = """ INSERT INTO ignored (user_id,reason) = ($1,$2) """
+                sql = """ INSERT INTO ignored_users (user_id,reason) = ($1,$2) """
                 escaped = [i.id, reason]
                 replies.append(f"Stopped ignoring commands from {i}.")
             else:
-                sql = """ DELETE FROM ignored WHERE user_id = $1"""
+                sql = """ DELETE FROM ignored_users WHERE user_id = $1"""
                 escaped = [i.id]
                 self.bot.ignored.update({f"{i.id}": reason})
                 replies.append(f"Ignoring commands from {i}.")
             await connection.execute(sql, *escaped)
         await self.bot.db.release(connection)
         await ctx.send("\n".join(replies))
+
 
 def setup(bot):
     bot.add_cog(Admin(bot))
