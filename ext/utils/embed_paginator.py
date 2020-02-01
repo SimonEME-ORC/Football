@@ -48,4 +48,5 @@ async def paginate(ctx, embeds):
             await m.remove_reaction("⏭", ctx.author)
         if reaction.emoji == "🚫":  # Delete:
             await m.delete()
+            break
         await m.edit(embed=embeds[page])
