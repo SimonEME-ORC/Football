@@ -1,32 +1,19 @@
-# Discord.py
-from io import BytesIO
+import asyncio
 
 import discord
 from discord.ext import commands
 
 # Web Scraping
-import os
 from lxml import html
-from selenium import webdriver
+from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium.common.exceptions import NoSuchElementException
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
-
-# Imaging
-from PIL import Image
+from selenium.webdriver.support import expected_conditions as ec
 
 # Data manipulation
 import datetime
-import asyncio
-
-# Config
 import json
 
-# TODO: Lookup Scores per league.
-# TODO: Build reactor menu.
-# TODO: Code Goals
-# TODO: Code Stats
+from ext.utils.selenium_driver import spawn_driver
 
 default_leagues = [
     "WORLD: Friendly international",
@@ -44,8 +31,13 @@ default_leagues = [
     "ITALY: Serie A",
     "NETHERLANDS: Eredivisie",
     "SCOTLAND: Premiership",
-    "USA: MLS", "SPAIN: LaLiga"
+    "SPAIN: Copa del Rey",
+    "SPAIN: LaLiga",
+    "USA: MLS"
 ]
+
+# TODO: convert to tasks extention
+# TODO: re-code vidi-printer
 
 
 class ScoresChannel(commands.Cog):
@@ -53,17 +45,15 @@ class ScoresChannel(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
+        self.interval_timer = 60
         self.scores_on = True
         self.score_channel_cache = {}
         self.score_channel_league_cache = {}
         self.bot.live_games = {}
         self.msgdict = {}
         self.bot.loop.create_task(self.update_cache())
-
         self.bot.scores = self.bot.loop.create_task(self.score_loop())
-
-        # Loop frequency // Debug 15, normal 60.
-        self.interval_timer = 60
+        self.driver = None
 
     async def update_cache(self):
         connection = await self.bot.db.acquire()
@@ -92,6 +82,8 @@ class ScoresChannel(commands.Cog):
     def cog_unload(self):
         self.scores_on = False
         self.bot.scores.cancel()
+        if self.driver is not None:
+            self.driver.quit()
 
     # Core Loop
     async def score_loop(self):
@@ -104,7 +96,7 @@ class ScoresChannel(commands.Cog):
                 print("Exception in score_loop.")
                 print(type(e).__name__)
                 print(e.args)
-                await asyncio.sleep(5)
+                await asyncio.sleep(60)
                 continue
             await self.write_raw(games)
             # Iterate: Check vs each server's individual config settings
@@ -122,38 +114,18 @@ class ScoresChannel(commands.Cog):
             # Loop.
             await asyncio.sleep(self.interval_timer)
 
-    # Spawn Chrome
-    def spawn_chrome(self):
-        caps = DesiredCapabilities().CHROME
-        caps["pageLoadStrategy"] = "normal"  # complete
-        chrome_options = Options()
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--window-size=1920x1200")
-        chrome_options.add_argument('--no-proxy-server')
-        chrome_options.add_argument("--proxy-server='direct://'")
-        chrome_options.add_argument("--proxy-bypass-list=*")
-        chrome_options.add_argument("--disable-extensions")
-        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
-
-        driver_path = os.getcwd() + "\\chromedriver.exe"
-        prefs = {'profile.default_content_setting_values': {'images': 2, 'javascript': 2}}
-        chrome_options.add_experimental_option('prefs', prefs)
-        driver = webdriver.Chrome(desired_capabilities=caps, chrome_options=chrome_options, executable_path=driver_path)
-        driver.set_page_load_timeout(20)
-        return driver
-
     def fetch_data(self):
-        driver = self.spawn_chrome()
-        driver.get("http://www.flashscore.com/")
-        WebDriverWait(driver, 2)
-
-        fixture_list = driver.find_element_by_class_name('leagues--live')
-        fixture_list = fixture_list.get_attribute('innerHTML')
+        xp = ".//div[@class='sportName soccer']"
+        if not self.driver:
+            self.driver = spawn_driver()
+            self.driver.get("http://www.flashscore.com/")
+            element = WebDriverWait(self.driver, 10).until(ec.visibility_of_element_located((By.XPATH, xp)))
+        else:
+            element = self.driver.find_element_by_xpath(xp)
+        
+        fixture_list = element.get_attribute('innerHTML')
         fixture_list = html.fromstring(fixture_list)
-
-        fixture_list = fixture_list.xpath('./div')
-
-        driver.quit()
+        fixture_list = fixture_list.xpath("./div")
         games = {}
         lg = "Unknown League"
         for i in fixture_list:
@@ -188,7 +160,6 @@ class ScoresChannel(commands.Cog):
                 score = "".join(i.xpath('.//div[contains(@class,"event__scores")]//text()')).strip()
                 score = "vs" if not score else score
                 games[lg][game_id]["score"] = score
-
         return games
 
     async def write_raw(self, games):
@@ -266,15 +237,17 @@ class ScoresChannel(commands.Cog):
                     try:
                         m = await ch.send(d)
                         self.msgdict[c]["msg_list"].append(m)
-                    except discord.Forbidden:
-                        pass
+                    except (discord.NotFound, discord.Forbidden):
+                        print("-- error sending message to scores channel --")
+                        print(x)
+                        print(e)
             else:
                 # Edit message pairs if pre-existing.
                 tuples = list(zip(self.msgdict[c]["msg_list"], self.msgdict[c]["raw_data"]))
                 for x, y in tuples:
                     try:
                         await x.edit(content=y)
-                    except discord.NotFound as e:
+                    except (discord.NotFound, discord.Forbidden) as e:
                         print("-- error editing scores channel --")
                         print(x)
                         print(e)
@@ -339,12 +312,13 @@ class ScoresChannel(commands.Cog):
     # Delete from Db on delete..
     @commands.Cog.listener()
     async def on_channel_delete(self, channel):
-        connection = await self.bot.db.acquire()
-        await connection.execute(""" 
-            DELETE FROM scores_channels WHERE channel_id = $1
-            """, channel.id)
-        await self.bot.db.release(connection)
-        await self.update_cache()
+        if channel.id in self.score_channel_cache:
+            connection = await self.bot.db.acquire()
+            await connection.execute("""
+                DELETE FROM scores_channels WHERE channel_id = $1
+                """, channel.id)
+            await self.bot.db.release(connection)
+            await self.update_cache()
 
     async def _pick_channels(self, ctx, channels):
         # Assure guild has transfer channel.
@@ -555,168 +529,6 @@ class ScoresChannel(commands.Cog):
         except (discord.Forbidden, discord.NotFound):
             pass
         return resdict[mcontent]["Match"]
-
-    async def pick_game(self, ctx, qry):
-        matches = []
-        key = 0
-        for league in self.bot.live_games:
-            for game_id in self.bot.live_games[league]:
-                # Ignore our output strings.
-                if game_id == "raw":
-                    continue
-
-                home = self.bot.live_games[league][game_id]["home_team"]
-                away = self.bot.live_games[league][game_id]["away_team"]
-
-                if qry in home.lower() or qry in away.lower():
-                    game = f"{home} vs {away} ({league})"
-                    matches.append((key, game, league, game_id))
-                    key += 1
-
-        if not matches:
-            return None, None
-
-        if len(matches) == 1:
-            # return league and game of only result.
-            return matches[0][2], matches[0][3]
-
-        selector = "Please Type Matching ID```"
-        for i in matches:
-            selector += f"{i[0]}: {i[1]}\n"
-        selector += "```"
-
-        try:
-            m = await ctx.send(selector, delete_after=30)
-        except discord.HTTPException:
-            # TODO: Paginate.
-            return await ctx.send(content=f"Too many matches to display, please be more specific.")
-
-        def check(message):
-            if message.author.id == ctx.author.id and message.content.isdigit():
-                if int(message.content) < len(matches):
-                    return True
-
-        try:
-            match = await self.bot.wait_for("message", check=check, timeout=30)
-            match = int(match.content)
-        except asyncio.TimeoutError:
-            return None, None
-        else:
-            try:
-                await m.delete()
-            except discord.NotFound:
-                pass
-            return matches[match][2], matches[match][3]
-
-    def fetch_match_data(self, league, game):
-        url = f"https://www.flashscore.com/match/{game.split('_')[-1]}/#match-statistics;0"
-        driver = self.spawn_chrome()
-        wait = 0
-        driver.get(url)
-        WebDriverWait(driver, wait)
-        while driver.current_url != url:
-            driver.get(url)
-            WebDriverWait(driver, wait)
-            wait += 1
-            if wait > 5:
-                return None
-
-        # Statistics
-        s, h, a = [], [], []
-
-        # Attempt to grab Stats.
-        tree = html.fromstring(driver.page_source)
-        statlist = tree.xpath(".//div[@class='statContent']")
-
-        try:
-            for i in statlist[0]:
-                new_s = "\n".join(i.xpath(".//div[contains(@class,'titleValue')]/text()")).strip()
-                if new_s in s:
-                    continue
-                s.append(new_s)
-                h.append("\n".join(i.xpath(".//div[contains(@class,'homeValue')]/text()")).strip())
-                a.append("\n".join(i.xpath(".//div[contains(@class,'awayValue')]/text()")).strip())
-        except IndexError:
-            pass
-
-        # Attempt to grab Formation.
-        formation = ""
-        try:
-            z = driver.find_element_by_link_text('Lineups')
-            z.click()
-            WebDriverWait(driver, 3)
-
-            x = driver.find_element_by_class_name('soccer-formation')
-            im = Image.open(BytesIO(x.screenshot_as_png))
-            im.save("formations.png", "PNG")
-
-            # Send to Imgur
-            res = self.bot.imgur.upload_from_path("formations.png", anon=True)
-            formation = res["link"]
-
-        except NoSuchElementException:
-            pass
-        except AttributeError as e:
-            print(e)
-
-        driver.quit()
-
-        e = discord.Embed()
-        home = self.bot.live_games[league][game]["home_team"]
-        away = self.bot.live_games[league][game]["away_team"]
-        score = self.bot.live_games[league][game]["score"]
-        time = self.bot.live_games[league][game]["time"]
-        e.title = f"{home} {score} {away}"
-
-        if formation:
-            e.set_image(url=formation)
-
-        if not ":" in time and not "PP" in time:
-            e.title += f" ({time})"
-            e.colour = 0x448fea
-        else:
-            e.colour = 0xA4DD74
-        e.url = url
-
-        if a and h and s:
-            e.add_field(name="Home", value="\n".join(h), inline=True)
-            e.add_field(name="Stat", value="\n".join(s), inline=True)
-            e.add_field(name="Away", value="\n".join(a), inline=True)
-        elif "PP" in time:
-            e.colour = 0xe85342
-            e.description = "This match has been postponed."
-        elif ":" not in time:
-            e.colour = 0xe85342
-            e.description = "Live data not available for this match."
-
-        if ":" in time:
-            h, m = time.split(':')
-            now = datetime.datetime.now()
-            when = datetime.datetime.now().replace(hour=int(h), minute=int(m))
-
-            x = when - now
-
-            e.set_footer(text=f"Kickoff in {x}")
-            e.timestamp = when
-
-        return e
-
-    @commands.command()
-    async def stats(self, ctx, *, qry: commands.clean_content()):
-        """ Look up the stats for one of today's games """
-        with ctx.typing():
-            if not qry:
-                return await ctx.send("Please specify a search query.")
-
-            league, game = await self.pick_game(ctx, qry.lower())
-            if game is None:
-                return await ctx.send(f"Unable to find a match for {qry}")
-
-            e = await self.bot.loop.run_in_executor(None, self.fetch_match_data, league, game)
-
-            if e is None:
-                return await ctx.send("Timed out getting data.")
-            await ctx.send(embed=e)
 
 
 def setup(bot):
