@@ -1,0 +1,14 @@
+
+*.png
+*.json
+*.txt
+*.xml
+*.exe
+*.gif
+*.html
+*.jpg
+*.log
+*.iml
+*.ttf
+Run.bat
+*.pyc
