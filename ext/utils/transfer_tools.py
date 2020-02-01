@@ -11,6 +11,7 @@ country_dict = {
     "Antigua and Barbuda": "ag",
     "Bolivia": "bo",
     "Bosnia-Herzegovina": "ba",
+    "Bosnia and Herzegovina": "ba",
     "Botsuana": "bw",
     "British Virgin Islands": "vg",
     "Cape Verde": "cv",
@@ -27,6 +28,7 @@ country_dict = {
     "Federated States of Micronesia": "fm",
     "Hongkong": "hk",
     "Iran": "ir",
+    "Ivory Coast": "ci",
     "Korea, North": "kp",
     "Korea, South": "kr",
     "Kosovo": "xk",
@@ -43,6 +45,8 @@ country_dict = {
     "Russia": "ru",
     "Scotland": "gb",
     "Sint Maarten": "sx",
+    "Southern Sudan": "ss",
+    "South Korea": "kr",
     "St. Kitts & Nevis": "kn",
     "St. Louis": "lc",
     "St. Vincent & Grenadinen": "vc",
@@ -51,6 +55,7 @@ country_dict = {
     "The Gambia": "gm",
     "Trinidad and Tobago": "tt",
     "Turks- and Caicosinseln": "tc",
+    "USA": "us",
     "Venezuela": "ve",
     "Vietnam": "vn",
     "Wales": "gb"}
@@ -76,7 +81,7 @@ def get_flag(country):
         country = pycountry.countries.get(name=country.title()).alpha_2
     except (KeyError, AttributeError):
         try:
-            # else revert to manual dict.
+            # else revert to manual dict.w
             country = country_dict[country]
         except KeyError:
             print(f"Fail for: {country}")
@@ -222,14 +227,15 @@ async def fetch_page(self, ctx, category, query, page):
 
 
 def make_embed(e, lines, targets, special):
-    e.description = ""
+    if special:
+        e.description = "Please type matching ID#\n\n"
     items = {}
     item_id = 0
 
     if special:
         for i, j in zip(lines, targets):
-            items[item_id] = j
-            e.description += f"{item_id} {i}\n"
+            items[str(item_id)] = j
+            e.description += f"`[{item_id}]`:  {i}\n"
             item_id += 1
         return e, items
     else:
@@ -265,9 +271,7 @@ async def search(self, ctx, qry, category, special=False, whitelist_fetch=False)
 
     # Only respond to user who invoked command.
     def page_check(reaction, user):
-        print("We are checking for reactions.")
         if reaction.message.id == m.id and user.id == ctx.author.id:
-            print("Right user.")
             ej = str(reaction.emoji)
             if ej.startswith(('⏮', '◀', '▶', '⏭', '🚫')):
                 return True
@@ -276,13 +280,14 @@ async def search(self, ctx, qry, category, special=False, whitelist_fetch=False)
         if ctx.message.author.id == msg.author.id:
             return msg.content in items
 
+
     # Reaction Logic Loop.
     while True:
         try:
             received, dead = await asyncio.wait(
                 [ctx.bot.wait_for('message', check=reply_check, timeout=30),
                  ctx.bot.wait_for('reaction_add', check=page_check, timeout=30)], return_when=asyncio.FIRST_COMPLETED)
-        except TimeoutError:
+        except asyncio.TimeoutError:
             try:
                 await m.edit(content="Timed out waiting for you to reply.", embed=None)
                 return await m.clear_reactions()
@@ -291,28 +296,28 @@ async def search(self, ctx, qry, category, special=False, whitelist_fetch=False)
 
         for i in dead:
             i.cancel()
-        result = received.pop().result()
-        if len(result) == 1:
+        res = received.pop().result()
+        if isinstance(res, discord.Message):
             # It's a message.
-            return await self.cats[category]["outfunc"](ctx, e, result)
+            await m.delete()
+            await self.cats[category]["outfunc"](ctx, e, items[res.content])
+            return await res.delete()
         else:
             # it's a reaction.
-            res = result[0]
-            if res.emoji == "⏮":  # first
+            reaction, user = res
+            if reaction.emoji == "⏮":  # first
                 page = 1
                 await m.remove_reaction("⏮", ctx.message.author)
-            elif res.emoji == "◀":  # prev
+            elif reaction.emoji == "◀":  # prev
                 await m.remove_reaction("◀", ctx.message.author)
-                if page > 1:
-                    page = page - 1
-            elif res.emoji == "▶":  # next
+                page = page - 1 if page > 1 else page
+            elif reaction.emoji == "▶":  # next
                 await m.remove_reaction("▶", ctx.message.author)
-                if page < total_pages:
-                    page = page + 1
-            elif res.emoji == "⏭":  # last
+                page = page + 1 if page < total_pages else page
+            elif reaction.emoji == "⏭":  # last
                 page = total_pages
                 await m.remove_reaction("⏭", ctx.message.author)
-            elif res.emoji == "🚫":  # eject
+            elif reaction.emoji == "🚫":  # eject
                 return await m.delete()
 
         # Fetch the next page of results.
