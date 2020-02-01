@@ -4,6 +4,7 @@ import discord
 from discord.ext import commands
 from ext.utils import transfer_tools
 
+# TODO: convert to tasks extention
 
 class TransferTicker(commands.Cog):
     """ Create and configure Transfer-Ticker channels"""
