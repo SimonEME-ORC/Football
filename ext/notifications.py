@@ -32,26 +32,6 @@ class Notifications(commands.Cog):
 					continue
 				if v is not None:
 					self.bot.notif_cache[guild_id].update({k:v})
-	
-	# Listeners
-	@commands.Cog.listener()
-	async def on_guild_join(self,guild):
-		connection = await self.bot.db.acquire()
-		async with connection.transaction():
-			await connection.execute(""" 
-				INSERT INTO guild_settings (guild_id) VALUES ($1)
-				""",guild.id)
-			await connection.execute(""" 
-				INSERT INTO prefixes (guild_id,prefix) VALUES ($1,$2)
-				""",guild.id,".tb")
-		await self.bot.db.release(connection)
-	
-	@commands.Cog.listener()
-	async def on_guild_remove(self,guild):
-		connection = await self.bot.db.acquire()
-		async with connection.transaction():
-			await connection.execute("""DELETE FROM guild_settings WHERE guild_id = $1""",guild.id)
-		await self.bot.db.release(connection)
 
 	@commands.Cog.listener()
 	async def on_member_unban(self,guild,user):
@@ -271,7 +251,7 @@ class Notifications(commands.Cog):
 		if ch is None:
 			await ctx.send('Emoji change notifications will no longer be output.')
 		else:
-			await ctx.send(f"Notifications will be output to {channel.mention} when a emojis are changed.")
+			await ctx.send(f"Notifications will be output to {channel.mention} when emojis are changed.")
 	
 def setup(bot):
 	bot.add_cog(Notifications(bot))
