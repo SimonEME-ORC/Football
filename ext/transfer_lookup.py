@@ -6,7 +6,6 @@ from ext.utils import transfer_tools
 import datetime
 
 from importlib import reload
-
 # TODO: Merge 	Lookup commands via Alias & ctx.invoked_with & typing.optional
 
 class TransferLookup(commands.Cog):
@@ -65,13 +64,6 @@ class TransferLookup(commands.Cog):
                 "querystr": "Verein_page",
                 "parser": transfer_tools.parse_clubs,
                 "outfunc": self.get_transfers
-            },
-            "Squad": {
-                "cat": "Clubs",
-                "func": self._team,
-                "querystr": "Verein_page",
-                "parser": transfer_tools.parse_clubs,
-                "outfunc": self.get_squad
             },
             "Rumours": {
                 "cat": "Clubs",
@@ -189,12 +181,6 @@ class TransferLookup(commands.Cog):
         """ Get this season's transfers for a team on transfermarkt """
         await transfer_tools.search(self, ctx, qry, "Transfers", special=True)
 
-    @commands.command(name="squad", aliases=["roster"])
-    @commands.is_owner()
-    async def _squad(self, ctx, *, qry: commands.clean_content):
-        """ Lookup the squad for a team on transfermarkt """
-        await transfer_tools.search(self, ctx, qry, "Squad", special=True)
-
     @commands.command(name="rumours", aliases=["rumors"])
     async def _rumours(self, ctx, *, qry: commands.clean_content):
         """ Get the latest transfer rumours for a team """
@@ -256,59 +242,20 @@ class TransferLookup(commands.Cog):
                 continue
             outlist.append(f"{flag} [{pname}]({player_link}), ")
 
-        def write_field(input_list, title):
+        def write_field(title, input_list):
             output = ""
             for item in input_list:
                 if len(item) + len(output) < 1009:
                     input_list.remove(item)
-                    output += i
+                    output += item
                 else:
                     output += f"And {len(input_list)} more..."
                     break
             e.add_field(name=title, value=output.strip(","))
 
-        for k, v in {inlist: "Players in", inloans: "Loans In", outlist: "Players out", outloans: "Loans Out"}:
-            if k:
-                write_field(k, v)
+        for x, y in [("Players in", inlist), ("Loans In", inloans), ("Players out", outlist), ("Loans Out", outloans)]:
+            write_field(x, y) if y else ""
 
-        await ctx.send(embed=e)
-
-    async def get_squad(self, ctx, e, target):
-        e.description = ""
-        async with self.bot.session.get(target) as resp:
-            if resp.status != 200:
-                return await ctx.send(f"Error {resp.status} connecting to {resp.url}")
-            tree = html.fromstring(await resp.text())
-        e.set_author(name=tree.xpath('.//head/title[1]/text()')[0], url=str(resp.url))
-        e.set_footer(text=discord.Embed.Empty)
-
-        plist = []
-        players = tree.xpath('.//div[@class="large-8 columns"]/div[@class="box"]')[0].xpath('.//tbody/tr')
-
-        for i in players:
-            pname = "".join(i.xpath('.//td[@class="hauptlink"]/a[@class="spielprofil_tooltip"]/text()'))
-            if not pname:
-                continue
-            player_link = "".join(i.xpath('.//td[@class="hauptlink"]/a[@class="spielprofil_tooltip"]/@href'))
-            player_link = f"http://transfermarkt.co.uk{player_link}"
-            ppos = "".join(i.xpath('.//td[1]//tr[2]/td/text()'))
-            age = "".join(i.xpath('./td[2]/text()'))
-            reason = "".join(i.xpath('.//td[3]//text()'))
-            missed = "".join(i.xpath('.//td[6]//text()'))
-            dueback = "".join(i.xpath('.//td[5]//text()'))
-
-            plist.append(f"**[{pname}]({player_link})** {age}, {ppos}\n")
-
-        output = ""
-        count = 0
-        for i in plist:
-            if len(i) + len(output) < 1985:
-                output += i
-            else:
-                output += f"And {len(plist) - count} more..."
-                break
-            count += 1
-        e.description = output
         await ctx.send(embed=e)
 
     async def get_rumours(self, ctx, e, target):
