@@ -2,7 +2,6 @@ from discord.ext import commands
 from collections import Counter
 import datetime
 import discord
-import asyncio
 import typing
 import copy
 
@@ -25,10 +24,7 @@ class Info(commands.Cog):
 		total_members = sum(len(s.members) for s in self.bot.guilds)
 		members = f"{total_members} Members across {len(self.bot.guilds)} servers."
 		
-		try:
-			prefixes = f"\nYou can use {self.bot.prefix_cache[ctx.guild.id][0]}help to see my commands."
-		except AttributeError:
-			prefixes = f"\nYou can use {ctx.me.mention}help to see my commands."
+		prefixes = f"\nYou can use `.tb help` to see my commands."
 		
 		e.description = f"I do football lookup related things.\n I have {members}"
 		e.description += prefixes
