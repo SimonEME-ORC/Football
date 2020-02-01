@@ -24,7 +24,8 @@ class Bot(commands.Bot):
 		super().__init__(
 			description="Football lookup bot by Painezor#8489",
 			help_command=commands.DefaultHelpCommand(dm_help_threshold=20),
-			command_prefix=".tb"
+			command_prefix=".tb ",
+			owner_id=210582977493598208
 		)
 		self.db = kwargs.pop("database")
 		self.credentials = credentials
