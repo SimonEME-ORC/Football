@@ -4,6 +4,8 @@ import asyncio
 import typing
 import urllib
 
+from ext.utils.embed_paginator import paginate
+
 
 def get_prefix(bot, message):
     try:
@@ -236,16 +238,15 @@ class Mod(commands.Cog):
                             await ctx.send(f"🆗 {who} was unbanned")
     
     @commands.command(aliases=['bans'])
-    @commands.has_permissions(ban_members=True)
+    @commands.has_permissions(view_audit_log=True)
     @commands.bot_has_permissions(view_audit_log=True)
     async def banlist(self, ctx):
         """ Show the banlist for the server """
         banlist = await ctx.guild.bans()
-        banpage = ""
         banpages = []
         banembeds = []
         if len(banlist) == 0:
-            banpage = "☠ No bans found!"
+            banpages = "☠ No bans found!"
         else:
             for x in banlist:
                 a = x.user.name
@@ -267,47 +268,7 @@ class Mod(commands.Cog):
             thispage += 1
             banembeds.append(e)
         
-        m = await ctx.send(embed=banembeds[0])
-        if len(banembeds) == 1:
-            return
-        if len(banembeds) > 2:
-            await m.add_reaction("⏮")  # first
-        if len(banembeds) > 1:
-            await m.add_reaction("◀")  # prev
-        if len(banembeds) > 1:
-            await m.add_reaction("▶")  # next
-        if len(banembeds) > 2:
-            await m.add_reaction("⏭")  # last
-        
-        def check(reaction, user):
-            if reaction.message.id == m.id and user == ctx.author:
-                e = str(reaction.emoji)
-                return e.startswith(('⏮', '◀', '▶', '⏭'))
-        
-        page = 0
-        # Reaction Logic Loop.
-        while True:
-            try:
-                res = await self.bot.wait_for("reaction_add", check=check, timeout=120)
-            except asyncio.TimeoutError:
-                await m.clear_reactions()
-                break
-            res = res[0]
-            if res.emoji == "⏮":  # first
-                page = 1
-                await m.remove_reaction("⏮", ctx.message.author)
-            elif res.emoji == "◀":  # prev
-                await m.remove_reaction("◀", ctx.message.author)
-                if page > 1:
-                    page = page - 1
-            elif res.emoji == "▶":  # next
-                await m.remove_reaction("▶", ctx.message.author)
-                if page < len(banembeds):
-                    page = page + 1
-            elif res.emoji == "⏭":  # last
-                page = len(banembeds)
-                await m.remove_reaction("⏭", ctx.message.author)
-            await m.edit(embed=banembeds[page - 1])
+        await paginate(ctx, banpages)
     
     ### Mutes & Blocks
     @commands.command()
