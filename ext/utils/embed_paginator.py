@@ -26,6 +26,7 @@ async def paginate(ctx, embeds):
             return e.startswith(('⏮', '◀', '▶', '⏭','🚫'))
 
     while not ctx.bot.is_closed():
+        remind_once = False
         try:
             reaction, user = await ctx.bot.wait_for("reaction_add", check=check, timeout=60)
         except asyncio.TimeoutError:
@@ -34,22 +35,26 @@ async def paginate(ctx, embeds):
             except discord.Forbidden:
                 pass
             return
-
-        if reaction.emoji == "⏮":  # first
-            page = 0
-            await m.remove_reaction("⏮", ctx.author)
-        if reaction.emoji == "◀":  # prev
-            if page > 0:
-                page += -1
-            await m.remove_reaction("◀", ctx.author)
-        if reaction.emoji == "▶":  # next
-            if page < len(embeds) - 1:
-                page += 1
-            await m.remove_reaction("▶", ctx.author)
-        if reaction.emoji == "⏭":  # last
-            page = len(embeds) - 1
-            await m.remove_reaction("⏭", ctx.author)
-        if reaction.emoji == "🚫":  # Delete:
-            await m.delete()
-            return
+        try:
+            if reaction.emoji == "⏮":  # first
+                page = 0
+                await m.remove_reaction("⏮", ctx.author)
+            if reaction.emoji == "◀":  # prev
+                if page > 0:
+                    page += -1
+                await m.remove_reaction("◀", ctx.author)
+            if reaction.emoji == "▶":  # next
+                if page < len(embeds) - 1:
+                    page += 1
+                await m.remove_reaction("▶", ctx.author)
+            if reaction.emoji == "⏭":  # last
+                page = len(embeds) - 1
+                await m.remove_reaction("⏭", ctx.author)
+            if reaction.emoji == "🚫":  # Delete:
+                return await m.delete()
+        except discord.Forbidden:
+            if not remind_once:
+                await ctx.send("I don't have the manage reactions permissions to remove your reactions,"
+                               " so you'll need to click twice to change page.")
+                remind_once = True
         await m.edit(embed=embeds[page])

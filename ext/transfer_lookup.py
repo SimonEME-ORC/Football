@@ -6,7 +6,6 @@ from ext.utils import transfer_tools
 import datetime
 
 from importlib import reload
-# TODO: Merge 	Lookup commands via Alias & ctx.invoked_with & typing.optional
 
 class TransferLookup(commands.Cog):
     """ Transfermarket lookups """
@@ -176,7 +175,7 @@ class TransferLookup(commands.Cog):
         """ Lookup an agent on transfermarkt """
         await transfer_tools.search(self, ctx, qry, "Agent")
 
-    @commands.command(aliases=["loans"])
+    @commands.command(aliases=["loans"], usage="transfers <team to search for>")
     async def transfers(self, ctx, *, qry: commands.clean_content):
         """ Get this season's transfers for a team on transfermarkt """
         await transfer_tools.search(self, ctx, qry, "Transfers", special=True)
