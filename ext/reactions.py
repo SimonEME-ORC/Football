@@ -67,14 +67,23 @@ class Reactions(commands.Cog):
 
         elif isinstance(error, commands.DisabledCommand):
             return  # Fail Silently.
-
+        
+        elif isinstance(error, commands.MissingPermissions):
+            if len(error.missing_perms) == 1:
+                perm_string = error.missing_perms[0]
+            else:
+                last_perm = error.missing_perms.pop(-1)
+                perm_string = ", ".join(error.missing_perms) + " and " + last_perm
+            msg = f'🚫 You need {perm_string} permissions to do that.'
+            return await ctx.send(msg)
+        
         elif isinstance(error, commands.BotMissingPermissions):
             if len(error.missing_perms) == 1:
-                permstring = error.missing_perms[0]
+                perm_string = error.missing_perms[0]
             else:
-                lastperm = error.missing_perms.pop(-1)
-                permstring = ", ".join(error.missing_perms) + " and " + lastperm
-            msg = f'🚫 I need {permstring} permissions to do that.\n\n'
+                last_perm = error.missing_perms.pop(-1)
+                perm_string = ", ".join(error.missing_perms) + " and " + last_perm
+            msg = f'🚫 I need {perm_string} permissions to do that.\n\n'
             msg += f'If you have another bot for this command, you can disable this command for me with ' \
                    f'{ctx.me.mention} disable {ctx.command}\n\n'
             msg += f"You can also stop prefix clashes by using {ctx.me.mention}prefix remove {ctx.prefix} to stop me " \
