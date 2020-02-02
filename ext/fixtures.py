@@ -409,7 +409,8 @@ class Fixtures(commands.Cog):
         xp = './/div[@id="box-table-type--1"]'
         multi = (By.LINK_TEXT, 'scroll right »')
         clicks = [(By.XPATH, ".//span[@class='button cookie-law-accept']")]
-        captures, e, src = self.get_html(url, xpath=xp, clicks=clicks, multi_capture=multi, debug=True)
+        delete = [(By.XPATH, './/div[@class="seoAdWrapper"]'), (By.XPATH, './/div[@class="banner--sticky"]')]
+        captures, e, src = self.get_html(url, xpath=xp, clicks=clicks, multi_capture=multi, delete_elements=delete)
         
         e.title = "Bracket"
         e.description = "Please click on picture -> open original to enlarge"
