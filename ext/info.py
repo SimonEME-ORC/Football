@@ -120,8 +120,22 @@ class Info(commands.Cog):
                 activity = f"{discord.ActivityType[activity.type]} {activity.name}\n"
             except KeyError:  # Fix on custom status update.
                 activity = ""
-            e.add_field(name=f'Joined {ctx.guild.name}', value=member.joined_at.strftime("%d %b %Y at %H:%M:%S"),
-                        inline=False)
+            
+            time_delta = member.joined_at - datetime.datetime.now()
+            if time_delta.total_seconds() > 600:  # 10 minutes
+                coloured_time = f"```glsl\n[{member.joined_at}]```"  # orange
+            elif time_delta.total_seconds() > 1440:  # 1 day
+                coloured_time = f"```fix\n[{member.joined_at}]```"  # yellow
+            elif time_delta.total_seconds() > 604800:  # 1 week
+                coloured_time = f"```brainfuck\n[{member.joined_at}]```"  # grey
+            elif time_delta.total_seconds() > 2419200:  # 1 month
+                coloured_time = f"```yaml\n[{member.joined_at}]```"  # cyan
+            elif time_delta.total_seconds() > 15780000:  # 6 months
+                coloured_time = f"```CSS\n{member.joined_at}```"  # green
+            else:
+                coloured_time = f"```ini\n[{member.joined_at}]```"  # blue
+                
+            e.add_field(name=f'Joined {ctx.guild.name}', value=coloured_time,inline=False)
             e.colour = member.colour
         except AttributeError:
             status = ""
@@ -197,10 +211,11 @@ class Info(commands.Cog):
         if user is None:
             user = ctx.author
         e = discord.Embed()
-        e.title = "Avatar"
-        e.url = user.avatar_url
+        e.colour = user.color
+        e.set_footer(text=user.avatar_url)
+        e.timestamp = datetime.datetime.now()
         e.description = f"{user.mention}'s avatar"
-        e.set_image(url=user.avatar_url)
+        e.set_image(url=str(user.avatar_url))
         await ctx.send(embed=e)
 
 
