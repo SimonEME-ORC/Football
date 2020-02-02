@@ -5,7 +5,10 @@ import discord
 async def paginate(ctx, embeds):
     # Paginator
     page = 0
-    m = await ctx.send(embed=embeds[page])
+    try:
+        m = await ctx.send(embed=embeds[page])
+    except IndexError:
+        await ctx.send("Couldn't find anything.")
 
     # Add reactions
     if len(embeds) > 1:
