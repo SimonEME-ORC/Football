@@ -1,7 +1,7 @@
 import asyncio
 
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 # Web Scraping
 from lxml import html
@@ -36,7 +36,6 @@ default_leagues = [
     "USA: MLS"
 ]
 
-# TODO: convert to tasks extention
 # TODO: re-code vidi-printer
 
 
@@ -45,16 +44,15 @@ class ScoresChannel(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        self.interval_timer = 60
-        self.scores_on = True
         self.score_channel_cache = {}
         self.score_channel_league_cache = {}
         self.bot.live_games = {}
-        self.msgdict = {}
+        self.msg_dict = {}
         self.bot.loop.create_task(self.update_cache())
-        self.bot.scores = self.bot.loop.create_task(self.score_loop())
+        self.bot.scores = self.score_loop.start()
         self.driver = None
 
+    # TODO: Fix this up with some default dict stuff.
     async def update_cache(self):
         connection = await self.bot.db.acquire()
         async with connection.transaction():
@@ -80,40 +78,38 @@ class ScoresChannel(commands.Cog):
         self.score_channel_league_cache = whitelist_cache
 
     def cog_unload(self):
-        self.scores_on = False
         self.bot.scores.cancel()
-        if self.driver is not None:
-            self.driver.quit()
 
     # Core Loop
+    @tasks.loop(minutes=1)
     async def score_loop(self):
         """ Score Checker Loop """
-        await self.bot.wait_until_ready()
-        while self.scores_on:
-            try:
-                games = await self.bot.loop.run_in_executor(None, self.fetch_data)
-            except Exception as e:
-                print("Exception in score_loop.")
-                print(type(e).__name__)
-                print(e.args)
-                await asyncio.sleep(60)
-                continue
+        try:
+            games = await self.bot.loop.run_in_executor(None, self.fetch_data)
+        except Exception as e:
+            print("Exception in score_loop.")
+            print(type(e).__name__)
+            print(e.args)
+        else:
             await self.write_raw(games)
             # Iterate: Check vs each server's individual config settings
             await self.localise_data()
-
+    
             # Send message to server.
-            if self.scores_on:
-                try:
-                    await self.spool_messages()
-                except discord.ConnectionClosed:
-                    continue
-            else:
-                return
+            try:
+                await self.spool_messages()
+            except discord.ConnectionClosed:
+                pass
 
-            # Loop.
-            await asyncio.sleep(self.interval_timer)
-
+    @score_loop.before_loop
+    async def before_score_loop(self):
+        await self.bot.wait_until_ready()
+        self.driver = self.bot.loop.run_in_executor(spawn_driver())
+        
+    @score_loop.before_loop
+    async def after_score_loop(self):
+        self.driver.quit()
+        
     def fetch_data(self):
         xp = ".//div[@class='sportName soccer']"
         if not self.driver:
@@ -193,11 +189,11 @@ class ScoresChannel(commands.Cog):
                 except KeyError:
                     leagues = default_leagues
                 
-                if c not in self.msgdict:
-                    self.msgdict[c] = {}
-                    self.msgdict[c]["msg_list"] = []
+                if c not in self.msg_dict:
+                    self.msg_dict[c] = {}
+                    self.msg_dict[c]["msg_list"] = []
 
-                self.msgdict[c]["raw_data"] = []
+                self.msg_dict[c]["raw_data"] = []
 
                 today = datetime.datetime.now().strftime(
                     "Live Scores for **%a %d %b %Y** (last updated at **%H:%M:%S**)\n\n")
@@ -208,21 +204,20 @@ class ScoresChannel(commands.Cog):
                     if len(rawtext) + len(self.bot.live_games[j]["raw"]) < 1999:
                         rawtext += self.bot.live_games[j]["raw"] + "\n"
                     else:
-                        self.msgdict[c]["raw_data"] += [rawtext]
+                        self.msg_dict[c]["raw_data"] += [rawtext]
                         rawtext = self.bot.live_games[j]["raw"] + "\n"
 
                     if rawtext == today:
                         rawtext += "Either there's no games today, something broke, or you have your list of leagues " \
                                    "set very small\n\n You can add more leagues with `ls add league_name`."
-                self.msgdict[c]["raw_data"] += [rawtext]
+                self.msg_dict[c]["raw_data"] += [rawtext]
 
     async def spool_messages(self):
-        if not self.scores_on:
-            return
-        for c, v in self.msgdict.items():
+        for c, v in self.msg_dict.items():
             # Create messages if none exist.
             # Or if a different number of messages is required.
-            if not self.msgdict[c]["msg_list"] or len(self.msgdict[c]["msg_list"]) != len(self.msgdict[c]["raw_data"]):
+            if not self.msg_dict[c]["msg_list"] or \
+                    len(self.msg_dict[c]["msg_list"]) != len(self.msg_dict[c]["raw_data"]):
                 ch = self.bot.get_channel(c)
                 try:
                     await ch.purge()
@@ -232,18 +227,18 @@ class ScoresChannel(commands.Cog):
                 except AttributeError:
                     print(f'Live Scores Loop: Invalid channel: {c}')
                     continue
-                for d in self.msgdict[c]["raw_data"]:
+                for d in self.msg_dict[c]["raw_data"]:
                     # Append message ID to our list
                     try:
                         m = await ch.send(d)
-                        self.msgdict[c]["msg_list"].append(m)
-                    except (discord.NotFound, discord.Forbidden):
+                        self.msg_dict[c]["msg_list"].append(m)
+                    except (discord.NotFound, discord.Forbidden) as e:
                         print("-- error sending message to scores channel --")
-                        print(x)
+                        print(d)
                         print(e)
             else:
                 # Edit message pairs if pre-existing.
-                tuples = list(zip(self.msgdict[c]["msg_list"], self.msgdict[c]["raw_data"]))
+                tuples = list(zip(self.msg_dict[c]["msg_list"], self.msg_dict[c]["raw_data"]))
                 for x, y in tuples:
                     try:
                         await x.edit(content=y)
@@ -406,7 +401,8 @@ class ScoresChannel(commands.Cog):
 
         await ctx.send("\n".join(replies))
 
-    @ls.group(name="remove", aliases=["del", "delete"], usage="ls remove <(Optional: #channel #channel2)> <Country: League Name>")
+    @ls.group(name="remove", aliases=["del", "delete"],
+              usage="ls remove <(Optional: #channel #channel2)> <Country: League Name>")
     @commands.has_permissions(manage_channels=True)
     async def _remove(self, ctx, channels: commands.Greedy[discord.TextChannel], *, target: commands.clean_content):
         """ Remove a competition from your live-scores channels """
@@ -484,29 +480,29 @@ class ScoresChannel(commands.Cog):
             res = res.lstrip('cjs.search.jsonpCallback(').rstrip(");")
             res = json.loads(res)
 
-        resdict = {}
+        res_dict = {}
         key = 0
-        # Remove irrel.
+        # Remove irrelevant.
         for i in res["results"]:
             # Format for LEAGUE
             if i["participant_type_id"] == 0:
                 # Sample League URL: https://www.flashscore.com/soccer/england/premier-league/
-                resdict[str(key)] = {"Match": i['title']}
+                res_dict[str(key)] = {"Match": i['title']}
                 key += 1
 
-        if not resdict:
+        if not res_dict:
             return await m.edit(content=f"No results for query: {qry}")
 
-        if len(resdict) == 1:
+        if len(res_dict) == 1:
             try:
                 await m.delete()
             except discord.Forbidden:
                 pass
-            return resdict["0"]["Match"]
+            return res_dict["0"]["Match"]
 
         id_strings = ""
-        for i in resdict:
-            id_strings += f"{i}: {resdict[i]['Match']}\n"
+        for i in res_dict:
+            id_strings += f"{i}: {res_dict[i]['Match']}\n"
 
         try:
             await m.edit(content=f"Please type matching id: ```{id_strings}```")
@@ -515,7 +511,7 @@ class ScoresChannel(commands.Cog):
             return await m.edit(content=f"Too many matches to display, please be more specific.")
 
         def check(message):
-            if message.author.id == ctx.author.id and message.content in resdict:
+            if message.author.id == ctx.author.id and message.content in res_dict:
                 return True
 
         try:
@@ -529,7 +525,7 @@ class ScoresChannel(commands.Cog):
             await match.delete()
         except (discord.Forbidden, discord.NotFound):
             pass
-        return resdict[mcontent]["Match"]
+        return res_dict[mcontent]["Match"]
 
 
 def setup(bot):
