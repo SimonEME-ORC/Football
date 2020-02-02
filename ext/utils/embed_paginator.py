@@ -30,7 +30,7 @@ async def paginate(ctx, embeds):
                 await m.clear_reactions()
             except discord.Forbidden:
                 pass
-            break
+            return
 
         if reaction.emoji == "⏮":  # first
             page = 0
@@ -48,5 +48,5 @@ async def paginate(ctx, embeds):
             await m.remove_reaction("⏭", ctx.author)
         if reaction.emoji == "🚫":  # Delete:
             await m.delete()
-            break
+            return
         await m.edit(embed=embeds[page])
