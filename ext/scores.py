@@ -406,9 +406,9 @@ class ScoresChannel(commands.Cog):
 
         await ctx.send("\n".join(replies))
 
-    @ls.command(aliases=["del", "delete"], usage="ls remove <(Optional: #channel #channel2)> <Country: League Name>")
+    @ls.group(name="remove", aliases=["del", "delete"], usage="ls remove <(Optional: #channel #channel2)> <Country: League Name>")
     @commands.has_permissions(manage_channels=True)
-    async def remove(self, ctx, channels: commands.Greedy[discord.TextChannel], *, target: commands.clean_content):
+    async def _remove(self, ctx, channels: commands.Greedy[discord.TextChannel], *, target: commands.clean_content):
         """ Remove a competition from your live-scores channels """
         channels = await self._pick_channels(ctx, channels)
 
@@ -426,6 +426,7 @@ class ScoresChannel(commands.Cog):
                     leagues = self.score_channel_league_cache[c.id]
                     if target not in leagues:
                         replies.append(f"🚫 **{target}** was not in {c.mention}'s tracked leagues.")
+                        continue
                     else:
                         await connection.execute(""" 
                             DELETE FROM scores_channels_leagues WHERE (league,channel_id) = ($1,$2)

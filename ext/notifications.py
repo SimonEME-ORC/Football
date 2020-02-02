@@ -11,6 +11,7 @@ class Notifications(commands.Cog):
 
 	# TODO: Code Bot notifications messages. (db columns exist)
 	# TODO: On Channel Delete - Cascades!
+	# TODO: Custom welcome message
 	# TODO: Port on_message_delete
 	# TODO: Custom Reactions.
 	# TODO: on member name change
