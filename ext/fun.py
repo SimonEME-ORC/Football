@@ -1,3 +1,5 @@
+import re
+
 from discord.ext.commands.cooldowns import BucketType
 from discord.ext import commands
 import datetime
@@ -8,21 +10,21 @@ import random
 from ext.utils.embed_paginator import paginate
 
 
-class Misc(commands.Cog):
-    """ Miscellaneous things. """
-
+class Fun(commands.Cog):
+    """ Toys """
+    
     def __init__(self, bot):
         self.bot = bot
-
+    
     @commands.command(hidden=True)
     async def itscominghome(self, ctx):
         """ Football's coming home """
         await ctx.send("No it's fucking not.")
-
+    
     @commands.command(name="8ball", aliases=["8"])
     async def eightball(self, ctx):
         """ Magic Geordie 8ball """
-
+        
         res = ["probably", "Aye", "aye mate", "wey aye.", "aye trust is pal.",
                "Deffo m8", "fuckin aye.", "fucking rights", "think so", "absofuckinlutely",
                # Negative
@@ -33,7 +35,7 @@ class Misc(commands.Cog):
                "mebbe like", "dain't bet on it like"
                ]
         await ctx.send(f":8ball: {ctx.author.mention} {random.choice(res)}")
-
+    
     @commands.command()
     async def lenny(self, ctx):
         """ ( ͡° ͜ʖ ͡°) """
@@ -42,7 +44,7 @@ class Misc(commands.Cog):
                   '(☭ ͜ʖ ☭)', '( ° ͜ʖ °)', '( ‾ ʖ̫ ‾)', '( ͡° ʖ̯ ͡°)', '( ͡° ل͜ ͡°)', '( ͠° ͟ʖ ͠°)', '( ͡o ͜ʖ ͡o)',
                   '( ͡☉ ͜ʖ ͡☉)', 'ʕ ͡° ͜ʖ ͡°ʔ', '( ͡° ͜ʖ ͡ °)']
         await ctx.send(random.choice(lennys))
-
+    
     @commands.command(aliases=["horo"])
     async def horoscope(self, ctx, *, sign: commands.clean_content):
         """ Find out your horoscope for this week """
@@ -51,17 +53,17 @@ class Misc(commands.Cog):
             "Aquarius": "♒", "Aries": "♈", "Cancer": "♋", "Capricorn": "♑", "Gemini": "♊", "Leo": "♌", "Libra": "♎",
             "Scorpius": "♏", "Scorpio": "♏", "Sagittarius": "♐", "Pisces": "♓", "Taurus": "♉", "Virgo": "♍",
         }
-
+        
         # Get Sunday Just Gone.
         sun = datetime.datetime.now().date() - datetime.timedelta(days=datetime.datetime.now().weekday() + 1)
         # Get Saturday Coming
         sat = sun + datetime.timedelta(days=6)
-
+        
         sunstring = sun.strftime('%a %d %B %Y')
         satstring = sat.strftime('%a %d %B %Y')
-
+        
         e = discord.Embed()
-        e.color = 0x7289DA
+        e.colour = 0x7289DA
         e.description = "*\"The stars and planets will not affect your life in any way\"*"
         try:
             e.title = f"{horos[sign]} {sign}"
@@ -70,36 +72,32 @@ class Misc(commands.Cog):
         ftstr = f"Horoscope for {sunstring} - {satstring}"
         e.set_footer(text=ftstr)
         await ctx.send(embed=e)
-
+    
     @commands.command()
     async def poll(self, ctx, *, arg: commands.clean_content):
         """ Thumbs up / Thumbs Down """
-        try:
-            await ctx.message.delete()
-        except:
-            pass
         e = discord.Embed(color=0x7289DA)
         e.title = f"Poll"
         e.description = arg
         e.set_footer(text=f"Poll created by {ctx.author.name}")
-
+        
         m = await ctx.send(embed=e)
         await m.add_reaction('👍')
         await m.add_reaction('👎')
-
+    
     @commands.command(aliases=["rather"])
     async def wyr(self, ctx):
         """ Would you rather... """
-
+        
         async def fetch():
-            async with self.bot.session.get("http://www.rrrather.com/botapi") as resp:
-                resp = await resp.json()
-                return resp
-
+            async with self.bot.session.get("http://www.rrrather.com/botapi") as response:
+                response = await response.json()
+                return response
+        
         # Reduce dupes.
         cache = []
         tries = 0
-        while tries < 20:
+        while True:
             resp = await fetch()
             # Skip stupid shit.
             if resp["choicea"] == resp["choiceb"]:
@@ -110,28 +108,28 @@ class Misc(commands.Cog):
             else:
                 cache += resp
                 break
-
-        async def write(resp):
-            title = resp["title"].strip().capitalize().rstrip('.?,:')
-            opta = resp["choicea"].strip().capitalize().rstrip('.?,!').lstrip('.')
-            optb = resp["choiceb"].strip().capitalize().rstrip('.?,!').lstrip('.')
+        
+        async def write(response):
+            title = response["title"].strip().capitalize().rstrip('.?,:')
+            opta = response["choicea"].strip().capitalize().rstrip('.?,!').lstrip('.')
+            optb = response["choiceb"].strip().capitalize().rstrip('.?,!').lstrip('.')
             mc = f"{ctx.author.mention} **{title}...** \n{opta} \n{optb}"
             return mc
-
-        async def react(m):
-            await m.add_reaction('🇦')
-            await m.add_reaction('🇧')
-            await m.add_reaction('🎲')
-
+        
+        async def react(message):
+            self.bot.loop.create_task(message.add_reaction('🇦'))
+            self.bot.loop.create_task(message.add_reaction('🇧'))
+            self.bot.loop.create_task(message.add_reaction('🎲'))
+        
         m = await ctx.send(await write(resp))
         await react(m)
-
-        # Reroller
+        
+        # Re-roller
         def check(reaction, user):
             if reaction.message.id == m.id and user == ctx.author:
                 e = str(reaction.emoji)
                 return e == '🎲'
-
+        
         while True:
             try:
                 rea = await self.bot.wait_for("reaction_add", check=check, timeout=120)
@@ -144,19 +142,19 @@ class Misc(commands.Cog):
                 await m.clear_reactions()
                 await m.edit(content=await write(resp))
                 await react(m)
-
+    
     @commands.command()
     @commands.is_owner()
     async def secrettory(self, ctx):
         await ctx.send(f"The secret tory is {random.choice(ctx.guild.members).mention}")
-
+    
     @commands.command(aliases=["choice", "pick", "select"])
     async def choose(self, ctx, *, choices):
         """ Make a decision for me (seperate choices with commas)"""
         choices = discord.utils.escape_mentions(choices)
         x = choices.split(",")
         await ctx.send(f"{ctx.author.mention}: {random.choice(x)}")
-
+    
     @commands.command(hidden=True)
     @commands.bot_has_permissions(kick_members=True)
     @commands.cooldown(2, 60, BucketType.user)
@@ -174,12 +172,12 @@ class Misc(commands.Cog):
                     f"user.)")
         else:
             await ctx.send(outcome)
-
+    
     @commands.command(aliases=["flip", "coinflip"])
     async def coin(self, ctx):
         """ Flip a coin """
         await ctx.send(random.choice(["Heads", "Tails"]))
-
+    
     @commands.command(hidden=True)
     @commands.bot_has_permissions(kick_members=True)
     async def kickme(self, ctx):
@@ -192,7 +190,7 @@ class Misc(commands.Cog):
             await ctx.send('❔ Kicking failed.')
         else:
             await ctx.send(f"👢 {ctx.author.mention} kicked themself")
-
+    
     @commands.command(hidden=True, aliases=["bamme"])
     @commands.bot_has_permissions(ban_members=True)
     async def banme(self, ctx):
@@ -205,7 +203,7 @@ class Misc(commands.Cog):
             await ctx.send("❔ Banning failed.")
         else:
             await ctx.send(f"☠ {ctx.author.mention} banned themself.")
-
+    
     @commands.command(hidden=True)
     @commands.guild_only()
     async def triggered(self, ctx):
@@ -216,42 +214,42 @@ class Misc(commands.Cog):
             await asyncio.sleep(1)
             await trgmsg.edit(content="🚨 🇹 🇷 🇮 🇬 🇬 🇪 🇷  🇼 🇦 🇷 🇳 🇮 🇳 🇬  🚨")
             await asyncio.sleep(1)
-
+    
     @commands.command(hidden=True)
     @commands.has_permissions(add_reactions=True)
     async def uprafa(self, ctx):
         """ Adds an upvote reaction to the last 10 messages """
         async for message in ctx.channel.history(limit=10):
             await message.add_reaction(":upvote:332196220460072970")
-
+    
     @commands.command(hidden=True)
     @commands.has_permissions(add_reactions=True)
     async def downrafa(self, ctx):
         """ Adds a downvote reaction to the last 10 messages """
         async for message in ctx.channel.history(limit=10):
             await message.add_reaction(":downvote:332196251959427073")
-
+    
     @commands.command(hidden=True)
     @commands.has_permissions(manage_reactions=True)
     async def norafa(self, ctx, *, msgs=30):
         """ Remove reactions from last x messages """
         async for message in ctx.channel.history(limit=msgs):
             await message.clear_reactions()
-
+    
     @commands.command(aliases=["ttj"], hidden=True)
     @commands.is_owner()
     async def thatsthejoke(self, ctx):
         """ MENDOZAAAAAAAAAAAAA """
         await ctx.send("https://www.youtube.com/watch?v=xECUrlnXCqk")
-
+    
     @commands.command(aliases=["alreadydead"], hidden=True)
     @commands.is_owner()
     async def dead(self, ctx):
         """ STOP STOP HE'S ALREADY DEAD """
         await ctx.send("https://www.youtube.com/watch?v=mAUY1J8KizU")
-
+    
     @commands.command(aliases=["urbandictionary"])
-    async def ud(self, ctx, *, lookup : commands.clean_content):
+    async def ud(self, ctx, *, lookup: commands.clean_content):
         """ Lookup a definition from urban dictionary """
         await ctx.trigger_typing()
         url = f"http://api.urbandictionary.com/v0/define?term={lookup}"
@@ -260,12 +258,11 @@ class Misc(commands.Cog):
                 await ctx.send(f"🚫 HTTP Error, code: {resp.status}")
                 return
             resp = await resp.json()
-
+        
         tn = "http://d2gatte9o95jao.cloudfront.net/assets/apple-touch-icon-2f29e978facd8324960a335075aa9aa3.png"
-
-        #TODO: replace [] with links.
+        
         embeds = []
-
+        
         resp = resp["list"]
         # Populate Embed, add to list
         e = discord.Embed(color=0xFE3511)
@@ -278,17 +275,22 @@ class Misc(commands.Cog):
             for i in resp:
                 e.title = i["word"]
                 e.url = i["permalink"]
-                e.description = i["definition"]
-                e.description = e.description[:2047]
+                de = i["definition"]
+                for z in re.finditer(r'\[(.*?)\]', de):
+                    z1 = z.group(1).replace(' ', "%20")
+                    z = z.group()
+                    de = de.replace(z,
+                                    f"{z}(https://www.urbandictionary.com/define.php?term={z1})")
+                e.description = de[:2047]
                 if i["example"]:
                     e.add_field(name="Example", value=i["example"])
-
+                
                 e.set_footer(text=f"Page {count} of {len(resp)} ({un}) | 👍🏻{i['thumbs_up']} 👎🏻{i['thumbs_down']}")
                 this_e = e.copy()
                 embeds.append(this_e)
                 e.clear_fields()
                 count += 1
-
+        
         else:
             e.description = f"🚫 No results found for {lookup}."
             e.set_footer(text=un)
@@ -298,4 +300,4 @@ class Misc(commands.Cog):
 
 
 def setup(bot):
-    bot.add_cog(Misc(bot))
+    bot.add_cog(Fun(bot))
