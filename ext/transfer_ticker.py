@@ -1,17 +1,18 @@
-import asyncio
-from lxml import html
-import discord
-from discord.ext import commands
+from collections import defaultdict
+from discord.ext import commands, tasks
 from ext.utils import transfer_tools
+from lxml import html
+import asyncio
+import discord
 
 # TODO: convert to tasks extention
 
 class TransferTicker(commands.Cog):
     """ Create and configure Transfer-Ticker channels"""
 
-    async def imgurify(self, imgurl):
+    async def imgurify(self, img_url):
         # upload image to imgur
-        d = {"image": imgurl}
+        d = {"image": img_url}
         h = {'Authorization': f'Client-ID {self.bot.credentials["Imgur"]["Authorization"]}'}
         async with self.bot.session.post("https://api.imgur.com/3/image", data=d, headers=h) as resp:
             res = await resp.json()
@@ -20,183 +21,161 @@ class TransferTicker(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.parsed = []
-        self.transfers_enabled = True
-        self.bot.loop.create_task(self.update_cache())
-        self.bot.transfer_ticker = self.bot.loop.create_task(self.transfer_ticker())
-        self.transfer_channel_cache = {}
-        self.transfer_channel_whitelist_cache = {}
+        self.bot.transfer_ticker = self.transfer_ticker.start()
+        self.whitelist_cache = defaultdict()
+        self.channel_cache = defaultdict()
 
     def cog_unload(self):
-        self.transfers_enabled = False
-        self.bot.transfer_ticker.cancel()
+        self.transfer_ticker.cancel()
 
     async def update_cache(self):
-        self.transfer_channel_cache = {}
-        self.transfer_channel_whitelist_cache = {}
-
+        # Get our new data.
         connection = await self.bot.db.acquire()
         async with connection.transaction():
             channels = await connection.fetch("""SELECT * FROM transfers_channels""")
             whitelists = await connection.fetch("""SELECT * FROM transfers_whitelists""")
         await self.bot.db.release(connection)
-
-        channel_cache = {}
+        
+        # TODO: Convert this to nested default dicts
+        # Clear our cache
+        self.channel_cache.clear()
+        self.whitelist_cache.clear()
+        
+        # Repopulate them.
         for r in channels:
             this_item = {r["channel_id"]: {"short_mode": r["short_mode"]}}
-            try:
-                channel_cache[r["guild_id"]].update(this_item)
-            except KeyError:
-                channel_cache[r["guild_id"]] = this_item
-
-        self.transfer_channel_cache = channel_cache
-
-        whitelist_cache = {}
+            self.channel_cache[r["guild_id"]].update(this_item)
         for r in whitelists:
             this_item = {{"type": r["type"]}, {"item": r["item"]}, {"alias": r["alias"]}}
-            try:
-                whitelist_cache[r["channel_id"]].update(this_item)
-            except KeyError:
-                whitelist_cache[r["channel_id"]] = this_item
+            self.whitelist_cache[r["channel_id"]].update(this_item)
 
-        self.transfer_channel_whitelist_cache = whitelist_cache
-
+    @tasks.loop(minutes=1)
     async def transfer_ticker(self):
-        await self.bot.wait_until_ready()
-        firstrun = True
-        loopiter = 60
-        while self.transfers_enabled:
-            try:
-                async with self.bot.session.get('https://www.transfermarkt.co.uk/statistik/neuestetransfers') as resp:
-                    if resp.status != 200:
-                        await asyncio.sleep(loopiter)
-                        continue
-                    tree = html.fromstring(await resp.text())
-            # Bare excepts are bad but I don't care.
-            except Exception as e:
-                print("Error fetching transfermarkt data.")
-                print(e)  # Find out what this error is and narrow the exception down.
-                await asyncio.sleep(loopiter)
+        try:
+            async with self.bot.session.get('https://www.transfermarkt.co.uk/statistik/neuestetransfers') as resp:
+                if resp.status != 200:
+                    return
+                tree = html.fromstring(await resp.text())
+        except Exception as e:
+            print("Error fetching transfermarkt data.")
+            print(e)  # Find out what this error is and narrow the exception down.
+            return
+        
+        skip_output = True if not self.parsed else False
+        
+        for i in tree.xpath('.//div[@class="responsive-table"]/div/table/tbody/tr'):
+            player_name = "".join(i.xpath('.//td[1]//tr[1]/td[2]/a/text()')).strip()
+            if not player_name or player_name in self.parsed:
+                continue  # skip when duplicate / void.
+            else:
+                self.parsed.append(player_name)
+
+            # We don't need to output when populating after a restart.
+            if skip_output:
                 continue
 
-            players = tree.xpath('.//div[@class="responsive-table"]/div/table/tbody/tr')
+            # Player Info
+            player_link = "".join(i.xpath('.//td[1]//tr[1]/td[2]/a/@href'))
+            age = "".join(i.xpath('./td[2]//text()')).strip()
+            pos = "".join(i.xpath('./td[1]//tr[2]/td/text()'))
+            nat = i.xpath('.//td[3]/img/@title')
+            flags = []
+            for j in nat:
+                flags.append(transfer_tools.get_flag(j))
+            # nationality = ", ".join([f'{j[0]} {j[1]}' for j in list(zip(flags,nat))])
+            nationality = "".join(flags)
 
-            for i in players:
-                player_name = "".join(i.xpath('.//td[1]//tr[1]/td[2]/a/text()')).strip()
-                if not player_name or player_name in self.parsed:
-                    continue  # skip when duplicate / void.
-                else:
-                    self.parsed.append(player_name)
+            # Leagues & Fee
+            new_team = "".join(i.xpath('.//td[5]/table//tr[1]/td/a/text()'))
+            new_team_link = "".join(i.xpath('.//td[5]/table//tr[1]/td/a/@href'))
+            new_league = "".join(i.xpath('.//td[5]/table//tr[2]/td/a/text()'))
+            new_league_link = "".join(i.xpath('.//td[5]/table//tr[2]/td/a/@href'))
+            new_league_link = f"https://www.transfermarkt.co.uk{new_league_link}" if new_league_link else ""
+            new_league_flag = transfer_tools.get_flag("".join(i.xpath('.//td[5]/table//tr[2]/td//img/@alt')))
 
-                # We don't need to output when populating after a restart.
-                if firstrun:
-                    continue
+            old_team = "".join(i.xpath('.//td[4]/table//tr[1]/td/a/text()'))
+            old_team_link = "".join(i.xpath('.//td[4]/table//tr[1]/td/a/@href'))
+            old_league = "".join(i.xpath('.//td[4]/table//tr[2]/td/a/text()'))
+            old_league_link = "".join(i.xpath('.//td[4]/table//tr[2]/td/a/@href'))
+            old_league_link = f"https://www.transfermarkt.co.uk{new_league_link}" if old_league_link else ""
+            old_league_flag = transfer_tools.get_flag("".join(i.xpath('.//td[4]/table//tr[2]/td//img/@alt')))
 
-                # Player Info
-                player_link = "".join(i.xpath('.//td[1]//tr[1]/td[2]/a/@href'))
-                age = "".join(i.xpath('./td[2]//text()')).strip()
-                pos = "".join(i.xpath('./td[1]//tr[2]/td/text()'))
-                nat = i.xpath('.//td[3]/img/@title')
-                flags = []
-                for j in nat:
-                    flags.append(transfer_tools.get_flag(j))
-                # nationality = ", ".join([f'{j[0]} {j[1]}' for j in list(zip(flags,nat))])
-                nationality = "".join(flags)
+            # Markdown.
+            new_league_markdown = f"{new_league_flag} [{new_league}]({new_league_link})" if new_league != "None" \
+                else ""
+            new_team_markdown = f"[{new_team}]({new_team_link})"
+            old_league_markdown = f"{old_league_flag} [{old_league}]({old_league_link})" if old_league != "None" \
+                else ""
+            old_team_markdown = f"[{old_team}]({old_team_link})"
 
-                # Leagues & Fee
-                new_team = "".join(i.xpath('.//td[5]/table//tr[1]/td/a/text()'))
-                new_team_link = "".join(i.xpath('.//td[5]/table//tr[1]/td/a/@href'))
-                new_league = "".join(i.xpath('.//td[5]/table//tr[2]/td/a/text()'))
-                new_league_link = "".join(i.xpath('.//td[5]/table//tr[2]/td/a/@href'))
-                new_league_link = f"https://www.transfermarkt.co.uk{new_league_link}" if new_league_link else ""
-                new_league_flag = transfer_tools.get_flag("".join(i.xpath('.//td[5]/table//tr[2]/td//img/@alt')))
+            if new_league == old_league:
+                move_info = f"{old_team} to {new_team} ({new_league_flag} {new_league})"
+            else:
+                move_info = f"{old_team} ({old_league_flag} {old_league}) to {new_team} ({new_league_flag} " \
+                            f"{new_league})"
 
-                old_team = "".join(i.xpath('.//td[4]/table//tr[1]/td/a/text()'))
-                old_team_link = "".join(i.xpath('.//td[4]/table//tr[1]/td/a/@href'))
-                old_league = "".join(i.xpath('.//td[4]/table//tr[2]/td/a/text()'))
-                old_league_link = "".join(i.xpath('.//td[4]/table//tr[2]/td/a/@href'))
-                old_league_link = f"https://www.transfermarkt.co.uk{new_league_link}" if old_league_link else ""
-                old_league_flag = transfer_tools.get_flag("".join(i.xpath('.//td[4]/table//tr[2]/td//img/@alt')))
+            move_info = move_info.replace(" (None )", "")
 
-                # Markdown.
-                new_league_markdown = f"{new_league_flag} [{new_league}]({new_league_link})" if new_league != "None" \
-                    else ""
-                new_team_markdown = f"[{new_team}]({new_team_link})"
-                old_league_markdown = f"{old_league_flag} [{old_league}]({old_league_link})" if old_league != "None" \
-                    else ""
-                old_team_markdown = f"[{old_team}]({old_team_link})"
+            fee = "".join(i.xpath('.//td[6]//a/text()'))
+            fee_link = "https://www.transfermarkt.co.uk" + "".join(i.xpath('.//td[6]//a/@href'))
+            fee_markdown = f"[{fee}]({fee_link})"
 
-                if new_league == old_league:
-                    move_info = f"{old_team} to {new_team} ({new_league_flag} {new_league})"
-                else:
-                    move_info = f"{old_team} ({old_league_flag} {old_league}) to {new_team} ({new_league_flag} " \
-                                f"{new_league})"
+            e = discord.Embed()
+            e.description = ""
+            e.colour = 0x1a3151
+            e.title = f"{nationality} {player_name} | {age}"
+            e.url = f"https://www.transfermarkt.co.uk{player_link}"
 
-                move_info = move_info.replace(" (None )", "")
+            e.description = f"{pos}\n"
+            e.description += f"**To**: {new_team_markdown} {new_league_markdown}\n"
+            e.description += f"**From**: {old_team_markdown} {old_league_markdown}"
 
-                fee = "".join(i.xpath('.//td[6]//a/text()'))
-                fee_link = "https://www.transfermarkt.co.uk" + "".join(i.xpath('.//td[6]//a/@href'))
-                fee_markdown = f"[{fee}]({fee_link})"
+            if fee:
+                e.add_field(name="Reported Fee", value=fee_markdown, inline=False)
 
-                e = discord.Embed()
-                e.description = ""
-                e.colour = 0x1a3151
-                e.title = f"{nationality} {player_name} | {age}"
-                e.url = f"https://www.transfermarkt.co.uk{player_link}"
+            # Get picture and re-host on imgur.
+            th = "".join(i.xpath('.//td[1]//tr[1]/td[1]/img/@src'))
+            th = await self.imgurify(th)
+            e.set_thumbnail(url=th)
 
-                e.description = f"{pos}\n"
-                e.description += f"**To**: {new_team_markdown} {new_league_markdown}\n"
-                e.description += f"**From**: {old_team_markdown} {old_league_markdown}"
+            shortstring = f"{player_name} | {fee} | <{fee_link}>\n{move_info}"
 
-                if fee:
-                    e.add_field(name="Reported Fee", value=fee_markdown, inline=False)
+            for g, cl in self.channel_cache.items():
+                for c, k in cl.items():
+                    ch = self.bot.get_channel(c)
+                    whitelisted = self.whitelist_cache[c]
+                    if whitelisted:
+                        this_whitelist = whitelisted[i]
+                        values = [i['item'] for i in this_whitelist]
+                        if not any([new_team_link, old_team_link, new_league_link, old_league_link]) in values:
+                            continue
+                    short_mode = self.channel_cache[g][c]["short_mode"]
 
-                # Get picture and rehost on imgur.
-                th = "".join(i.xpath('.//td[1]//tr[1]/td[1]/img/@src'))
-                th = await self.imgurify(th)
-                e.set_thumbnail(url=th)
-
-                shortstring = f"{player_name} | {fee} | <{fee_link}>\n{move_info}"
-
-                for g, cl in self.transfer_channel_cache.items():
-                    for c, k in cl.items():
-                        ch = self.bot.get_channel(c)
-                        try:
-                            whitelisted = self.transfer_channel_whitelist_cache[c]
-                            print(f"Found whitelist: {whitelisted}")
-                        except KeyError:
-                            pass
+                    try:
+                        if short_mode:
+                            await ch.send(shortstring)
                         else:
-                            this_whitelist = whitelisted[i]
-                            values = [i['item'] for i in this_whitelist]
-                            print(f"to {values}")
-                            if not any([new_team_link, old_team_link, new_league_link, old_league_link]) in values:
-                                continue
-                        short_mode = self.transfer_channel_cache[g][c]["short_mode"]
+                            await ch.send(embed=e)
+                    except discord.Forbidden:
+                        print(f"Discord.Forbidden while trying to send new transfer to {c}")
+                    except AttributeError:
+                        print(
+                            f"AttributeError while trying to send new transfer to {c} - Check for channel "
+                            f"deletion.")
 
-                        try:
-                            if short_mode:
-                                await ch.send(shortstring)
-                            else:
-                                await ch.send(embed=e)
-                        except discord.Forbidden:
-                            print(f"Discord.Forbidden while trying to send new transfer to {c}")
-                        except AttributeError:
-                            print(
-                                f"AttributeError while trying to send new transfer to {c} - Check for channel "
-                                f"deletion.")
-            if firstrun:
-                firstrun = False
-            await asyncio.sleep(loopiter)
+    @transfer_ticker.before_loop()
+    async def before_tf_loop(self):
+        await self.bot.wait_until_ready()
+        await self.update_cache()
 
     async def _pick_channels(self, ctx, channels):
         # Assure guild has transfer channel.
-        try:
-            guild_cache = self.transfer_channel_cache[ctx.guild.id]
-        except KeyError:
+        guild_cache = self.channel_cache[ctx.guild.id]
+        
+        if not guild_cache:
             await ctx.send(f'{ctx.guild.name} does not have any transfers channels set.')
             channels = []
         else:
-
             # Channel picker for invoker.
             def check(message):
                 return ctx.author.id == message.author.id and message.channel_mentions
@@ -230,9 +209,8 @@ class TransferTicker(commands.Cog):
     async def tf(self, ctx, *, channels: commands.Greedy[discord.TextChannel]):
         """ Get info on your server's transfer tickers. """
         channels = await self._pick_channels(ctx, channels)
-        try:
-            guild_cache = self.transfer_channel_cache[ctx.guild.id]
-        except KeyError:
+        guild_cache = self.channel_cache[ctx.guild.id]
+        if not guild_cache:
             return await ctx.send(f"Your server does not have any transfer ticket channels set. Use `{ctx.command}tf "
                                   f"set #channel` to create one.")
 
@@ -244,15 +222,15 @@ class TransferTicker(commands.Cog):
             mode = guild_cache[i.id]["short_mode"]
             mode = "short" if mode is True else "Embed"
 
-            try:
+            whitelist = self.whitelist_cache[i.id]
+            if whitelist:
                 wl = []
-                whitelist = self.transfer_channel_whitelist_cache[i.id]
                 for x in whitelist:
                     wl.append(f"{whitelist[x]['alias']} ({whitelist[x]['type']})")
                 wl = ", ".join(wl)
                 replies.append(
                     f'Transfers are being output to {i.mention} in **{mode}** mode for your whitelist of `{wl}`')
-            except KeyError:
+            else:
                 replies.append(
                     f'**All** Transfers are being output to {i.mention} in **{mode}** mode. You can create a '
                     f'whitelist with {ctx.prefix}tf whitelist add')
@@ -266,20 +244,16 @@ class TransferTicker(commands.Cog):
         """ Toggle Short mode or Embed mode for transfer data """
         channels = await self._pick_channels(ctx, channels)
 
-        guild_cache = self.transfer_channel_cache[ctx.guild.id]
+        guild_cache = self.channel_cache[ctx.guild.id]
 
         if not toggle:
             replies = []
             for c in channels:
-                try:
-                    mode = "Short" if guild_cache[c.id]["short_mode"] else "Embed"
-                except KeyError:
-                    replies.append(f"🚫 {c.mention} is not set as a transfers channel")
-                    continue
+                mode = "Short" if guild_cache[c.id]["short_mode"] else "Embed"
                 replies.append(f"{c.mention} is set to {mode} mode.")
             return await ctx.send("\n".join(replies))
 
-        if str(toggle).lower() not in ["embed", "short"]:
+        if toggle.lower() not in ["embed", "short"]:
             return await ctx.send(f'🚫 Invalid mode "{toggle}" specified, mode can either be "embed" or "short"')
 
         update_toggle = True if toggle == "short" else False
@@ -307,10 +281,9 @@ class TransferTicker(commands.Cog):
         channels = await self._pick_channels(ctx, channels)
         replies = []
         for i in channels:
-            try:
-                whitelist = self.transfer_channel_whitelist_cache[i.id]
-            except KeyError:
-                await ctx.send(f'The whitelist for {i.mention} is currently empty, all transfers are being output.')
+            whitelist = self.whitelist_cache[i.id]
+            if not whitelist:
+                replies.append(f'The whitelist for {i.mention} is currently empty, all transfers are being output.')
                 continue
 
             wl = []
@@ -367,9 +340,8 @@ class TransferTicker(commands.Cog):
         connection = await self.bot.db.acquire()
         replies = []
         for c in channels:
-            try:
-                whitelist = self.transfer_channel_whitelist_cache[c.id]
-            except KeyError:
+            whitelist = self.whitelist_cache[c.id]
+            if not whitelist:
                 replies.append(f"🚫 {c.mention} is not set as a transfers ticker channel.")
                 continue
             if result in whitelist:
@@ -386,24 +358,31 @@ class TransferTicker(commands.Cog):
         await ctx.send(replies)
 
     @commands.Cog.listener()
+    async def on_guild_remove(self, guild):
+        if guild.id in self.channel_cache:
+            connection = await self.bot.db.acquire()
+            await connection.execute("""DELETE FROM transfers_channels WHERE guild_id = $1""", guild.id)
+            await self.bot.db.release(connection)
+            await self.update_cache()
+            
+    @commands.Cog.listener()
     async def on_channel_delete(self, channel):
-        if channel.id not in self.transfer_channel_cache[channel.guild.id]:
-            return
-        connection = await self.bot.db.acquire()
-        await connection.execute("""DELETE FROM transfers_channels WHERE channel_id = $1""", channel.id)
-        await self.bot.db.release(connection)
-        await self.update_cache()
+        if channel.id in self.channel_cache[channel.guild.id]:
+            connection = await self.bot.db.acquire()
+            await connection.execute("""DELETE FROM transfers_channels WHERE channel_id = $1""", channel.id)
+            await self.bot.db.release(connection)
+            await self.update_cache()
 
     @commands.has_permissions(manage_channels=True)
     @whitelist.command(name="remove", usage="tf whitelist remove will display a list of items for you to select from.")
     async def _remove(self, ctx, channels: commands.Greedy[discord.TextChannel]):
         channels = await self._pick_channels(ctx, channels)
-        guild_cache = self.transfer_channel_cache[ctx.guild.id]
+        guild_cache = self.channel_cache[ctx.guild.id]
 
         combined_whitelist = []
 
         for i in channels:
-            combined_whitelist += [y["alias"] for y in self.transfer_channel_whitelist_cache[i] if
+            combined_whitelist += [y["alias"] for y in self.whitelist_cache[i] if
                                    y["alias"] not in combined_whitelist]
         e = discord.Embed()
         count = 0
@@ -456,7 +435,7 @@ class TransferTicker(commands.Cog):
         connection = await self.bot.db.acquire()
         replies = []
         for c in channels:
-            if c.id in self.transfer_channel_cache:
+            if c.id in self.channel_cache:
                 replies.append(f"🚫 {c.mention} already set as transfer ticker(s)")
                 continue
 
@@ -481,7 +460,7 @@ class TransferTicker(commands.Cog):
         replies = []
         async with connection.transaction():
             for c in channels:
-                if c.id not in self.transfer_channel_cache[ctx.guild.id]:
+                if c.id not in self.channel_cache[ctx.guild.id]:
                     replies.append(f"🚫 {c.mention} was not set as transfer ticker channels..")
                     continue
 
