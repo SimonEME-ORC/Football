@@ -54,15 +54,22 @@ class ScoresChannel(commands.Cog):
         self.driver = None
 
     async def update_cache(self):
+        # Grab most recent data.
         connection = await self.bot.db.acquire()
         async with connection.transaction():
             channels = await connection.fetch("""SELECT * FROM scores_channels""")
             whitelists = await connection.fetch("""SELECT * FROM scores_channels_leagues""")
         await self.bot.db.release(connection)
-
+        
+        # TODO: Convert this to a nested defaultdict.
+        
+        # Clear out our cache.
+        self.channel_cache.clear()
+        self.whitelist_cache.clear()
+        
+        # Repopulate.
         for r in channels:
             self.channel_cache[r["guild_id"]].append(r["channel_id"])
-
         for r in whitelists:
             self.whitelist_cache[r["channel_id"]].append(r["league"])
 
@@ -303,7 +310,7 @@ class ScoresChannel(commands.Cog):
     
     @commands.Cog.listener()
     async def on_guild_remove(self, guild):
-        if guild.id in self.channel_cache:  
+        if guild.id in self.channel_cache:
             await self.update_cache()
 
     async def _pick_channels(self, ctx, channels):
@@ -508,13 +515,13 @@ class ScoresChannel(commands.Cog):
         except asyncio.TimeoutError:
             return await m.delete()
 
-        mcontent = match.content
+        match_content = match.content
         try:
             await m.delete()
             await match.delete()
         except (discord.Forbidden, discord.NotFound):
             pass
-        return res_dict[mcontent]["Match"]
+        return res_dict[match_content]["Match"]
 
 
 def setup(bot):
