@@ -303,7 +303,8 @@ class ScoresChannel(commands.Cog):
     
     @commands.Cog.listener()
     async def on_guild_remove(self, guild):
-        await self.update_cache()
+        if guild.id in self.channel_cache:  
+            await self.update_cache()
 
     async def _pick_channels(self, ctx, channels):
         # Assure guild has transfer channel.
