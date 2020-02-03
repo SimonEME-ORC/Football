@@ -1,4 +1,5 @@
 import asyncio
+from collections import defaultdict
 
 import discord
 from discord.ext import commands, tasks
@@ -43,16 +44,15 @@ class ScoresChannel(commands.Cog):
     """ Live Scores channel module """
 
     def __init__(self, bot):
+        self.whitelist_cache = defaultdict()
+        self.channel_cache = defaultdict()
         self.bot = bot
-        self.score_channel_cache = {}
-        self.score_channel_league_cache = {}
         self.bot.live_games = {}
         self.msg_dict = {}
         self.bot.loop.create_task(self.update_cache())
         self.bot.scores = self.score_loop.start()
         self.driver = None
 
-    # TODO: Fix this up with some default dict stuff.
     async def update_cache(self):
         connection = await self.bot.db.acquire()
         async with connection.transaction():
@@ -60,22 +60,11 @@ class ScoresChannel(commands.Cog):
             whitelists = await connection.fetch("""SELECT * FROM scores_channels_leagues""")
         await self.bot.db.release(connection)
 
-        channel_cache = {}
-        whitelist_cache = {}
         for r in channels:
-            try:
-                channel_cache[r["guild_id"]].append(r["channel_id"])
-            except KeyError:
-                channel_cache.update({r["guild_id"]: [r["channel_id"]]})
+            self.channel_cache[r["guild_id"]].append(r["channel_id"])
 
         for r in whitelists:
-            try:
-                whitelist_cache[r["channel_id"]].append(r["league"])
-            except KeyError:
-                whitelist_cache[r["channel_id"]] = [r["league"]]
-
-        self.score_channel_cache = channel_cache
-        self.score_channel_league_cache = whitelist_cache
+            self.whitelist_cache[r["channel_id"]].append(r["league"])
 
     def cog_unload(self):
         self.bot.scores.cancel()
@@ -104,20 +93,19 @@ class ScoresChannel(commands.Cog):
     @score_loop.before_loop
     async def before_score_loop(self):
         await self.bot.wait_until_ready()
-        self.driver = self.bot.loop.run_in_executor(spawn_driver())
+        await self.update_cache()
+        self.driver = await self.bot.loop.run_in_executor(None, spawn_driver)
+        self.driver.get("http://www.flashscore.com/")
+        xp = ".//div[@class='sportName soccer']"
+        WebDriverWait(self.driver, 10).until(ec.visibility_of_element_located((By.XPATH, xp)))
         
-    @score_loop.before_loop
+    @score_loop.after_loop
     async def after_score_loop(self):
         self.driver.quit()
         
     def fetch_data(self):
         xp = ".//div[@class='sportName soccer']"
-        if not self.driver:
-            self.driver = spawn_driver()
-            self.driver.get("http://www.flashscore.com/")
-            element = WebDriverWait(self.driver, 10).until(ec.visibility_of_element_located((By.XPATH, xp)))
-        else:
-            element = self.driver.find_element_by_xpath(xp)
+        element = self.driver.find_element_by_xpath(xp)
         
         fixture_list = element.get_attribute('innerHTML')
         fixture_list = html.fromstring(fixture_list)
@@ -182,11 +170,10 @@ class ScoresChannel(commands.Cog):
         self.bot.live_games = games
 
     async def localise_data(self):
-        for g, cl in self.score_channel_cache.items():
+        for g, cl in self.channel_cache.items():
             for c in cl:
-                try:
-                    leagues = self.score_channel_league_cache[c]
-                except KeyError:
+                leagues = self.whitelist_cache[c]
+                if not leagues:
                     leagues = default_leagues
                 
                 if c not in self.msg_dict:
@@ -256,9 +243,8 @@ class ScoresChannel(commands.Cog):
         e.title = "Live-scores channel config"
         e.description = ""
 
-        try:
-            score_channels = self.score_channel_cache[ctx.guild.id]
-        except KeyError:
+        score_channels = self.channel_cache[ctx.guild.id]
+        if not score_channels:
             return await ctx.send(f"{ctx.guild.name} has no live-scores channel set.")
 
         if len(score_channels) != 1:
@@ -307,19 +293,22 @@ class ScoresChannel(commands.Cog):
     # Delete from Db on delete..
     @commands.Cog.listener()
     async def on_channel_delete(self, channel):
-        if channel.id in self.score_channel_cache:
+        if channel.id in self.channel_cache:
             connection = await self.bot.db.acquire()
             await connection.execute("""
                 DELETE FROM scores_channels WHERE channel_id = $1
                 """, channel.id)
             await self.bot.db.release(connection)
             await self.update_cache()
+    
+    @commands.Cog.listener()
+    async def on_guild_remove(self, guild):
+        await self.update_cache()
 
     async def _pick_channels(self, ctx, channels):
         # Assure guild has transfer channel.
-        try:
-            guild_cache = self.score_channel_cache[ctx.guild.id]
-        except KeyError:
+        guild_cache = self.channel_cache[ctx.guild.id]
+        if not guild_cache:
             await ctx.send(f'{ctx.guild.name} does not have any live scores channels set.')
             channels = []
         else:
@@ -371,12 +360,12 @@ class ScoresChannel(commands.Cog):
         replies = []
         async with connection.transaction():
             for c in channels:
-                if c.id not in self.score_channel_cache[ctx.guild.id]:
+                if c.id not in self.channel_cache[ctx.guild.id]:
                     replies.append(f'🚫 {c.mention} is not set as a scores channel.')
                     continue
-                try:
-                    leagues = self.score_channel_league_cache[c.id]
-                except KeyError:
+
+                leagues = self.whitelist_cache[c.id]
+                if not leagues:
                     leagues = default_leagues.copy()
 
                 if res in leagues:
@@ -415,26 +404,25 @@ class ScoresChannel(commands.Cog):
         connection = await self.bot.db.acquire()
         async with connection.transaction():
             for c in channels:
-                if c.id not in self.score_channel_cache[ctx.guild.id]:
+                if c.id not in self.channel_cache[ctx.guild.id]:
                     replies.append(f'{c.mention} is not set as a scores channel.')
                     continue
-                try:
-                    leagues = self.score_channel_league_cache[c.id]
-                    if target not in leagues:
-                        replies.append(f"🚫 **{target}** was not in {c.mention}'s tracked leagues.")
-                        continue
-                    else:
-                        await connection.execute(""" 
-                            DELETE FROM scores_channels_leagues WHERE (league,channel_id) = ($1,$2)
-                        """, target, c.id)
-                except KeyError:
-                    leagues = default_leagues
+                leagues = self.whitelist_cache[c.id]
+                if not leagues:
+                    leagues = default_leagues.copy()
                     leagues.remove(target)
                     for lg in leagues:
-                        await connection.execute(""" 
+                        await connection.execute("""
                             INSERT INTO scores_channels_leagues (league,channel_id) VALUES ($1,$2)
                             ON CONFLICT DO NOTHING
                         """, lg, c.id)
+                elif target not in leagues:
+                    replies.append(f"🚫 **{target}** was not in {c.mention}'s tracked leagues.")
+                    continue
+                else:
+                    await connection.execute("""
+                        DELETE FROM scores_channels_leagues WHERE (league,channel_id) = ($1,$2)
+                    """, target, c.id)
 
                 replies.append(f"✅ **{target}** was deleted from the tracked leagues for {c.mention}.")
         await self.bot.db.release(connection)
@@ -454,10 +442,10 @@ class ScoresChannel(commands.Cog):
         replies = []
         async with connection.transaction():
             for c in channels:
-                if c.id not in self.score_channel_cache:
+                if c.id not in self.channel_cache:
                     replies.append(f"🚫 {c.mention} was not set as a scores channel.")
                     continue
-                if c.id not in self.score_channel_league_cache:
+                if c.id not in self.whitelist_cache:
                     replies.append(f"⚠️ {c.mention} is already using the default leagues.")
                     continue
                 async with connection.transaction():

@@ -7,8 +7,9 @@ import datetime
 
 from importlib import reload
 
+
 class TransferLookup(commands.Cog):
-    """ Transfermarket lookups """
+    """ Transfer market lookups """
 
     def __init__(self, bot):
         self.bot = bot
@@ -73,7 +74,7 @@ class TransferLookup(commands.Cog):
             }
         }
 
-    # Base lookup - No Subcommand.
+    # Base lookup - No Sub-command invoked.
     @commands.group(invoke_without_command=True)
     async def lookup(self, ctx, *, target: commands.clean_content):
         """ Perform a database lookup on transfermarkt """

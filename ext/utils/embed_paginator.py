@@ -8,7 +8,7 @@ async def paginate(ctx, embeds):
     try:
         m = await ctx.send(embed=embeds[page])
     except IndexError:
-        await ctx.send("Couldn't find anything.")
+        return await ctx.send("Couldn't find anything.")
 
     # Add reactions
     if len(embeds) > 1:
@@ -20,8 +20,8 @@ async def paginate(ctx, embeds):
             ctx.bot.loop.create_task(m.add_reaction("⏭"))  # last
     ctx.bot.loop.create_task(m.add_reaction("🚫")) # Delete
 
-    def check(reaction, user):
-        if reaction.message.id == m.id and user == ctx.author:
+    def check(r, u):
+        if r.message.id == m.id and u.id == ctx.author.id:
             e = str(reaction.emoji)
             return e.startswith(('⏮', '◀', '▶', '⏭','🚫'))
 

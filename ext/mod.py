@@ -1,8 +1,8 @@
+from copy import deepcopy
+from urllib.parse import unquote
 from discord.ext import commands
 import discord
-import asyncio
 import typing
-import urllib
 
 from ext.utils.embed_paginator import paginate
 
@@ -248,15 +248,16 @@ class Mod(commands.Cog):
         if len(banlist) == 0:
             banpages = "☠ No bans found!"
         else:
+            this_page = ""
             for x in banlist:
                 a = x.user.name
                 b = x.user.discriminator
-                if len("\💀 {a}#{b}: {x.reason}\n") + len(banpage) > 1200:
-                    banpages.append(banpage)
-                    banpage = ""
-                banpage += urllib.parse.unquote(f"\💀 {a}#{b}: {x.reason}\n")
-            banpages.append(banpage)
-        thispage = 1
+                if len(unquote("\💀 {a}#{b}: {x.reason}\n")) + len(this_page) > 1200:
+                    banpages.append(this_page)
+                    this_page = ""
+                this_page += unquote(f"\💀 {a}#{b}: {x.reason}\n")
+            banpages.append(this_page)
+        page_number = 1
         for i in banpages:
             e = discord.Embed(color=0x111)
             n = f"≡ {ctx.guild.name} discord ban list"
@@ -264,10 +265,9 @@ class Mod(commands.Cog):
             e.set_thumbnail(url="https://i.ytimg.com/vi/eoTDquDWrRI/hqdefault.jpg")
             e.title = "User (Reason)"
             e.description = i
-            e.set_footer(text=f"Page {thispage} of {len(banpages)}")
-            thispage += 1
-            banembeds.append(e)
-        
+            e.set_footer(text=f"Page {page_number} of {len(banpages)}")
+            page_number += 1
+            banembeds.append(deepcopy(e))
         await paginate(ctx, banpages)
     
     ### Mutes & Blocks

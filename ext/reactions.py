@@ -8,6 +8,7 @@ import sys
 
 
 # TODO: Create custom Reaction setups per server
+# TODO: Bad words filter.
 
 class GlobalChecks(commands.Cog):
     def __init__(self, bot):
