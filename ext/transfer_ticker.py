@@ -5,7 +5,6 @@ from lxml import html
 import asyncio
 import discord
 
-# TODO: convert to tasks extention
 
 class TransferTicker(commands.Cog):
     """ Create and configure Transfer-Ticker channels"""

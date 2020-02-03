@@ -1,14 +1,9 @@
 from copy import deepcopy
 
-import typing
 from discord.ext import commands
 import datetime
 import discord
 
-# TODO: Port tempban to new system
-# TODO: Port tempmute to new system
-# TODO: Move those to mod cog
-# TODO: timed poll.
 from ext.utils.embed_paginator import paginate
 from ext.utils.timed_events import parse_time, spool_reminder
 
@@ -73,6 +68,9 @@ class Reminders(commands.Cog):
                 e.description += this_string
         embeds.append(e)
         await paginate(ctx, embeds)
-        
+
+# TODO: timed poll.
+
+
 def setup(bot):
     bot.add_cog(Reminders(bot))
