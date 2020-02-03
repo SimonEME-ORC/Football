@@ -55,16 +55,28 @@ async def spool_reminder(bot, record):
 			except discord.NotFound:
 				e.description = f"\n\nFailed to unban user id {record['mod_target']} - are they already unbanned?"
 				e.colour = 0xFF0000
+			else:
+				e.title = "Member unbanned"
 		elif record['mod_action'] == "unmute":
 			muted_role = discord.utils.get(channel.guild.roles, name="Muted")
 			target = channel.guild.get_member(record["mod_target"])
 			try:
 				await target.remove_roles([muted_role], reason="Unmuted")
 			except discord.Forbidden:
-				e.description += f"\n\nUnable to unmute {target.mention}"
+				e.description = f"Unable to unmute {target.mention}"
 				e.colour = 0xFF0000
 			else:
-				e.description += f"\n\nUnmuted {target.mention}"
+				e.title = "Member un-muted"
+				e.description = f"{target.mention}"
+		elif record['mod_action'] == "unblock":
+			await channel.set_permissions(i, overwrite=None)
+			target = channel.guild.get_member(record["mod_target"])
+			e.title = "Member un-blocked"
+			e.description = f"Unblocked {target.mention} from {channel.mention}"
+	
+	if record['mod_action']:
+		return await channel.send(embed=e)
+	
 	try:
 		await channel.send(mention, embed=e)
 	except discord.NotFound:

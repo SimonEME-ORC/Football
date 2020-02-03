@@ -1,3 +1,5 @@
+import datetime
+from collections import defaultdict
 from copy import deepcopy
 from urllib.parse import unquote
 from discord.ext import commands
@@ -5,16 +7,18 @@ import discord
 import typing
 
 from ext.utils.embed_paginator import paginate
+from ext.utils.timed_events import parse_time, spool_reminder
 
 
 def get_prefix(bot, message):
-    try:
-        pref = bot.prefix_cache[message.guild.id]
-    except KeyError:
+    pref = bot.prefix_cache[message.guild.id]
+    if message.guild is None:
+        pref = [".tb ", "!", "-", "`", "!", "?", ""]
+    elif not pref:
         pref = [".tb "]
-    except AttributeError:
-        pref = [".tb ", "!", "-", "`", "!", "?", ""]  # Use all prefixes (or none) for DM help.
     return commands.when_mentioned_or(*pref)(bot, message)
+
+# TODO: Find a way to use a custom convertor for temp mute/ban and merge into main command.
 
 
 class Mod(commands.Cog):
@@ -23,13 +27,13 @@ class Mod(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.bot.loop.create_task(self.update_cache())
+        self.bot.prefix_cache = defaultdict()
         self.bot.loop.create_task(self.update_prefixes())
         self.bot.command_prefix = get_prefix
     
-    def me_or_mod():
+    def me_or_mod(self):
         def predicate(ctx):
-            return ctx.author.permissions_in(ctx.channel).manage_channels or ctx.author.id == ctx.bot.owner_id
-        
+            return ctx.author.permissions_in(ctx.channel).manage_channels or ctx.author.id == self.bot.owner_id
         return commands.check(predicate)
     
     # Listeners
@@ -58,7 +62,7 @@ class Mod(commands.Cog):
         print(f"Guild Remove: Cascade delete for {guild.id}")
         
     async def update_prefixes(self):
-        self.bot.prefix_cache = {}
+        self.bot.prefix_cache.clear()
         connection = await self.bot.db.acquire()
         records = await connection.fetch("""SELECT * FROM prefixes""")
         await self.bot.db.release(connection)
@@ -66,10 +70,7 @@ class Mod(commands.Cog):
         for r in records:
             guild_id = r["guild_id"]
             prefix = r["prefix"]
-            try:
-                self.bot.prefix_cache[guild_id].append(prefix)
-            except KeyError:
-                self.bot.prefix_cache.update({guild_id: [prefix]})
+            self.bot.prefix_cache[guild_id].append(prefix)
     
     async def update_cache(self):
         self.bot.disabled_cache = {}
@@ -271,77 +272,83 @@ class Mod(commands.Cog):
         await paginate(ctx, banpages)
     
     ### Mutes & Blocks
-    @commands.command()
+    @commands.command(usage="Block <Optional: #channel> <@member1 @member2> <Optional: reason>")
     @commands.has_permissions(manage_channels=True)
     @commands.bot_has_permissions(manage_channels=True)
-    async def block(self, ctx, member: discord.Member):
-        """ Block a user from seeing this channel (cannot be used on guild default channel) """
-        try:
-            mute_channel = self.bot.get_channel(self.bot.notif_cache[ctx.guild.id]["mute_channel_id"])
-        except:
-            mute_channel = None
-        
-        # Check if already muted
-        ows = ctx.channel.overwrites
-        ows = [i[0] for i in ows if isinstance(i[0], discord.Member)]
-        
-        if member in ows:
-            try:
-                await ctx.channel.set_permissions(member, overwrite=None)
-            except Exception as e:
-                return await ctx.send(f"Could not unblock member from channel, Error: \n```{e}```")
-            else:
-                if mute_channel:
-                    await mute_channel.send(
-                        f"{member.mention} was unblocked from {ctx.channel.mention} by {ctx.author}")
-                return await ctx.send(f"Unblocked {member.mention} from {ctx.channel.mention}")
-        
+    async def block(self, ctx, channel: typing.Optional[discord.TextChannel], members: commands.Greedy[discord.Member]):
+        """ Block a user from seeing or talking in this channel  """
+        if channel is None:
+            channel = ctx.channel
+
         ow = discord.PermissionOverwrite(read_messages=False, send_messages=False)
+        for i in members:
+            await channel.set_permissions(i, overwrite=ow)
         
-        # Cannot block from default channel.
-        try:
-            await ctx.channel.set_permissions(member, overwrite=ow)
-        except Exception as e:
-            return await ctx.send(f"Could not block user from channel, error:\n ```{e}```")
-        else:
-            await ctx.send(f"{member.mention} has been blocked from {ctx.channel.mention} by {ctx.author}")
-            if mute_channel:
-                await mute_channel.send(f"{member.mention} has been blocked from {ctx.channel.mention} by "
-                                        f"{ctx.author}")
-    
-    @commands.has_permissions(manage_roles=True)
-    @commands.bot_has_permissions(manage_roles=True)
+        await ctx.send(f'Blocked {" ,".join([i.mention for i in members])} from {channel.mention}')
+        
+        # ext.notifications output.
+        mute_channel = self.bot.get_channel(self.bot.notif_cache[ctx.guild.id]["mute_channel_id"])
+        if mute_channel is not None:
+            await ctx.send(f'{ctx.author} blocked {" ,".join([i.mention for i in members])} from {channel.mention}')
+
+    @commands.command(usage="unblock <Optional: #channel> <@member1 @member2> <Optional: reason>")
+    @commands.has_permissions(manage_channels=True)
+    @commands.bot_has_permissions(manage_channels=True)
+    async def unblock(self, ctx, channel:typing.Optional[discord.TextChannel], members:commands.Greedy[discord.Member]):
+        if channel is None:
+            channel = ctx.channel
+            
+        for i in members:
+            await channel.set_permissions(i, overwrite=None)
+
+        await ctx.send(f'Unblocked {" ,".join([i.mention for i in members])} from {channel.mention}')
+        # ext.notifications output.
+        mute_channel = self.bot.get_channel(self.bot.notif_cache[ctx.guild.id]["mute_channel_id"])
+        if mute_channel is not None:
+            await ctx.send(f'{ctx.author} unblocked {" ,".join([i.mention for i in members])} from {channel.mention}')
+        
+    @commands.has_permissions(kick_members=True)
+    @commands.bot_has_permissions(kick_members=True)
     @commands.command(usage="mute <@user1 @user2 @user3> <reason>")
     async def mute(self, ctx, members: commands.Greedy[discord.Member], *, reason="No reason given."):
-        """ Toggle a list of users having the "Muted" role."""
-        try:
-            mute_channel = self.bot.get_channel(self.bot.notif_cache[ctx.guild.id]["mute_channel_id"])
-        except:
-            mute_channel = None
-        
+        """ Prevent member(s) from talking on your server. """
         muted_role = discord.utils.get(ctx.guild.roles, name='Muted')
-        
         if not muted_role:
             muted_role = await ctx.guild.create_role(name="Muted")  # Read Messages / Read mesasge history.
             await muted_role.edit(position=ctx.me.top_role.position - 1)
-            moverwrite = discord.PermissionOverwrite(add_reactions=False, send_messages=False)
-            
+            m_overwrite = discord.PermissionOverwrite(add_reactions=False, send_messages=False)
             for i in ctx.guild.text_channels:
-                await i.set_permissions(muted_role, overwrite=moverwrite)
+                await i.set_permissions(muted_role, overwrite=m_overwrite)
         
-        # Unmute if currently muted.
         for i in members:
-            if muted_role in i.roles:
-                await i.remove_roles(*[muted_role], reason="unmuted.")
-                await ctx.send(f"{i.mention} was unmuted.")
-                await mute_channel.send(f"{i.mention} was unmuted by {ctx.author}.")
-                # Get Mod channel.
-                if mute_channel:
-                    await mute_channel.send()
-            else:
-                await i.add_roles(*[muted_role], reason=f"{ctx.author}: {reason}")
-                await ctx.send(f"{i.mention} was muted.")
-                await mute_channel.send(f"{i.mention} was muted by {ctx.author} for {reason}.")
+            await i.add_roles([muted_role], reason=f"{ctx.author}: {reason}")
+        
+        await ctx.send(f"Muted {', '.join([i.mention for i in members])} for {reason}")
+        
+        # ext.notifications output.
+        mute_channel = self.bot.get_channel(self.bot.notif_cache[ctx.guild.id]["mute_channel_id"])
+        if mute_channel is not None:
+            await mute_channel.send(f"{ctx.author} muted {', '.join([i.mention for i in members])} for {reason}")
+        
+                
+    @commands.command()
+    @commands.has_permissions(kick_members=True)
+    @commands.bot_has_permissions(kick_members=True)
+    async def unmute(self, ctx, members: commands.Greedy[discord.Member]):
+        """ Allow members to talk again. """
+        muted_role = discord.utils.get(ctx.guild.roles, name='Muted')
+        if not muted_role:
+            return await ctx.send(f"No 'muted' role found on {ctx.guild.name}")
+        
+        for i in members:
+            await i.remove_roles([muted_role])
+        await ctx.send(f"Unmuted {', '.join([i.mention for i in members])}")
+
+        # ext.notifications output.
+        mute_channel = self.bot.get_channel(self.bot.notif_cache[ctx.guild.id]["mute_channel_id"])
+        if mute_channel is not None:
+            await mute_channel.send(f"{ctx.author} un-muted {', '.join([i.mention for i in members])}")
+        
     
     @commands.command(aliases=["clear"])
     @commands.has_permissions(manage_messages=True)
@@ -453,11 +460,165 @@ class Mod(commands.Cog):
     async def disabled(self, ctx):
         """ Check which commands are disabled on this server """
         try:
-            commands = self.bot.disabled_cache[ctx.guild.id]
-            await ctx.send(f"The following commands are disabled on this server: ```{' ,'.join(commands)}```")
+            disabled = self.bot.disabled_cache[ctx.guild.id]
+            await ctx.send(f"The following commands are disabled on this server: ```{' ,'.join(disabled)}```")
         except KeyError:
             return await ctx.send(f'No commands are currently disabled on {ctx.guild.name}')
 
+    @commands.command(usage="tempban <members: @member1 @member2> <time (e.g. 1d1h1m1s)> <(Optional: reason)>")
+    @commands.has_permissions(ban_members=True)
+    @commands.bot_has_permissions(ban_members=True)
+    async def tempban(self, ctx, arg1: typing.Union[commands.Greedy[discord.Member], str],
+                      arg2: typing.Union[commands.Greedy[discord.Member], str], *,
+                      reason: commands.clean_content = None):
+        """ Temporarily ban a member """
+        if isinstance(arg1, list):
+            members = arg1
+            time = arg2
+        elif isinstance(arg2, list):
+            members = arg2
+            time = arg1
+        else:
+            return await ctx.send("That doesn't look right. try again.")
+    
+        if not members:
+            return await ctx.send('🚫 You need to specify which users to ban.')
+    
+        delta = await parse_time(time.lower())
+        remind_at = datetime.datetime.now() + delta
+        human_time = datetime.datetime.strftime(remind_at, "%H:%M:%S on %a %d %b")
+    
+        for i in members:
+            try:
+                await ctx.guild.ban(i, reason=reason)
+            except discord.Forbidden:
+                await ctx.send("🚫 I can't ban {i.mention}}.")
+                continue
+        
+            connection = await self.bot.db.acquire()
+            record = await connection.execute(""" INSERT INTO reminders (message_id, channel_id, guild_id,
+            reminder_content,
+            created_time, target_time. user_id, mod_action, mod_target) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            RETURNING *""", ctx.message.id, ctx.channel.id, ctx.guild.id, reason, datetime.datetime.now(), remind_at,
+                                              ctx.author.id, "unban", i.id)
+            await self.bot.db.release(connection)
+            self.bot.reminders.append(self.bot.loop.create_task(spool_reminder(ctx.bot, record)))
+    
+        e = discord.Embed()
+        e.title = "⏰ User banned"
+        e.description = f"{[i.mention for i in members]} will be unbanned for \n{reason}\nat\n {human_time}"
+        e.colour = 0x00ffff
+        e.timestamp = remind_at
+        await ctx.send(embed=e)
+
+    @commands.command(usage="tempmute <members: @member1 @member2> <time (e.g. 1d1h1m1s)> <(Optional: reason)>")
+    @commands.has_permissions(kick_members=True)
+    @commands.bot_has_permissions(kick_members=True)
+    async def tempmute(self, ctx, arg1: typing.Union[commands.Greedy[discord.Member], str],
+                       arg2: typing.Union[commands.Greedy[discord.Member], str], *,
+                       reason: commands.clean_content = None):
+        """ Temporarily mute member(s) """
+        if isinstance(arg1, list):
+            members = arg1
+            time = arg2
+        elif isinstance(arg2, list):
+            members = arg2
+            time = arg1
+        else:
+            return await ctx.send("That doesn't look right. try again.")
+    
+        delta = await parse_time(time.lower())
+        remind_at = datetime.datetime.now() + delta
+        human_time = datetime.datetime.strftime(remind_at, "%H:%M:%S on %a %d %b")
+    
+        # Role.
+        muted_role = discord.utils.get(ctx.guild.roles, name='Muted')
+        if not muted_role:
+            muted_role = await ctx.guild.create_role(name="Muted")  # Read Messages / Read mesasge history.
+            await muted_role.edit(position=ctx.me.top_role.position - 1)
+            m_overwrite = discord.PermissionOverwrite(add_reactions=False, send_messages=False)
+        
+            for i in ctx.guild.text_channels:
+                await i.set_permissions(muted_role, overwrite=m_overwrite)
+    
+        # Channel
+        mute_channel = self.bot.get_channel(self.bot.notif_cache[ctx.guild.id]["mute_channel_id"])
+    
+        # Mute, send to notification channel if exists.
+        for i in members:
+            await i.add_roles(*[muted_role], reason=f"{ctx.author}: {reason}")
+            connection = await self.bot.db.acquire()
+            record = await connection.execute(""" INSERT INTO reminders (message_id, channel_id, guild_id,
+            reminder_content,
+            created_time, target_time. user_id, mod_action, mod_target) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            RETURNING *""", ctx.message.id, ctx.channel.id, ctx.guild.id, reason, datetime.datetime.now(), remind_at,
+                                              ctx.author.id, "unmute", i.id)
+            await self.bot.db.release(connection)
+            self.bot.reminders.append(self.bot.loop.create_task(spool_reminder(ctx.bot, record)))
+    
+        if mute_channel is not None:
+            await mute_channel.send(f"{ctx.author} muted {[i.mention for i in members]} "
+                                    f"until {human_time} for {reason}.")
+    
+        e = discord.Embed()
+        e.title = "⏰ User muted"
+        e.description = f"{[i.mention for i in members]} will be unmuted for \n{reason}\nat\n {human_time}"
+        e.colour = 0x00ffff
+        e.timestamp = remind_at
+        await ctx.send(embed=e)
+
+    @commands.command(usage="tempblock <members: @member1 @member2> <time (e.g. 1d1h1m1s)> <(Optional: reason)>")
+    @commands.has_permissions(kick_members=True)
+    @commands.bot_has_permissions(kick_members=True)
+    async def tempblock(self, ctx, channel: typing.Optional[discord.TextChannel],
+                        arg1: typing.Union[commands.Greedy[discord.Member], str],
+                        arg2: typing.Union[commands.Greedy[discord.Member], str], *,
+                        reason: commands.clean_content = None):
+        """ Temporarily mute member(s) """
+        if channel is None:
+            channel = ctx.channel
+        if isinstance(arg1, list):
+            members = arg1
+            time = arg2
+        elif isinstance(arg2, list):
+            members = arg2
+            time = arg1
+        else:
+            return await ctx.send("That doesn't look right. try again.")
+    
+        delta = await parse_time(time.lower())
+        remind_at = datetime.datetime.now() + delta
+        human_time = datetime.datetime.strftime(remind_at, "%H:%M:%S on %a %d %b")
+        mute_channel = self.bot.get_channel(self.bot.notif_cache[ctx.guild.id]["mute_channel_id"])
+    
+        ow = discord.PermissionOverwrite(read_messages=False, send_messages=False)
+    
+        # Mute, send to notification channel if exists.
+        for i in members:
+            await channel.set_permissions(i, overwrite=ow)
+            if mute_channel is not None:
+                await mute_channel.send(f"{i.mention} was muted until {human_time} by {ctx.author} for {reason}.")
+        
+            connection = await self.bot.db.acquire()
+            record = await connection.execute(""" INSERT INTO reminders (message_id, channel_id, guild_id,
+            reminder_content,
+            created_time, target_time. user_id, mod_action, mod_target) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            RETURNING *""", ctx.message.id, channel.id, ctx.guild.id, reason, datetime.datetime.now(), remind_at,
+                                              ctx.author.id, "unblock", i.id)
+            await self.bot.db.release(connection)
+            self.bot.reminders.append(self.bot.loop.create_task(spool_reminder(ctx.bot, record)))
+    
+        if mute_channel is not None:
+            await mute_channel.send(f"{ctx.author} muted {[i.mention for i in members]} "
+                                    f"until {human_time} for {reason}.")
+    
+        e = discord.Embed()
+        e.title = "⏰ User blockedt"
+        e.description = f"{', '.join([i.mention for i in members])} will be blocked from {channel.mention} " \
+                        f"\n{reason}\nuntil\n {human_time}"
+        e.colour = 0x00ffff
+        e.timestamp = remind_at
+        await ctx.send(embed=e)
 
 def setup(bot):
     bot.add_cog(Mod(bot))
