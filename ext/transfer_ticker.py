@@ -21,8 +21,8 @@ class TransferTicker(commands.Cog):
         self.bot = bot
         self.parsed = []
         self.bot.transfer_ticker = self.transfer_ticker.start()
-        self.whitelist_cache = defaultdict()
-        self.channel_cache = defaultdict()
+        self.whitelist_cache = defaultdict(dict)
+        self.channel_cache = defaultdict(dict)
 
     def cog_unload(self):
         self.transfer_ticker.cancel()
@@ -35,7 +35,7 @@ class TransferTicker(commands.Cog):
             whitelists = await connection.fetch("""SELECT * FROM transfers_whitelists""")
         await self.bot.db.release(connection)
         
-        # TODO: Convert this to nested default dicts
+        # TODO: Make a better SQL statement to extract this and merge into a single cache.
         # Clear our cache
         self.channel_cache.clear()
         self.whitelist_cache.clear()
@@ -161,8 +161,8 @@ class TransferTicker(commands.Cog):
                         print(
                             f"AttributeError while trying to send new transfer to {c} - Check for channel "
                             f"deletion.")
-
-    @transfer_ticker.before_loop()
+    
+    @transfer_ticker.before_loop
     async def before_tf_loop(self):
         await self.bot.wait_until_ready()
         await self.update_cache()
