@@ -44,8 +44,8 @@ class ScoresChannel(commands.Cog):
     """ Live Scores channel module """
 
     def __init__(self, bot):
-        self.whitelist_cache = defaultdict()
-        self.channel_cache = defaultdict()
+        self.whitelist_cache = defaultdict(list)
+        self.channel_cache = defaultdict(list)
         self.bot = bot
         self.bot.live_games = {}
         self.msg_dict = {}
@@ -60,8 +60,8 @@ class ScoresChannel(commands.Cog):
             channels = await connection.fetch("""SELECT * FROM scores_channels""")
             whitelists = await connection.fetch("""SELECT * FROM scores_channels_leagues""")
         await self.bot.db.release(connection)
-        
-        # TODO: Convert this to a nested defaultdict.
+
+        # TODO: Make a better SQL statement to extract this and merge into a single cache.
         
         # Clear out our cache.
         self.channel_cache.clear()
@@ -156,7 +156,8 @@ class ScoresChannel(commands.Cog):
     async def write_raw(self, games):
         for league, data in games.items():
             # i is a game_id
-            raw = f"**{league}**\n"
+            raw = f"**{league}**\n"  # used by live-score channels
+            raw_with_link = f"**{league}**\n"  # used by scores command
             for k, v in data.items():
                 time = f"{data[k]['time']}"
 
@@ -170,10 +171,13 @@ class ScoresChannel(commands.Cog):
                 home = data[k]["home_team"]
                 away = data[k]["away_team"]
                 score = data[k]["score"]
+                url = "http://www.flashscore.com/" + k.split('_')[-1]
 
                 raw += f"`{time}` {home} {score} {away}\n"
+                raw_with_link += f"`{time}` [{home} {score} {away}]({url})\n"
 
             games[league]["raw"] = raw
+            games[league]["raw_with_link"] = raw_with_link
         self.bot.live_games = games
 
     async def localise_data(self):
@@ -522,7 +526,6 @@ class ScoresChannel(commands.Cog):
         except (discord.Forbidden, discord.NotFound):
             pass
         return res_dict[match_content]["Match"]
-
 
 def setup(bot):
     bot.add_cog(ScoresChannel(bot))
