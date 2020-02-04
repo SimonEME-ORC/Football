@@ -111,7 +111,6 @@ class Fixtures(commands.Cog):
         th = th.value_of_css_property('background-image')
         if th !=  "none":
             logo_url = th.strip("url(").strip(")").strip('"')
-            print(logo_url)
             e.set_thumbnail(url=logo_url)
         
         # Delete floating ad banners or other shit that gets in the way
@@ -145,7 +144,6 @@ class Fixtures(commands.Cog):
                     z = WebDriverWait(self.driver, 3).until(ec.visibility_of_element_located(multi_capture))
                     z.click()
                 except TimeoutException:
-                    print("Unable to locate an element.")
                     break
                 except ElementNotInteractableException as err:
                     print(err)
@@ -247,7 +245,7 @@ class Fixtures(commands.Cog):
                 continue  # Not all rows have links.
             
             d = "".join(i.xpath('.//div[@class="event__time"]//text()')).strip("Pen").strip(
-                'Postp.')  # dd.mm hh:mm or dd.mm.yyyy
+                'Postp.').strip('AET') # dd.mm hh:mm or dd.mm.yyyy
             if not "Postp" in d:
                 yn = datetime.datetime.today().year  # Year now
                 try:
@@ -413,7 +411,6 @@ class Fixtures(commands.Cog):
         e.description = "Please click on picture -> open original to enlarge"
         e.timestamp = datetime.datetime.now()
         # Captures is a list of opened PIL images.
-        print(f"Found {len(captures)} images to stitch")
         w = int(captures[0].width / 3 * 2 + sum(i.width / 3 for i in captures))
         h = captures[0].height
         
@@ -561,7 +558,7 @@ class Fixtures(commands.Cog):
         for league in self.bot.live_games:
             for game_id in self.bot.live_games[league]:
                 # Ignore our output strings.
-                if game_id == "raw":
+                if game_id in ("raw",'raw_with_link'):
                     continue
                 
                 home = self.bot.live_games[league][game_id]["home_team"]
