@@ -13,7 +13,7 @@ class Info(commands.Cog):
         self.bot = bot
         self.bot.commands_used = Counter()
     
-    @commands.command(aliases=['botstats', "uptime", "hello", "inviteme"])
+    @commands.command(aliases=['botstats', "uptime", "hello", "inviteme", "invite"])
     async def about(self, ctx):
         """Tells you information about the bot itself."""
         e = discord.Embed(colour=0x2ecc71, timestamp=self.bot.user.created_at)
