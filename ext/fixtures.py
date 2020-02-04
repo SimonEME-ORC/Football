@@ -1,6 +1,4 @@
-# TODO: Lookup Scores per league.
-# TODO: Build reactor menu.
-# TODO: Code Goals
+# TODO: Find somewhere to get goal clips from.
 
 import asyncio
 import datetime
@@ -25,7 +23,6 @@ from copy import deepcopy
 from PIL import Image
 from io import BytesIO
 
-# Max concurrency sharing.
 from ext.utils import transfer_tools
 
 # 'cause
@@ -807,6 +804,40 @@ class Fixtures(commands.Cog):
         else:
             return await ctx.send(f'Your commands will no longer use a default {mode}')
 
+    @commands.command(usage="scores <league- to search for>")
+    async def scores(self, ctx, *, search_query: commands.clean_content = ""):
+        """ Fetch current scores for a specified league """
+        embeds = []
+        e = discord.Embed()
+        e.colour = discord.Colour.blurple()
+        e.set_author(name=f'Live Scores matching "{search_query}"')
+        e.timestamp = datetime.datetime.now()
+        dtn = datetime.datetime.now().strftime("%H:%M")
+        matches = {k: v for k, v in self.bot.live_games.items() if search_query.lower() in k.lower()}
+        page = 1
+        if not matches:
+            e.description = "No results found!"
+            return  await paginate(ctx, [e])
+        for league in matches:
+            if len(matches[league]['raw_with_link']) < 1966:
+                e.description = matches[league]['raw_with_link']
+            elif len(matches[league]['raw']) < 1966:
+                e.description = matches[league]['raw']
+            else:
+                e.description = ""
+                discarded = 0
+                for row in matches[league]['raw'].split('\n'):
+                    if len(e.description + row) > 1946:
+                        e.description += row
+                    else:
+                        discarded += 1
+                if discarded:
+                    e.description += f"*and {discarded} more...*"
+            e.description += f"\n*Local time: {dtn}\nPlease note this menu will NOT auto-update. It is a snapshot.*"
+            e.set_footer(text=f"{ctx.author}: Page {page} of {len(matches)}")
+            embeds.append(deepcopy(e))
+            page += 1
+        await paginate(ctx, embeds)
 
 def setup(bot):
     bot.add_cog(Fixtures(bot))
