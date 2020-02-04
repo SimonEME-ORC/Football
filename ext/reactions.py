@@ -107,7 +107,7 @@ class Reactions(commands.Cog):
         elif isinstance(error, commands.MissingRequiredArgument):
             if ctx.command.usage:
                 return await ctx.send(
-                    f"⚠️ {error.param.name} is a missing argument that was not provided.\n\n```{ctx.command} usage: "
+                    f"⚠️ {error.param.name} is a missing argument that was not provided.\n```{ctx.command} usage: "
                     f"{ctx.command.usage}```")
             else:
                 print(f"Someone fucked up while using {ctx.command} but command.usage is not set.")
