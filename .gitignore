@@ -12,3 +12,4 @@
 *.ttf
 Run.bat
 *.pyc
+ext/test.py
