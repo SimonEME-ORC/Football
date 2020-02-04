@@ -91,7 +91,7 @@ class Mod(commands.Cog):
         await ctx.me.edit(nick=new_name)
     
     @commands.command(usage="say <Channel (optional)< <what you want the bot to say>")
-    @me_or_mod()
+    @commands.check(me_or_mod)
     async def say(self, ctx, destination: typing.Optional[discord.TextChannel] = None, *, msg):
         """ Say something as the bot in specified channel """
         if destination is None:
@@ -468,19 +468,9 @@ class Mod(commands.Cog):
     @commands.command(usage="tempban <members: @member1 @member2> <time (e.g. 1d1h1m1s)> <(Optional: reason)>")
     @commands.has_permissions(ban_members=True)
     @commands.bot_has_permissions(ban_members=True)
-    async def tempban(self, ctx, arg1: typing.Union[commands.Greedy[discord.Member], str],
-                      arg2: typing.Union[commands.Greedy[discord.Member], str], *,
+    async def tempban(self, ctx,  members: commands.Greedy[discord.Member], time, *,
                       reason: commands.clean_content = None):
-        """ Temporarily ban a member """
-        if isinstance(arg1, list):
-            members = arg1
-            time = arg2
-        elif isinstance(arg2, list):
-            members = arg2
-            time = arg1
-        else:
-            return await ctx.send("That doesn't look right. try again.")
-    
+        """ Temporarily ban member(s) """
         if not members:
             return await ctx.send('🚫 You need to specify which users to ban.')
     
@@ -514,19 +504,9 @@ class Mod(commands.Cog):
     @commands.command(usage="tempmute <members: @member1 @member2> <time (e.g. 1d1h1m1s)> <(Optional: reason)>")
     @commands.has_permissions(kick_members=True)
     @commands.bot_has_permissions(kick_members=True)
-    async def tempmute(self, ctx, arg1: typing.Union[commands.Greedy[discord.Member], str],
-                       arg2: typing.Union[commands.Greedy[discord.Member], str], *,
-                       reason: commands.clean_content = None):
+    async def tempmute(self, ctx, members: commands.Greedy[discord.Member], time,
+                       *, reason: commands.clean_content = None):
         """ Temporarily mute member(s) """
-        if isinstance(arg1, list):
-            members = arg1
-            time = arg2
-        elif isinstance(arg2, list):
-            members = arg2
-            time = arg1
-        else:
-            return await ctx.send("That doesn't look right. try again.")
-    
         delta = await parse_time(time.lower())
         remind_at = datetime.datetime.now() + delta
         human_time = datetime.datetime.strftime(remind_at, "%H:%M:%S on %a %d %b")
@@ -571,20 +551,10 @@ class Mod(commands.Cog):
     @commands.has_permissions(kick_members=True)
     @commands.bot_has_permissions(kick_members=True)
     async def tempblock(self, ctx, channel: typing.Optional[discord.TextChannel],
-                        arg1: typing.Union[commands.Greedy[discord.Member], str],
-                        arg2: typing.Union[commands.Greedy[discord.Member], str], *,
-                        reason: commands.clean_content = None):
+                        members: commands.Greedy[discord.Member], time, *, reason: commands.clean_content = None):
         """ Temporarily mute member(s) """
         if channel is None:
             channel = ctx.channel
-        if isinstance(arg1, list):
-            members = arg1
-            time = arg2
-        elif isinstance(arg2, list):
-            members = arg2
-            time = arg1
-        else:
-            return await ctx.send("That doesn't look right. try again.")
     
         delta = await parse_time(time.lower())
         remind_at = datetime.datetime.now() + delta
@@ -613,7 +583,7 @@ class Mod(commands.Cog):
                                     f"until {human_time} for {reason}.")
     
         e = discord.Embed()
-        e.title = "⏰ User blockedt"
+        e.title = "⏰ User blocked"
         e.description = f"{', '.join([i.mention for i in members])} will be blocked from {channel.mention} " \
                         f"\n{reason}\nuntil\n {human_time}"
         e.colour = 0x00ffff
