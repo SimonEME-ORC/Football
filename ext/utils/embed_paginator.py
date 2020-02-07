@@ -1,4 +1,6 @@
 import asyncio
+from asyncio import futures
+
 import discord
 
 
@@ -22,7 +24,7 @@ async def paginate(ctx, embeds):
 
     def check(r, u):
         if r.message.id == m.id and u.id == ctx.author.id:
-            e = str(reaction.emoji)
+            e = str(r.emoji)
             return e.startswith(('⏮', '◀', '▶', '⏭','🚫'))
 
     while not ctx.bot.is_closed():
