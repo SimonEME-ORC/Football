@@ -12,9 +12,9 @@ from io import BytesIO
 
 def draw_tinder(image, av, name):
     # Base Image
-    im = Image.open("tinder.png").convert(mode="RGBA")
+    im = Image.open("Images/tinder.png").convert(mode="RGBA")
     # Prepare mask
-    msk = Image.open("retardedmask.png").convert('L')
+    msk = Image.open("Images/retardedmask.png").convert('L')
     msk = ImageOps.fit(msk, (185, 185))
     # User Avatar
     avt = Image.open(BytesIO(av)).convert(mode="RGBA")
@@ -41,11 +41,11 @@ def draw_tinder(image, av, name):
     return df
 
 
-def draw_bob(image, respjson):
+def draw_bob(image, response):
     """ Pillow Bob Rossifying """
     im = Image.open(BytesIO(image)).convert(mode="RGBA")
     bob = Image.open("Images/rossface.png")
-    for coords in respjson:
+    for coords in response:
         x = int(coords["faceRectangle"]["left"])
         y = int(coords["faceRectangle"]["top"])
         w = int(coords["faceRectangle"]["width"])
@@ -63,19 +63,15 @@ def draw_bob(image, respjson):
     im.save(output, "PNG")
     output.seek(0)
     
-    # cleanup
-    del bob
-    del im
-    
     df = discord.File(output, filename="withbob.png")
     return df
 
 
-def draw_knob(image, respjson):
+def draw_knob(image, response):
     im = Image.open(BytesIO(image)).convert(mode="RGBA")
     knob = Image.open("Images/knob.png")
     
-    for coords in respjson:
+    for coords in response:
         mlx = int(coords["faceLandmarks"]["mouthLeft"]["x"])
         mrx = int(coords["faceLandmarks"]["mouthRight"]["x"])
         lipy = int(coords["faceLandmarks"]["upperLipBottom"]["y"])
@@ -93,10 +89,10 @@ def draw_knob(image, respjson):
     return df
 
 
-def draw_eyes(image, respjson):
+def draw_eyes(image, response):
     """ Draws the eyes """
     im = Image.open(BytesIO(image))
-    for i in respjson:
+    for i in response:
         # Get eye bounds
         lix = int(i["faceLandmarks"]["eyeLeftInner"]["x"])
         lox = int(i["faceLandmarks"]["eyeLeftOuter"]["x"])
@@ -193,53 +189,6 @@ def draw_tard(image, quote):
     return df
 
 
-def draw_fquote(image, user, qtext):
-    now = datetime.datetime.now()
-    timestamp = datetime.datetime.strftime(now, "Today at %I:%M %p")
-    timestamp = timestamp.replace("at 0", "at ")
-    name = user.display_name
-    if user.color.to_rgb() == (0, 0, 0):
-        color = (255, 255, 255, 255)
-    else:
-        color = user.color.to_rgb() + (255,)
-    timecolor = (255, 255, 255, 51)
-    qcolor = (255, 255, 255, 179)
-    
-    # Open Avatar, apply mask, shrink.
-    base = Image.open(BytesIO(image))
-    msk = Image.open("Images/retardedmask.png").convert('L')
-    ops = ImageOps.fit(base, (250, 250))
-    ops.putalpha(msk)
-    large = ops.resize((40, 40), Image.ANTIALIAS)
-    
-    # Generate text, get sizes, determine image size
-    nfnt = ImageFont.truetype('Whitney Medium Regular_0.ttf', 16)  # name
-    qfnt = ImageFont.truetype('Whitney Medium Regular_0.ttf', 15)  # quote
-    tfnt = ImageFont.truetype('Whitney Light Regular_0.ttf', 12)  # ts
-    w1, h1 = nfnt.getsize(name)
-    w2, h2 = qfnt.getsize(qtext)
-    w3, h3 = tfnt.getsize(timestamp)
-    w = max(w2, w1 + w3)
-    
-    # Generate New image and paste Avatar.
-    bgcolor = (54, 57, 62, 255)
-    top = Image.new('RGBA', (w + 70, 60), bgcolor)
-    top.paste(large, box=(0, 0, 40, 40))
-    # Write quote
-    d = ImageDraw.Draw(top)
-    d.text((60, 0), name, font=nfnt, fill=color)
-    d.text((65 + w1, 4), timestamp, font=tfnt, fill=timecolor)
-    d.text((60, 20), qtext, font=qfnt, fill=qcolor)
-    
-    # Save output and send
-    output = BytesIO()
-    top.save(output, "PNG")
-    output.seek(0)
-    # cleanup
-    df = discord.File(output, filename="retarded.png")
-    return df
-
-
 async def get_target(ctx, target):
     if ctx.message.mentions:
         target = str(ctx.message.mentions[0].avatar_url_as(format="png"))
@@ -266,6 +215,9 @@ def ruin(image):
     # output
     df = discord.File(output, filename="retarded.png")
     return df
+
+
+# TODO: Embedify with local embed upload & source image & author.
 
 
 class ImageManip(commands.Cog):
@@ -299,24 +251,20 @@ class ImageManip(commands.Cog):
             elif match == ctx.me:
                 await ctx.send("Fancy a shag?", file=df)
             else:
-                await ctx.send(file=df)
+                await ctx.send(file=df)  # file name is tinder.png
 
     async def get_faces(self, ctx, target):
-        """ Retrieve face features from Prokect Oxford """
+        """ Retrieve face features from Project Oxford """
         # Prepare POST
         oxk = self.bot.credentials['Oxford']['OxfordKey']
-        h = {"Content-Type": "application/json",
-             "Ocp-Apim-Subscription-Key": oxk}
+        h = {"Content-Type": "application/json", "Ocp-Apim-Subscription-Key": oxk}
         body = {"url": target}
-        p = {"returnFaceId": "False",
-             "returnFaceLandmarks": "True",
-             "returnFaceAttributes": "headPose"}
+        p = {"returnFaceId": "False", "returnFaceLandmarks": "True", "returnFaceAttributes": "headPose"}
         d = json.dumps(body)
         url = "https://westeurope.api.cognitive.microsoft.com/face/v1.0/detect"
-        session = self.bot.session
-        
+
         # Get Project Oxford reply
-        async with session.post(url, params=p, headers=h, data=d) as resp:
+        async with self.bot.session.post(url, params=p, headers=h, data=d) as resp:
             if resp.status != 200:
                 if resp.status == 400:
                     await ctx.send(await resp.json())
@@ -324,14 +272,14 @@ class ImageManip(commands.Cog):
                     await ctx.send(
                         f"HTTP Error {resp.status} recieved accessing project oxford's facial recognition API.")
                 return None, None
-            respjson = await resp.json()
+            response = await resp.json()
         
         # Get target image as file
-        async with session.get(target) as resp:
+        async with self.bot.session.get(target) as resp:
             if resp.status != 200:
                 await ctx.send(f"{resp.status} code accessing project oxford.")
             image = await resp.content.read()
-        return image, respjson
+        return image, response
 
     @commands.command(aliases=["bob", "ross"])
     async def bobross(self, ctx, *, target=None):
@@ -341,12 +289,12 @@ class ImageManip(commands.Cog):
             if not target:
                 return  # rip.
             
-            image, respjson = await self.get_faces(ctx, target)
-            if respjson is None:
+            image, response = await self.get_faces(ctx, target)
+            if response is None:
                 return await ctx.send("No faces were detected in your image.")
             
-            df = await self.bot.loop.run_in_executor(None, draw_bob, image, respjson)
-            await ctx.send(file=df)
+            df = await self.bot.loop.run_in_executor(None, draw_bob, image, response)
+            await ctx.send(file=df)  # file name is withbob.png
             try:
                 await ctx.message.delete()
             except discord.Forbidden:
@@ -362,11 +310,11 @@ class ImageManip(commands.Cog):
             if not target:
                 return  # rip
             
-            image, respjson = await self.get_faces(ctx, target)
-            if respjson is None:
+            image, response = await self.get_faces(ctx, target)
+            if response is None:
                 return await ctx.send("No faces were detected in your image.")
             
-            df = await self.bot.loop.run_in_executor(None, draw_knob, image, respjson)
+            df = await self.bot.loop.run_in_executor(None, draw_knob, image, response)
             await ctx.send(ctx.author.mention, file=df)
             try:
                 await ctx.message.delete()
@@ -382,12 +330,12 @@ class ImageManip(commands.Cog):
             target = await get_target(ctx, target)
             if not target:
                 return  # rip
-            image, respjson = await self.get_faces(ctx, target)
-            if respjson is None:
+            image, response = await self.get_faces(ctx, target)
+            if response is None:
                 return await ctx.send("No faces were detected in your image.")
             
             # Pass it off to the executor
-            df = await self.bot.loop.run_in_executor(None, draw_eyes, image, respjson)
+            df = await self.bot.loop.run_in_executor(None, draw_eyes, image, response)
             await ctx.send(ctx.author.mention, file=df)
             try:
                 await ctx.message.delete()
@@ -415,23 +363,6 @@ class ImageManip(commands.Cog):
     async def tard_error(self, ctx, exc):
         if isinstance(exc, commands.BadArgument):
             return await ctx.send("🚫 Bad argument provided: Make sure you're pinging a user or using their ID")
-
-    @commands.command(hidden=True)
-    @commands.is_owner()
-    async def fquote(self, ctx, user: discord.Member, *, qtext):
-        """ Generate a fake quote from a user """
-        # Delete original message
-        await ctx.message.delete()
-        
-        # Get user info, set colors.
-        cs = self.bot.session
-        async with cs.get(user.avatar_url_as(format="png", size=256)) as resp:
-            if resp.status != 200:
-                err = f"{resp.status} error attempting to retrieve avatar url"
-                await ctx.send(err, delete_after=5)
-            image = await resp.content.read()
-        df = await self.bot.loop.run_in_executor(None, draw_fquote, image, user, qtext)
-        await ctx.send(file=df)
 
     @commands.command(aliases=["localman", "local", "ruin"], hidden=True)
     async def ruins(self, ctx, *, user: discord.User = None):
@@ -475,7 +406,7 @@ class ImageManip(commands.Cog):
     @commands.command(hidden=True)
     async def goala(self, ctx):
         """ Party on Garth """
-        await ctx.send(file=discord.File('goala.gif'))
+        await ctx.send(file=discord.File('Images/goala.gif'))
     
     @commands.command()
     @commands.cooldown(1, 120, BucketType.user)
