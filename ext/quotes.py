@@ -10,40 +10,49 @@ class QuoteDB(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-
-    async def embed_quote(self, r):
-        # Fetch data.
-        channel = self.bot.get_channel(r["channel_id"])
-        submitter = self.bot.get_user(r["submitter_user_id"])
-
-        guild = self.bot.get_guild(r["guild_id"])
-        message_id = r["message_id"]
         
-        e = discord.Embed(color=0x7289DA, description="")
-        quote_img = "https://discordapp.com/assets/2c21aeda16de354ba5334551a883b481.png"
-        try:
-            author = self.bot.get_user(r["author_user_id"])
-            e.set_author(name=f"{author.display_name} in #{channel}", icon_url=quote_img)
-            e.set_thumbnail(url=author.avatar_url)
-        except AttributeError:
-            e.set_author(name=f"Deleted User in #{channel}")
-            e.set_thumbnail(url=quote_img)
-        
-        try:
-            jumpurl = f"https://discordapp.com/channels/{guild.id}/{r['channel_id']}/{message_id}"
-            e.description += f"**__[Quote #{r['quote_id']}]({jumpurl})__**\n"
-        except AttributeError:
-            e.description += f"**__Quote #{r['quote_id']}__**\n"
-        
-        e.description += r["message_content"]
-
-        try:
-            e.set_footer(text=f"Added by {submitter}", icon_url=submitter.avatar_url)
-        except AttributeError:
-            e.set_footer(text="Added by Deleted User")
-        
-        e.timestamp = r["timestamp"]
-        return e
+    async def embed_quotes(self, records: list):
+        page = 0
+        pages = len(records)
+        embeds = []
+        for r in records:
+            page += 1
+            # Fetch data.
+            channel = self.bot.get_channel(r["channel_id"])
+            submitter = self.bot.get_user(r["submitter_user_id"])
+    
+            guild = self.bot.get_guild(r["guild_id"])
+            message_id = r["message_id"]
+            
+            e = discord.Embed(color=0x7289DA, description="")
+            quote_img = "https://discordapp.com/assets/2c21aeda16de354ba5334551a883b481.png"
+            try:
+                author = self.bot.get_user(r["author_user_id"])
+                e.set_author(name=f"{author.display_name} in #{channel}", icon_url=quote_img)
+                e.set_thumbnail(url=author.avatar_url)
+            except AttributeError:
+                e.set_author(name=f"Deleted User in #{channel}")
+                e.set_thumbnail(url=quote_img)
+            
+            try:
+                jumpurl = f"https://discordapp.com/channels/{guild.id}/{r['channel_id']}/{message_id}"
+                e.description += f"**__[Quote #{r['quote_id']}]({jumpurl})__**\n"
+            except AttributeError:
+                e.description += f"**__Quote #{r['quote_id']}__**\n"
+            
+            e.description += r["message_content"]
+            
+            if pages > 1:
+                e.description += f"\nMatching quote {page} of {pages}*"
+                
+            try:
+                e.set_footer(text=f"Added by {submitter}", icon_url=submitter.avatar_url)
+            except AttributeError:
+                e.set_footer(text="Added by a Deleted User")
+            
+            e.timestamp = r["timestamp"]
+            embeds.append(e)
+        return embeds
 
     async def _get_quote(self, ctx, users=None, quote_id=None, all_guilds=False, random=True, qry=None):
         """ Get a quote. """
@@ -101,18 +110,20 @@ class QuoteDB(commands.Cog):
         await self.bot.db.release(connection)
         if not r:
             return await ctx.send(failure)
-        embeds = [await self.embed_quote(i) for i in r]
+        
+        embeds = self.embed_quotes(r)
         await ctx.send(success)
         await paginate(ctx, embeds)
 
     @commands.group(invoke_without_command=True, aliases=["quotes"],
-                    usage="quote <Optional: quote id> <Optional:  Users to search quotes from> ")
+                    usage="quote <Optional: quote id or a @user to search quotes from them> ")
     async def quote(self, ctx, quote_id: typing.Optional[int], users: commands.Greedy[discord.User]):
         """ Get a random quote from this server. (optionally by Quote ID# or user(s). """
         await self._get_quote(ctx, quote_id=quote_id, users=users)
 
     # Add quote
-    @quote.command(invoke_without_command=True)
+    @quote.command(invoke_without_command=True, usage="quote add [message id or message link "
+                                                      "or @member to grab their last message]")
     @commands.guild_only()
     async def add(self, ctx, target: typing.Union[discord.Member, discord.Message]):
         """ Add a quote, either by message ID or grabs the last message a user sent """
@@ -141,20 +152,23 @@ class QuoteDB(commands.Cog):
             m.channel.id, m.guild.id, m.id, m.author.id, ctx.author.id, m.clean_content, m.created_at)
         r = await connection.fetchrow("SELECT * FROM quotes ORDER BY quote_id DESC")
         await self.bot.db.release(connection)
-        e = await self.embed_quote(r)
-        await n.edit(content=":white_check_mark: Successfully added quote to database", embed=e)
+        e = await self.embed_quotes([r])
+        
+        # There will only be one embed returned in this list this so we can just send e[0]
+        await n.edit(content=":white_check_mark: Successfully added quote to database", embed=e[0])
 
     # Find quote
-    @quote.command()
-    async def all(self, ctx, quote_id: typing.Optional[int], users: commands.Greedy[discord.User]):
-        await self._get_quote(ctx, quote_id=quote_id, users=users, all_guilds=True)
+    @quote.command(aliases=['global'], usage= "Quote all (Optional: @member)")
+    async def all(self, ctx, users: commands.Greedy[discord.User]):
+        """ Get a random quote from any server, optionally from a specific user. """
+        await self._get_quote(ctx, users=users, all_guilds=True)
 
     @quote.group(usage="quote search [your search query])", invoke_without_command=True)
     async def search(self, ctx, *, qry: commands.clean_content):
         """ Search for a quote by quote text """
         await self._get_quote(ctx, qry=qry, all_guilds=False)
 
-    @search.command(name="all", aliases=["global"])
+    @search.command(name="all", aliases=['global'], aliases=["global"])
     async def _all(self, ctx, *, qry: commands.clean_content):
         """ Search for a quote **from any server** by quote text """
         await self._get_quote(ctx, qry=qry, all_guilds=True)
@@ -164,13 +178,13 @@ class QuoteDB(commands.Cog):
         """ Gets the last quoted message (optionally from user) """
         await self._get_quote(ctx, users=users, random=False)
 
-    @last.command(name="all")
+    @last.command(name="all", aliases=['global'], usage = "quote last all (Optional: @member @member2)")
     async def last_all(self, ctx, users: commands.Greedy[discord.User]):
         """ Gets the last quoted message (optionally from users) from any server."""
         await self._get_quote(ctx, users=users, random=False, all_guilds=True)
 
     # Delete quotes
-    @quote.command(name="del",aliases=['remove'])
+    @quote.command(name="del", aliases=['remove'], usage="quote delete <quote id number>  # Delete quote with that id")
     @commands.has_permissions(manage_messages=True)
     @commands.guild_only()
     async def _del(self, ctx, quote_id: int):
@@ -185,7 +199,7 @@ class QuoteDB(commands.Cog):
             if ctx.author.id != self.bot.owner_id:
                 return await ctx.send(f"You can't delete quotes from other servers!")
 
-        e = await self.embed_quote(r)
+        e = await self.embed_quotes([r])[0]  # There will only be one quote to return for this.
         m = await ctx.send("Delete this quote?", embed=e)
         await m.add_reaction("👍")
         await m.add_reaction("👎")
@@ -211,7 +225,7 @@ class QuoteDB(commands.Cog):
         await m.delete()
 
     # Quote Stats.
-    @quote.command()
+    @quote.command(usage = "quote stats <#channel or @user>")
     async def stats(self, ctx, target: typing.Union[discord.User, discord.TextChannel] = None):
         """ See quote stats for a user or channel """
         e = discord.Embed(color=discord.Color.blurple())
