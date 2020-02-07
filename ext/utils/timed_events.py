@@ -61,7 +61,7 @@ async def spool_reminder(bot, record):
 			muted_role = discord.utils.get(channel.guild.roles, name="Muted")
 			target = channel.guild.get_member(record["mod_target"])
 			try:
-				await target.remove_roles([muted_role], reason="Unmuted")
+				await target.remove_roles(muted_role, reason="Unmuted")
 			except discord.Forbidden:
 				e.description = f"Unable to unmute {target.mention}"
 				e.colour = 0xFF0000
