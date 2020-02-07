@@ -10,13 +10,15 @@ from ext.utils.embed_paginator import paginate
 from ext.utils.timed_events import parse_time, spool_reminder
 
 
-def get_prefix(bot, message):
-    pref = bot.prefix_cache[message.guild.id]
+async def get_prefix(bot, message):
     if message.guild is None:
         pref = [".tb ", "!", "-", "`", "!", "?", ""]
-    elif not pref:
+    else:
+        pref = bot.prefix_cache[message.guild.id]
+    if not pref:
         pref = [".tb "]
     return commands.when_mentioned_or(*pref)(bot, message)
+
 
 # TODO: Find a way to use a custom convertor for temp mute/ban and merge into main command.
 
@@ -27,7 +29,7 @@ class Mod(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.bot.loop.create_task(self.update_cache())
-        self.bot.prefix_cache = defaultdict()
+        self.bot.prefix_cache = defaultdict(list)
         self.bot.loop.create_task(self.update_prefixes())
         self.bot.command_prefix = get_prefix
     
@@ -307,8 +309,8 @@ class Mod(commands.Cog):
         if mute_channel is not None:
             await ctx.send(f'{ctx.author} unblocked {" ,".join([i.mention for i in members])} from {channel.mention}')
         
-    @commands.has_permissions(kick_members=True)
-    @commands.bot_has_permissions(kick_members=True)
+    @commands.has_permissions(manage_roles=True)
+    @commands.bot_has_permissions(manage_roles=True)
     @commands.command(usage="mute <@user1 @user2 @user3> <reason>")
     async def mute(self, ctx, members: commands.Greedy[discord.Member], *, reason="No reason given."):
         """ Prevent member(s) from talking on your server. """
@@ -321,7 +323,7 @@ class Mod(commands.Cog):
                 await i.set_permissions(muted_role, overwrite=m_overwrite)
         
         for i in members:
-            await i.add_roles([muted_role], reason=f"{ctx.author}: {reason}")
+            await i.add_roles(muted_role, reason=f"{ctx.author}: {reason}")
         
         await ctx.send(f"Muted {', '.join([i.mention for i in members])} for {reason}")
         
@@ -332,8 +334,8 @@ class Mod(commands.Cog):
         
                 
     @commands.command()
-    @commands.has_permissions(kick_members=True)
-    @commands.bot_has_permissions(kick_members=True)
+    @commands.has_permissions(manage_roles=True)
+    @commands.bot_has_permissions(manage_roles=True)
     async def unmute(self, ctx, members: commands.Greedy[discord.Member]):
         """ Allow members to talk again. """
         muted_role = discord.utils.get(ctx.guild.roles, name='Muted')
@@ -341,7 +343,7 @@ class Mod(commands.Cog):
             return await ctx.send(f"No 'muted' role found on {ctx.guild.name}")
         
         for i in members:
-            await i.remove_roles([muted_role])
+            await i.remove_roles(muted_role)
         await ctx.send(f"Unmuted {', '.join([i.mention for i in members])}")
 
         # ext.notifications output.
@@ -526,7 +528,7 @@ class Mod(commands.Cog):
     
         # Mute, send to notification channel if exists.
         for i in members:
-            await i.add_roles(*[muted_role], reason=f"{ctx.author}: {reason}")
+            await i.add_roles(muted_role, reason=f"{ctx.author}: {reason}")
             connection = await self.bot.db.acquire()
             record = await connection.execute(""" INSERT INTO reminders (message_id, channel_id, guild_id,
             reminder_content,
