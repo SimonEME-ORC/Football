@@ -244,9 +244,8 @@ class Fixtures(commands.Cog):
             except IndexError:
                 continue  # Not all rows have links.
             
-            d = "".join(i.xpath('.//div[@class="event__time"]//text()')).strip("Pen").strip(
-                'Postp.').strip('AET') # dd.mm hh:mm or dd.mm.yyyy
-            if not "Postp" in d:
+            d = "".join(i.xpath('.//div[@class="event__time"]//text()')).strip("Pen").strip('AET')
+            if "Postp" not in d:  # Should be dd.mm hh:mm or dd.mm.yyyy
                 yn = datetime.datetime.today().year  # Year now
                 try:
                     d = datetime.datetime.strptime(d, '%d.%m.%Y')
@@ -835,6 +834,7 @@ class Fixtures(commands.Cog):
             embeds.append(deepcopy(e))
             page += 1
         await paginate(ctx, embeds)
+
 
 def setup(bot):
     bot.add_cog(Fixtures(bot))
