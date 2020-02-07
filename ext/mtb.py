@@ -13,9 +13,10 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 # TODO: Convert upcoming matches to dict
 # TODO: Convert upcoming matches to get bbc data.
-# TODO: convert to tasks extention
 # TODO: Grab data from flashscore
 # TODO: Make pre-match thread function.
+
+
 from ext.utils.selenium_driver import spawn_driver
 
 
@@ -38,6 +39,7 @@ class MatchThreadCommands(commands.Cog):
         self.active_module = True
         self.stop_match_thread = False
         self.bot.loop.create_task(self.get_driver())
+        self.ticker = []
         self.driver = None
     
     async def get_driver(self):
@@ -103,8 +105,6 @@ class MatchThreadCommands(commands.Cog):
             return tv
     
     async def parse_ticker(self, ticker):
-        ticks = {}
-        tick_id = 0
         for i in ticker:
             header = "".join(i.xpath('.//h3//text()')).strip()
             time = "".join(i.xpath('.//time//span[2]//text()')).strip()
@@ -172,6 +172,18 @@ class MatchThreadCommands(commands.Cog):
                     continue  # we don't care.
                 
                 # Format by content.
+                elif "First Half Extra Time begins" in content:
+                    header = "First Half of Extra Time"
+                    content = content.replace("First Half Extra Time begins", "")
+                elif "First Half Extra Time ends" in content:
+                    header = "End of First Half of Extra Time "
+                    content = content.replace("First Half Extra Time ends", "")
+                elif "Second Half Extra Time begins" in content:
+                    header = "Second Half of Extra Time"
+                    content = content.replace("Second Half Extra Time begins", "")
+                elif "Second Half Extra Time ends" in content:
+                    header = "End of Extra Time"
+                    content = content.replace(header + "Second Half Extra Time ends", "")
                 elif "injury" in content.lower() or "injured" in content.lower():
                     header = "Injury"
                     emoji = "🚑"
@@ -201,11 +213,9 @@ class MatchThreadCommands(commands.Cog):
                     emoji = "🤾‍"
                 else:
                     print(f"Match Thread Bot: No header found for {content}")
-            
-            ticks.update({tick_id: {"key": key, "header": header, "emoji": emoji,
-                                    "content": content, "note": note, "time": time}})
-            tick_id += 1
-        return ticks
+            x = {"key": key, "header": header, "emoji": emoji, "content": content, "note": note, "time": time}
+            if x not in self.ticker:
+                self.ticker.append(x)
     
     async def scrape(self, bbc_link, match_data=None):
         if match_data is None:
@@ -236,10 +246,10 @@ class MatchThreadCommands(commands.Cog):
             # Goals
             match_data["score"] = " - ".join(tree.xpath("//span[contains(@class,'fixture__number')]//text()")[0:2])
             
-            def get_goals(xpath:str):
-                goals = {}
-                for i in tree.xpath(xpath):
-                    strings = i.xpath('.//span/text()')
+            def get_goals(xpath):
+                goals = dict()
+                for item in tree.xpath(xpath):
+                    strings = item.xpath('.//span/text()')
                     player = strings[0]
                     g = "".join(strings[1:])
                     g = g.replace(' minutes', "").replace(',\xa0', "")
@@ -305,7 +315,7 @@ class MatchThreadCommands(commands.Cog):
                 match_data["stats"].append((home, stat, away))
             
             ticker = tree.xpath("//div[@class='lx-stream__feed']/article")
-            match_data["events"] = await self.parse_ticker(ticker)
+            match_data["events"] = self.ticker
         return match_data
     
     # Bonus data if prem.
@@ -460,12 +470,12 @@ class MatchThreadCommands(commands.Cog):
                 # alias
                 nm = match_data_team['subs'][p]['name']
                 g = match_data_team['subs'][p]['goals']
-                g = f"⚽ {g}" if g else ""
+                g = f" ⚽ {g}" if g else ""
                 cr = match_data_team['subs'][p]['cards']
                 so = match_data_team['subs'][p]['subbed']['replaced_by']
                 sm = match_data_team['subs'][p]['subbed']['minute']
-                s = f"🔺 {so} {sm}" if so and sm else ""
-                output = f"{p} {nm}{cr} {g} {s}"
+                s = f" 🔺 {so} {sm}" if so and sm else ""
+                output = f"{p} {nm}{cr}{g}{s}"
                 smd.append(output)
             return md, smd
         
@@ -486,7 +496,7 @@ class MatchThreadCommands(commands.Cog):
             markdown += f"---\n\n#### Subs"
             markdown += f"\n{home_icon} {home} | {away} {away_icon}\n"
             markdown += "--:|:--\n"
-            markdown += f"{','.join(home_sub_markdown)} | {','.join(away_sub_markdown)}\n"
+            markdown += f"{','.join(home_sub_markdown)} | {', '.join(away_sub_markdown)}\n"
         
         if match_data["stats"]:
             markdown += f"---\n\n### Match Stats	\n"
