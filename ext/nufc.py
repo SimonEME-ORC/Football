@@ -11,7 +11,7 @@ class NUFC(commands.Cog):
 		self.bot = bot
 		self.bot.streams = {}
 	
-	def nufccheck(ctx):
+	def cog_check(self, ctx):
 		if ctx.guild:
 			return ctx.guild.id in [238704683340922882, 332159889587699712]
 	
