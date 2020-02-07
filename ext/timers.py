@@ -13,14 +13,18 @@ class Reminders(commands.Cog):
         self.bot = bot
         self.active_module = True
         self.bot.reminders = []  # A list of tasks.
+        self.bot.loop.create_task(self.spool_initial)
         
-        for record in bot.reminders.items():
-            self.bot.reminders.append(self.bot.loop.create_task(spool_reminder(self.bot, record)))
-    
     def cog_unload(self):
         for i in self.bot.reminders:
             i.cancel()
     
+    async def spool_initial(self):
+        connection = self.bot.db.acqurie()
+        records = await connection.fetch("""SELECT * FROM reminders""")
+        for r in records:
+            self.bot.reminders.append(self.bot.loop.create_task(spool_reminder(self.bot, r)))
+            
     @commands.command(aliases=['reminder', 'remind', 'remindme'])
     async def timer(self, ctx, time, *, message: commands.clean_content):
         """ Remind you of something at a specified time.
