@@ -1,15 +1,20 @@
+from collections import defaultdict
+
 from discord.ext import commands
 import discord
 import typing
+
+# TODO: Bad words filters
 
 
 class AutoMod(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.bot.loop.create_task(self.update_cache())
+        self.cache = defaultdict()
 
     async def update_cache(self):
-        self.automod_cache = {}
+        self.cache.clear()
         connection = await self.bot.db.acquire()
         async with connection.transaction():
             records = await connection.fetch("""SELECT * FROM mention_spam""")
@@ -19,7 +24,7 @@ class AutoMod(commands.Cog):
             r = {r['guild_id']:
                      {"mention_threshold": r["mention_threshold"],
                       "mention_action": r['mention_action']}}
-            self.automod_cache.update(r)
+            self.cache.update(r)
 
     @commands.has_permissions(kick_members=True, ban_members=True)
     @commands.command(usage="mentionspam <number of pings> <'kick', 'mute' or 'ban'>", aliases=["pingspam"])
@@ -29,7 +34,7 @@ class AutoMod(commands.Cog):
         if threshold is None:
             # Get current data.
             try:
-                guild_cache = self.automod_cache[ctx.guild.id]
+                guild_cache = self.cache[ctx.guild.id]
                 return await ctx.send(
                     f"I will {guild_cache['mention_action']} members who ping {guild_cache['mention_threshold']} or "
                     f"more other users in a message.")
@@ -70,7 +75,7 @@ class AutoMod(commands.Cog):
     @commands.Cog.listener()
     async def on_message(self, message):
         try:
-            guild_cache = self.automod_cache[message.guild.id]
+            guild_cache = self.cache[message.guild.id]
         except (KeyError, AttributeError):
             return
         if guild_cache["mention_threshold"] > len(message.mentions):
