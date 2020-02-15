@@ -1,3 +1,7 @@
+
+from selenium.webdriver.support import expected_conditions as ec
+from selenium.webdriver.support.wait import WebDriverWait
+from selenium.webdriver.common.by import By
 from ext.utils.selenium_driver import spawn_driver
 from discord.ext import commands, tasks
 from io import BytesIO
@@ -75,17 +79,17 @@ class Sidebar(commands.Cog):
             self.driver.quit()
     
     async def cog_check(self, ctx):
-        return ctx.guild.id == 332159889587699712
+        return ctx.guild.id in [332159889587699712, 250252535699341312]
     
     @tasks.loop(hours=6)
     async def sidebar_loop(self):
         table = await self.table()
-        sb, fixtures, res, last_result, get_match_threads = await self.bot.loop.run_in_executor(None, self.get_data)
-        sb = build_sidebar(sb, table, fixtures, res, last_result, get_match_threads)
+        sb, fixtures, results, last_result, get_match_threads = await self.bot.loop.run_in_executor(None, self.get_data)
+        sb = build_sidebar(sb, table, fixtures, results, last_result, get_match_threads)
         await self.bot.loop.run_in_executor(None, self.post_sidebar, sb)
     
     @commands.command(invoke_without_command=True)
-    @commands.is_owner()
+    @commands.has_permissions(manage_messages=True)
     async def sidebar(self, ctx, *, caption=None):
         """ Show the status of the sidebar updater, or use sidebar manual """
         async with ctx.typing():
@@ -99,31 +103,26 @@ class Sidebar(commands.Cog):
                 await self.bot.loop.run_in_executor(None, self.post_wiki, sb)
             
             if ctx.message.attachments:
-                async with self.bot.session.get(ctx.message.attachments[0].url) as resp:
-                    if resp.status != 200:
-                        return await ctx.send("Something went wrong retrieving the image from discord.")
-                    image = await resp.content.read()
-                im = Image.open(BytesIO(image))
-                output = BytesIO()
-                im.save(output, 'sidebar.png')
-                output.seek(0)
-                
                 s = self.bot.reddit.subreddit("NUFC")
-                try:
-                    s.stylesheet.upload('sidebar', output)
-                except Exception as e:
-                    print(f"Error uploading image to reddit: {e}")
-                    return await ctx.send(f"Failed. {e}")
+                await ctx.message.attachments[0].save("sidebar.png")
+                s.stylesheet.upload('sidebar', "sidebar.png")
                 style = s.stylesheet().stylesheet
                 s.stylesheet.update(style, reason=f"{ctx.author.name} Updated sidebar image via discord.")
             
+            
+            # Scrape
+            sb, fixtures, results, last_result, match_threads = await self.bot.loop.run_in_executor(None, self.get_data)
+            table = await self.table()
+            sb = build_sidebar(sb, table, fixtures, results, last_result, match_threads)
+            # post
+            await self.bot.loop.run_in_executor(None, self.post_sidebar, sb)
+        
             # Embed.
             e = discord.Embed(color=0xff4500)
             th = "http://vignette2.wikia.nocookie.net/valkyriecrusade/images/b/b5/Reddit-The-Official-App-Icon.png"
             e.set_author(icon_url=th, name="Sidebar updater")
             e.description = f"Sidebar for http://www.reddit.com/r/NUFC updated."
             e.timestamp = datetime.datetime.now()
-            e.set_footer(text=f"{len(sb)} / 10240 Characters")
             await ctx.send(embed=e)
     
     def upload_image(self, image):
@@ -144,14 +143,14 @@ class Sidebar(commands.Cog):
         sb = self.get_old_sidebar()
         fixtures = self.fixtures()
         results, last_result, last_opponent = self.results()
-        get_match_threads = self.get_match_threads(last_opponent)
-        return sb, fixtures, results, last_result, get_match_threads
+        match_threads = self.get_match_threads(last_opponent)
+        return sb, fixtures, results, last_result, match_threads
     
     def get_match_threads(self, last_opponent):
         last_opponent = last_opponent.split(" ")[0]
         for i in self.bot.reddit.subreddit('NUFC').search('flair:"Pre-match thread"', sort="new", syntax="lucene"):
             if last_opponent in i.title:
-                pre = f"[Pre]({i.url.split('?ref=')[0]}"
+                pre = f"[Pre]({i.url.split('?ref=')[0]})"
                 break
         else:
             pre = "Pre"
@@ -159,14 +158,14 @@ class Sidebar(commands.Cog):
             if not i.title.startswith("Match"):
                 continue
             if last_opponent in i.title:
-                match = f"[Match]({i.url.split('?ref=')[0]}"
+                match = f"[Match]({i.url.split('?ref=')[0]})"
                 break
         else:
             match = "Match"
         
         for i in self.bot.reddit.subreddit('NUFC').search('flair:"Post-match thread"', sort="new", syntax="lucene"):
             if last_opponent in i.title:
-                post = f"[Post]({i.url.split('?ref=')[0]}"
+                post = f"[Post]({i.url.split('?ref=')[0]})"
                 break
         else:
             post = "Post"
@@ -187,7 +186,7 @@ class Sidebar(commands.Cog):
             rank = p[0].strip()  # Ranking
             movement = p[1].strip()
             if "hasn't" in movement:
-                movement = '-'
+                movement = ''
             elif "up" in movement:
                 movement = '🔺'
             elif "down" in movement:
@@ -205,13 +204,18 @@ class Sidebar(commands.Cog):
             goal_diff = p[9]
             points = p[10]
             
-            data = [f"{rank} {movement}", team, played, won, drew, lost, goal_diff, points]
-            data = [f"**{i}**" for i in data if "Newcastle" in data[1]]
-            table_data += "|".join(data) + "\n"
+            if "Newcastle" in team:
+                table_data += f"{movement} {rank} | **{team}** | **{played}** | **{won}** | **{drew}** | **{lost}** | "\
+                              f"**{goal_diff}** | **{points}**\n"
+            else:
+                table_data += f"{movement} {rank} | {team} | {played} | {won} | {drew} | {lost} | " \
+                              f"{goal_diff} | {points}\n"
         return table_data
     
     def fixtures(self):
         self.driver.get("http://www.flashscore.com/team/newcastle-utd/p6ahwuwJ/fixtures/")
+        xpath = './/div[@class="sportName soccer"]'
+        WebDriverWait(self.driver, 5).until(ec.visibility_of_element_located((By.XPATH, xpath)))
         tree = html.fromstring(self.driver.page_source)
         
         fixblock = []
@@ -271,6 +275,8 @@ class Sidebar(commands.Cog):
     
     def results(self):
         self.driver.get("http://www.flashscore.com/team/newcastle-utd/p6ahwuwJ/results/")
+        xpath = './/div[@class="sportName soccer"]'
+        WebDriverWait(self.driver, 5).until(ec.visibility_of_element_located((By.XPATH, xpath)))
         t = html.fromstring(self.driver.page_source)
         
         resultlist = []
@@ -278,7 +284,14 @@ class Sidebar(commands.Cog):
         
         results = t.xpath(".//div[contains(@class,'sportName soccer')]/div")
         for i in results:
-            match_id = "".join(i.xpath(".//@id")).split('_')[2]
+            try:
+                match_id = "".join(i.xpath(".//@id")).split('_')[-1]
+            except IndexError:
+                continue  # Not a match
+            
+            if not match_id:
+                continue  # STILL not a match...
+            
             # Hack together link.
             lnk = f"http://www.flashscore.com/match/{match_id}/#match-summary"
             
@@ -350,11 +363,9 @@ class Sidebar(commands.Cog):
     
     def upload_badge(self, image):
         im = Image.open(BytesIO(image))
-        output = BytesIO()
-        im.save(output, "PNG")
-        output.seek(0)
+        im.save("temporary_badge", "PNG")
         s = self.bot.reddit.subreddit("NUFC")
-        s.stylesheet.upload('temp', output)
+        s.stylesheet.upload('temp', "temporary_badge")
         style = s.stylesheet().stylesheet
         s.stylesheet.update(style, reason="Update temporary badge image")
 
