@@ -10,10 +10,35 @@ class NUFC(commands.Cog):
 	def __init__(self, bot):
 		self.bot = bot
 		self.bot.streams = {}
+		with open('girls_names.txt', "r") as f:
+			self.girls = f.read().splitlines()
+	
 	
 	def cog_check(self, ctx):
 		if ctx.guild:
 			return ctx.guild.id in [238704683340922882, 332159889587699712]
+
+	async def on_cog_error(self, error):
+		if isinstance(commands.CheckFailure):
+			# Discard these silently.
+			return
+		# Pass to next error handler.
+		raise error
+	
+	@commands.Cog.listener()
+	async def on_member_join(self, member):
+		# Bully kegs with a random girl's name.
+		if member.id == 272722118192529409:
+			await member.edit(nick=random.choice(self.girls).title())
+	
+	@commands.Cog.listener()
+	async def on_member_update(self, before, after):
+		# Goala 178631560650686465
+		# Keegs 272722118192529409
+		if not before.id == 272722118192529409:
+			return
+		if before.nick != after.nick:
+			await after.edit(nick=random.choice(self.girls).title())
 	
 	@commands.command(hidden=True)
 	@commands.is_owner()
@@ -51,7 +76,6 @@ class NUFC(commands.Cog):
 	
 	# Todo: Cleanup this pile of trash
 	@commands.command(aliases=["colour"], hidden=True)
-	@commands.check(nufccheck)
 	async def color(self, ctx, color):
 		""" Gives you a colour """
 		if not ctx.channel.id == 332167049273016320:
@@ -112,7 +136,6 @@ class NUFC(commands.Cog):
 			"between men and women.")
 	
 	@commands.group(invoke_without_command=True, aliases=["stream"])
-	@commands.check(nufccheck)
 	async def streams(self, ctx):
 		""" List alls for the match added by users. """
 		try:
@@ -127,7 +150,6 @@ class NUFC(commands.Cog):
 		await ctx.send(output)
 	
 	@streams.command(name="add")
-	@commands.check(nufccheck)
 	async def stream_add(self, ctx, *, stream):
 		""" Add a stream to the stream list. """
 		stream = discord.utils.escape_mentions(stream)
@@ -149,7 +171,6 @@ class NUFC(commands.Cog):
 		await ctx.send(f"Added {stream} to stream list.")
 	
 	@streams.command(name="del")
-	@commands.check(nufccheck)
 	async def stream_del(self, ctx, *, num: int):
 		""" Delete a stream from the stream list """
 		num = num - 1
@@ -177,7 +198,6 @@ class NUFC(commands.Cog):
 		await ctx.send(file=discord.File('Get off the metro now.mp3'))
 	
 	@commands.command()
-	@commands.check(nufccheck)
 	async def mbemba(self, ctx):
 		""" Mbemba When... """
 		facts = [
@@ -295,7 +315,6 @@ class NUFC(commands.Cog):
 		await ctx.send(f"<:mbemba:332196308825931777> Mbemba {this}?")
 	
 	@commands.command()
-	@commands.check(nufccheck)
 	async def radio(self, ctx):
 		await ctx.send("<:badge:332195611195605003>  Radio Coverage: https://www.nufc.co.uk/liveaudio.html")
 
