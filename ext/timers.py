@@ -13,18 +13,18 @@ class Reminders(commands.Cog):
         self.bot = bot
         self.active_module = True
         self.bot.reminders = []  # A list of tasks.
-        self.bot.loop.create_task(self.spool_initial)
-        
+        self.bot.loop.create_task(self.spool_initial())
+    
     def cog_unload(self):
         for i in self.bot.reminders:
             i.cancel()
     
     async def spool_initial(self):
-        connection = self.bot.db.acqurie()
+        connection = await self.bot.db.acquire()
         records = await connection.fetch("""SELECT * FROM reminders""")
         for r in records:
             self.bot.reminders.append(self.bot.loop.create_task(spool_reminder(self.bot, r)))
-            
+    
     @commands.command(aliases=['reminder', 'remind', 'remindme'])
     async def timer(self, ctx, time, *, message: commands.clean_content):
         """ Remind you of something at a specified time.
@@ -32,20 +32,22 @@ class Reminders(commands.Cog):
         delta = await parse_time(time.lower())
         
         remind_at = datetime.datetime.now() + delta
-        human_time = datetime.datetime.strftime(remind_at, "%H:%M:%S on %a %d %b")
+        human_time = datetime.datetime.strftime(remind_at, "%a %d %b at %H:%M:%S")
         
         connection = await self.bot.db.acquire()
-        record = await connection.execute(""" INSERT INTO reminders (message_id, channel_id, guild_id,
-        reminder_content,
-        created_time, target_time. user_id) VALUES ($1, $2, $3, $4, $5, $6, %7) RETURNING *""", ctx.message.id,
-                                          ctx.channel.id, ctx.guild.id, message, datetime.datetime.now(), remind_at,
-                                          ctx.author.id)
+        record = await connection.fetchrow(""" INSERT INTO reminders
+        (message_id, channel_id, guild_id, reminder_content, created_time, target_time, user_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *""",
+                                          ctx.message.id, ctx.channel.id, ctx.guild.id, message,
+                                          ctx.message.created_at,
+                                          remind_at, ctx.author.id)
         await self.bot.db.release(connection)
-        self.bot.reminders.append(self.bot.loop.create_task(spool_reminder(ctx.bot, record)))
+        print(record)
+        self.bot.reminders.append(self.bot.loop.create_task(spool_reminder(self.bot, record)))
         
         e = discord.Embed()
         e.title = "⏰ Reminder Set"
-        e.description = f"{ctx.author.mention} You will be reminded about \n{message}\nat\n {human_time}"
+        e.description = f"**{human_time}**\n{message}"
         e.colour = 0x00ffff
         e.timestamp = remind_at
         await ctx.send(embed=e)
@@ -72,6 +74,7 @@ class Reminders(commands.Cog):
                 e.description += this_string
         embeds.append(e)
         await paginate(ctx, embeds)
+
 
 # TODO: timed poll.
 
