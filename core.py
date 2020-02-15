@@ -1,3 +1,4 @@
+import discord
 from discord.ext import commands
 from datetime import datetime
 import aiohttp
@@ -27,7 +28,8 @@ class Bot(commands.Bot):
 			description="Football lookup bot by Painezor#8489",
 			help_command=commands.DefaultHelpCommand(dm_help_threshold=20),
 			command_prefix=".tb ",
-			owner_id=210582977493598208
+			owner_id=210582977493598208,
+			activity=discord.Game(name="Use .tb help")
 		)
 		self.db = kwargs.pop("database")
 		self.credentials = credentials
@@ -38,8 +40,9 @@ class Bot(commands.Bot):
 		print(f'{self.user}: {datetime.now().strftime("%d-%m-%Y %H:%M:%S")}\n-----------------------------------')
 		# Startup Modules
 		load = [
+			'ext.reactions',  # needs to be loaded fist.
 			'ext.automod', 'ext.admin', 'ext.fixtures', 'ext.fun', 'ext.images', 'ext.info', 'ext.mod',	'ext.mtb',
-			'ext.notifications', 'ext.nufc', 'ext.quotes','ext.reactions', 'ext.scores', 'ext.sidebar', 'ext.timers',
+			'ext.notifications', 'ext.nufc', 'ext.quotes', 'ext.scores', 'ext.sidebar', 'ext.timers',
 			'ext.twitter','ext.transfer_lookup', "ext.transfer_ticker", 'ext.tv',
 		]
 		for c in load:
@@ -47,7 +50,6 @@ class Bot(commands.Bot):
 				self.load_extension(c)
 			except Exception as e:
 				print(f'Failed to load cog {c}\n{type(e).__name__}: {e}')
-
 
 loop = asyncio.get_event_loop()
 loop.run_until_complete(run())
