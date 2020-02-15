@@ -4,7 +4,6 @@ from collections import Counter
 import random
 import datetime
 import traceback
-import sys
 
 
 # TODO: Create custom Reaction setups per server
@@ -33,8 +32,6 @@ class GlobalChecks(commands.Cog):
 class Reactions(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        with open('girls_names.txt', "r") as f:
-            self.girls_names = f.read().splitlines()
 
     @commands.Cog.listener()
     async def on_socket_response(self, msg):
@@ -52,24 +49,22 @@ class Reactions(commands.Cog):
             return
 
         # NoPM
-        elif isinstance(error, commands.NoPrivateMessage):
-            await ctx.send('Sorry, this command cannot be used in DMs.')
+        if isinstance(error, commands.NoPrivateMessage):
+            return await ctx.send('Sorry, this command cannot be used in DMs.')
 
-        elif isinstance(error, discord.Forbidden):
+        if isinstance(error, discord.Forbidden):
+            print(
+                f"Discord.Forbidden Error, check {ctx.command} bot_has_permissions  {ctx.message.content} ("
+                f"{ctx.author}) in {ctx.channel.name} on {ctx.guild.name}")
             try:
-                print(
-                    f"Discord.Forbidden Error, check {ctx.command} bot_has_permissions {ctx.message.content} ("
-                    f"{ctx.author}) in {ctx.channel.name} on {ctx.guild.name}")
                 await ctx.message.add_reaction('⛔')
             except discord.Forbidden:
-                print(
-                    f"Discord.Forbidden Error, check {ctx.command} bot_has_permissions  {ctx.message.content} ("
-                    f"{ctx.author}) in {ctx.channel.name} on {ctx.guild.name}")
-
-        elif isinstance(error, commands.DisabledCommand):
+                return
+            
+        if isinstance(error, commands.DisabledCommand):
             return  # Fail Silently.
         
-        elif isinstance(error, commands.MissingPermissions):
+        if isinstance(error, commands.MissingPermissions):
             if len(error.missing_perms) == 1:
                 perm_string = error.missing_perms[0]
             else:
@@ -78,7 +73,7 @@ class Reactions(commands.Cog):
             msg = f'🚫 You need {perm_string} permissions to do that.'
             return await ctx.send(msg)
         
-        elif isinstance(error, commands.BotMissingPermissions):
+        if isinstance(error, commands.BotMissingPermissions):
             if len(error.missing_perms) == 1:
                 perm_string = error.missing_perms[0]
             else:
@@ -91,45 +86,38 @@ class Reactions(commands.Cog):
                    f"using that prefix."
             return await ctx.send(msg)
 
-        elif isinstance(error, commands.CommandNotFound):
-            pass
+        if isinstance(error, commands.CommandNotFound):
+            return
 
-        elif isinstance(error, commands.CommandInvokeError):
-            print(
-                f"Error: ({ctx.author} ({ctx.author.id}) on {ctx.guild.name} ({ctx.guild.id}) )\nCo"
-                f"ntext: {ctx.message.content}")
-
-            print('In {0.command.qualified_name}:'.format(ctx), file=sys.stderr)
+        if isinstance(error, commands.CommandInvokeError):
+            print(f"Error: ({ctx.author} ({ctx.author.id}) on {ctx.guild.name} ({ctx.guild.id}) )\n"
+                  f"Context: {ctx.message.content}")
+            print(f'In {ctx.command.qualified_name}:')
             traceback.print_tb(error.original.__traceback__)
-            print('{0.__class__.__name__}: {0}'.format(error.original),
-                  file=sys.stderr)
+            print(f'{error.original.__class__.__name__}: {error.original}')
+            return
 
-        elif isinstance(error, commands.MissingRequiredArgument):
+        if isinstance(error, commands.MissingRequiredArgument):
             if ctx.command.usage:
                 return await ctx.send(
                     f"⚠️ {error.param.name} is a missing argument that was not provided.\n```{ctx.command} usage: "
                     f"{ctx.command.usage}```")
             else:
                 print(f"Someone fucked up while using {ctx.command} but command.usage is not set.")
+                return
 
-        elif isinstance(error, commands.CommandOnCooldown):
+        if isinstance(error, commands.CommandOnCooldown):
             await ctx.send(f'⏰ On cooldown for {str(error.retry_after).split(".")[0]}s', delete_after=5)
-
-        else:
-            print(
-                f"Error: ({ctx.author.id} on {ctx.guild.id})\n caused the following error\n{error}\nContext: "
-                f"{ctx.message.content}")
-
-    @commands.Cog.listener()
-    async def on_member_update(self, before, after):
-        # Goala 178631560650686465
-        # Keegs 272722118192529409
-        if not before.id == 272722118192529409:
             return
-        if before.nick != after.nick:
-            async for i in before.guild.audit_logs(limit=1):
-                if i.user.id == 272722118192529409:
-                    await after.edit(nick=random.choice(self.girls_names).title())
+        
+        if isinstance(error, commands.NSFWChannelRequired):
+            await ctx.send(f"🚫 This command can only be used in NSFW channels.")
+            return
+        
+        print(f"Unhandled Error Type: {type(error)}\n"
+              f"({ctx.author} on {ctx.guild.name}) caused the following error\n"
+              f"{error}\n"
+              f"Context: {ctx.message.content}\n")
 
     @commands.Cog.listener()
     async def on_message_delete(self, message):
