@@ -1,7 +1,7 @@
+import typing
 from PIL import Image, ImageDraw, ImageOps, ImageFont
 from discord.ext import commands
 from discord.ext.commands.cooldowns import BucketType
-import datetime
 import textwrap
 import discord
 import asyncio
@@ -36,9 +36,7 @@ def draw_tinder(image, av, name):
     output = BytesIO()
     im.save(output, "PNG")
     output.seek(0)
-
-    df = discord.File(output, filename="tinder.png")
-    return df
+    return output
 
 
 def draw_bob(image, response):
@@ -62,9 +60,7 @@ def draw_bob(image, response):
     output = BytesIO()
     im.save(output, "PNG")
     output.seek(0)
-    
-    df = discord.File(output, filename="withbob.png")
-    return df
+    return output
 
 
 def draw_knob(image, response):
@@ -85,8 +81,7 @@ def draw_knob(image, response):
     output = BytesIO()
     im.save(output, "PNG")
     output.seek(0)
-    df = discord.File(output, filename="withknobs.png")
-    return df
+    return output
 
 
 def draw_eyes(image, response):
@@ -131,9 +126,7 @@ def draw_eyes(image, response):
     output = BytesIO()
     im.save(output, "PNG")
     output.seek(0)
-    df = discord.File(output, filename="witheyes.png")
-    
-    return df
+    return output
 
 
 def draw_tard(image, quote):
@@ -188,21 +181,6 @@ def draw_tard(image, quote):
     df = discord.File(output, filename="retarded.png")
     return df
 
-
-async def get_target(ctx, target):
-    if ctx.message.mentions:
-        target = str(ctx.message.mentions[0].avatar_url_as(format="png"))
-    if target is None:
-        for i in ctx.message.attachments:
-            if i.height is None:  # Not an image.
-                continue
-            return i.url
-        await ctx.send(':no_entry_sign: To use this command either upload an image, tag a user, or specify a url.')
-        return None
-    else:
-        return target
-
-
 def ruin(image):
     """ Generates the Image """
     im = Image.open(BytesIO(image))
@@ -216,7 +194,51 @@ def ruin(image):
     df = discord.File(output, filename="retarded.png")
     return df
 
+async def get_faces(ctx, target):
+    """ Retrieve face features from Project Oxford """
+    if isinstance(target, discord.Member):
+        target = str(ctx.message.mentions[0].avatar_url_as(format="png"))
+    elif target is None:
+        for i in ctx.message.attachments:
+            if i.height is None:  # Not an image.
+                continue
+            target =  i.url
+            break
+        else:
+            await ctx.send('🚫 To use this command either upload an image, tag a user, or specify a url.')
+            return None, None, None
+    elif "://" not in target:
+        await ctx.send(f"{target} doesn't look like a valid url.")
+        return None, None, None
+    
+    # Prepare POST
+    oxk = ctx.bot.credentials['Oxford']['OxfordKey']
+    h = {"Content-Type": "application/json", "Ocp-Apim-Subscription-Key": oxk}
+    body = {"url": target}
+    p = {"returnFaceId": "False", "returnFaceLandmarks": "True", "returnFaceAttributes": "headPose"}
+    d = json.dumps(body)
+    url = "https://westeurope.api.cognitive.microsoft.com/face/v1.0/detect"
 
+    # Get Project Oxford reply
+    async with ctx.bot.session.post(url, params=p, headers=h, data=d) as resp:
+        if resp.status != 200:
+            if resp.status == 400:
+                await ctx.send(await resp.json())
+            else:
+                await ctx.send(
+                    f"HTTP Error {resp.status} recieved accessing project oxford's facial recognition API.")
+            return None, None
+        response = await resp.json()
+    
+    # Get target image as file
+    async with ctx.bot.session.get(target) as resp:
+        if resp.status != 200:
+            await ctx.send(f"{resp.status} code accessing project oxford.")
+        image = await resp.content.read()
+    return image, response, target
+
+
+# TODO: XKCD Command.
 # TODO: Embedify with local embed upload & source image & author.
 
 
@@ -225,6 +247,21 @@ class ImageManip(commands.Cog):
     
     def __init__(self, bot):
         self.bot = bot
+    
+    async def embedify(self, ctx, image: BytesIO, colour: int(16)=None, source=None, caption=None, icon=None):
+        e = discord.Embed()
+        e.set_author(name=ctx.command.name.title(), icon_url=icon)
+        if colour:
+            e.colour = colour
+        else:
+            e.colour = discord.Colour.blurple()
+        if caption is not None:
+            e.description = caption
+        if source is not None:
+            e.add_field(name="Source Image", value=source)
+        df = discord.File(image, filename=f"{ctx.command.name}.png")
+        e.set_image(url=f"attachment://{ctx.command.name}.png")
+        await ctx.send(file=df, embed=e)
     
     @commands.command()
     @commands.cooldown(2, 90, BucketType.user)
@@ -244,99 +281,70 @@ class ImageManip(commands.Cog):
             
             async with self.bot.session.get(str(match.avatar_url_as(format="png"))) as resp:
                 target = await resp.content.read()
-                df = await self.bot.loop.run_in_executor(None, draw_tinder, target, av, name)
-            
+                output = await self.bot.loop.run_in_executor(None, draw_tinder, target, av, name)
             if match == ctx.author:
-                await ctx.send("Congratulations, you matched with yourself. How pathetic.", file=df)
+                caption = f"{ctx.author.mention} matched with themself, How pathetic."
             elif match == ctx.me:
-                await ctx.send("Fancy a shag?", file=df)
+                caption = f"{ctx.author.meention} Fancy a shag?"
             else:
-                await ctx.send(file=df)  # file name is tinder.png
+                caption = f"{ctx.author.mention} matched with {match.mention}"
+            icon = "https://cdn0.iconfinder.com/data/icons/social-flat-rounded-rects/512/tinder-512.png"
+            await self.embedify(ctx, output, colour=0xFD297B, caption=caption, icon=icon)
 
-    async def get_faces(self, ctx, target):
-        """ Retrieve face features from Project Oxford """
-        # Prepare POST
-        oxk = self.bot.credentials['Oxford']['OxfordKey']
-        h = {"Content-Type": "application/json", "Ocp-Apim-Subscription-Key": oxk}
-        body = {"url": target}
-        p = {"returnFaceId": "False", "returnFaceLandmarks": "True", "returnFaceAttributes": "headPose"}
-        d = json.dumps(body)
-        url = "https://westeurope.api.cognitive.microsoft.com/face/v1.0/detect"
-
-        # Get Project Oxford reply
-        async with self.bot.session.post(url, params=p, headers=h, data=d) as resp:
-            if resp.status != 200:
-                if resp.status == 400:
-                    await ctx.send(await resp.json())
-                else:
-                    await ctx.send(
-                        f"HTTP Error {resp.status} recieved accessing project oxford's facial recognition API.")
-                return None, None
-            response = await resp.json()
-        
-        # Get target image as file
-        async with self.bot.session.get(target) as resp:
-            if resp.status != 200:
-                await ctx.send(f"{resp.status} code accessing project oxford.")
-            image = await resp.content.read()
-        return image, response
-
-    @commands.command(aliases=["bob", "ross"])
-    async def bobross(self, ctx, *, target=None):
+    @commands.command(aliases=["bob", "ross"], usage= 'bobross <@user, link to image, or upload a file>')
+    async def bobross(self, ctx, *, target: typing.Union[discord.Member, str] = None):
         """ Bob Rossify """
         with ctx.typing():
-            target = await get_target(ctx, target)
-            if not target:
-                return  # rip.
+            image, response, target = await get_faces(ctx, target)
             
-            image, response = await self.get_faces(ctx, target)
             if response is None:
-                return await ctx.send("No faces were detected in your image.")
+                return await ctx.send("🚫 No faces were detected in your image.")
             
-            df = await self.bot.loop.run_in_executor(None, draw_bob, image, response)
-            await ctx.send(file=df)  # file name is withbob.png
+            image = await self.bot.loop.run_in_executor(None, draw_bob, image, response)
+            icon = "https://cdn4.vectorstock.com/i/thumb-large/79/33/painting-icon-image-vector-14647933.jpg"
+            
+            # titanium h-white
+            await self.embedify(ctx, image, colour=0xb4b2a7, source=target, icon=icon, caption=ctx.author.mention)
+            
+            # Clean up
             try:
                 await ctx.message.delete()
             except discord.Forbidden:
                 pass
 
-    @commands.command()
-    async def knob(self, ctx, *, target=None):
-        """ Draw knobs in mouth on an image.
-        Mention a user to use their avatar.
-        Only works for human faces."""
-        with ctx.typing():
-            target = await get_target(ctx, target)
-            if not target:
-                return  # rip
+    @commands.is_nsfw()
+    @commands.command(usage='knob <@user, link to image, or upload a file>')
+    async def knob(self, ctx, *, target: typing.Union[discord.Member, str] = None):
+        """ Draw knobs in mouth on an image. Mention a user to use their avatar. Only works for human faces."""
+        async with ctx.typing():
+            image, response, target = await get_faces(ctx, target)
             
-            image, response = await self.get_faces(ctx, target)
             if response is None:
-                return await ctx.send("No faces were detected in your image.")
+                return await ctx.send("🚫 No faces were detected in your image.")
             
-            df = await self.bot.loop.run_in_executor(None, draw_knob, image, response)
-            await ctx.send(ctx.author.mention, file=df)
+            image = await self.bot.loop.run_in_executor(None, draw_knob, image, response)
+            icon = "https://upload.wikimedia.org/wikipedia/commons/thumb/8/86/" \
+                   "18_icon_TV_%28Hungary%29.svg/48px-18_icon_TV_%28Hungary%29.svg.png"
+            await self.embedify(ctx, image, colour=0xff66cc, source=target, icon=icon, caption=ctx.author.mention)
+           
+            # Clean up
             try:
                 await ctx.message.delete()
             except discord.Forbidden:
                 pass
 
-    @commands.command()
-    async def eyes(self, ctx, *, target=None):
-        """ Draw Googly eyes on an image.
-            Mention a user to use their avatar.
-            Only works for human faces."""
+    @commands.command(usage='eyes <@user, link to image, or upload a file>')
+    async def eyes(self, ctx, *, target: typing.Union[discord.Member, str] = None):
+        """ Draw Googly eyes on an image. Mention a user to use their avatar. Only works for human faces."""
         with ctx.typing():
-            target = await get_target(ctx, target)
-            if not target:
-                return  # rip
-            image, response = await self.get_faces(ctx, target)
+            image, response, target = await get_faces(ctx, target)
             if response is None:
                 return await ctx.send("No faces were detected in your image.")
             
-            # Pass it off to the executor
-            df = await self.bot.loop.run_in_executor(None, draw_eyes, image, response)
-            await ctx.send(ctx.author.mention, file=df)
+            icon = "https://emojipedia-us.s3.dualstack.us-west-1.amazonaws.com/thumbs/120/microsoft/209/eyes_1f440.png"
+            await self.embedify(ctx, image, colour=0xFFFFFF, source=target, icon=icon, caption=ctx.author.mention)
+            
+            # Clean up
             try:
                 await ctx.message.delete()
             except (discord.Forbidden, discord.NotFound):
@@ -344,15 +352,12 @@ class ImageManip(commands.Cog):
 
     @commands.command(usage='tard <@user> <quote>')
     async def tard(self, ctx, target: discord.Member, *, quote):
-        """ Generate an "oh no, it's retarded" image
-        with a user's avatar and a quote "
-        """
+        """ Generate an "oh no, it's retarded" image with a user's avatar and a quote """
         with ctx.typing():
             if target.id == 210582977493598208:
                 target = ctx.author
                 quote = "I think I'm smarter than Painezor"
-            cs = self.bot.session
-            async with cs.get(str(target.get_avatar_url_as(format="png", size=1024))) as resp:
+            async with self.bot.session.get(str(target.get_avatar_url_as(format="png", size=1024))) as resp:
                 if resp.status != 200:
                     return await ctx.send(f"Error retrieving avatar for target {target} {resp.status}")
                 image = await resp.content.read()
@@ -364,7 +369,7 @@ class ImageManip(commands.Cog):
         if isinstance(exc, commands.BadArgument):
             return await ctx.send("🚫 Bad argument provided: Make sure you're pinging a user or using their ID")
 
-    @commands.command(aliases=["localman", "local", "ruin"], hidden=True)
+    @commands.command(aliases=["localman", "local", "ruin"], usage="ruins @member")
     async def ruins(self, ctx, *, user: discord.User = None):
         """ Local man ruins everything """
         with ctx.typing():
