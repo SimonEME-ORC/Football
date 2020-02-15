@@ -43,7 +43,7 @@ class QuoteDB(commands.Cog):
             e.description += r["message_content"]
             
             if pages > 1:
-                e.description += f"\nMatching quote {page} of {pages}*"
+                e.description += f"\n\n*Matching quote {page} of {pages}*"
                 
             try:
                 e.set_footer(text=f"Added by {submitter}", icon_url=submitter.avatar_url)
@@ -111,7 +111,7 @@ class QuoteDB(commands.Cog):
         if not r:
             return await ctx.send(failure)
         
-        embeds = self.embed_quotes(r)
+        embeds = await self.embed_quotes(r)
         await ctx.send(success)
         await paginate(ctx, embeds)
 
@@ -158,7 +158,7 @@ class QuoteDB(commands.Cog):
         await n.edit(content=":white_check_mark: Successfully added quote to database", embed=e[0])
 
     # Find quote
-    @quote.command(aliases=['global'], usage= "Quote all (Optional: @member)")
+    @quote.command(aliases=['global'], usage="Quote all (Optional: @member)")
     async def all(self, ctx, users: commands.Greedy[discord.User]):
         """ Get a random quote from any server, optionally from a specific user. """
         await self._get_quote(ctx, users=users, all_guilds=True)
@@ -168,7 +168,7 @@ class QuoteDB(commands.Cog):
         """ Search for a quote by quote text """
         await self._get_quote(ctx, qry=qry, all_guilds=False)
 
-    @search.command(name="all", aliases=['global'], aliases=["global"])
+    @search.command(name="all", aliases=['global'])
     async def _all(self, ctx, *, qry: commands.clean_content):
         """ Search for a quote **from any server** by quote text """
         await self._get_quote(ctx, qry=qry, all_guilds=True)
@@ -178,7 +178,7 @@ class QuoteDB(commands.Cog):
         """ Gets the last quoted message (optionally from user) """
         await self._get_quote(ctx, users=users, random=False)
 
-    @last.command(name="all", aliases=['global'], usage = "quote last all (Optional: @member @member2)")
+    @last.command(name="all", aliases=['global'], usage="quote last all (Optional: @member @member2)")
     async def last_all(self, ctx, users: commands.Greedy[discord.User]):
         """ Gets the last quoted message (optionally from users) from any server."""
         await self._get_quote(ctx, users=users, random=False, all_guilds=True)
@@ -199,7 +199,8 @@ class QuoteDB(commands.Cog):
             if ctx.author.id != self.bot.owner_id:
                 return await ctx.send(f"You can't delete quotes from other servers!")
 
-        e = await self.embed_quotes([r])[0]  # There will only be one quote to return for this.
+        e = await self.embed_quotes([r])
+        e = e[0]  # There will only be one quote to return for this.
         m = await ctx.send("Delete this quote?", embed=e)
         await m.add_reaction("👍")
         await m.add_reaction("👎")
@@ -222,11 +223,10 @@ class QuoteDB(commands.Cog):
             await connection.execute("DELETE FROM quotes WHERE quote_id = $1", quote_id)
             await ctx.send(f"Quote #{quote_id} has been deleted.")
         await self.bot.db.release(connection)
-        await m.delete()
 
     # Quote Stats.
-    @quote.command(usage = "quote stats <#channel or @user>")
-    async def stats(self, ctx, target: typing.Union[discord.User, discord.TextChannel] = None):
+    @quote.command(usage="quote stats <#channel or @user>")
+    async def stats(self, ctx, target: typing.Union[discord.Member, discord.TextChannel] = None):
         """ See quote stats for a user or channel """
         e = discord.Embed(color=discord.Color.blurple())
         if target is None:
@@ -236,7 +236,7 @@ class QuoteDB(commands.Cog):
         except AttributeError:
             e.description = str(target)
 
-        if isinstance(target, discord.User):
+        if isinstance(target, discord.Member):
             sql = """SELECT
                 (SELECT COUNT(*) FROM quotes WHERE author_user_id = $1) AS author,
                 (SELECT COUNT(*) FROM quotes WHERE author_user_id = $1 AND guild_id = $2) AS auth_g,
