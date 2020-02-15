@@ -1,14 +1,16 @@
-import datetime
 from collections import defaultdict
-from copy import deepcopy
 from urllib.parse import unquote
-from discord.ext import commands
-import discord
+from copy import deepcopy
+import datetime
 import typing
 
-from ext.utils.embed_paginator import paginate
 from ext.utils.timed_events import parse_time, spool_reminder
+from ext.utils.embed_paginator import paginate
+from discord.ext import commands
+import discord
 
+
+# TODO: Find a way to use a custom convertor for temp mute/ban and merge into main command.
 
 async def get_prefix(bot, message):
     if message.guild is None:
@@ -18,9 +20,6 @@ async def get_prefix(bot, message):
     if not pref:
         pref = [".tb "]
     return commands.when_mentioned_or(*pref)(bot, message)
-
-
-# TODO: Find a way to use a custom convertor for temp mute/ban and merge into main command.
 
 
 class Mod(commands.Cog):
@@ -56,13 +55,6 @@ class Mod(commands.Cog):
         print(f"Guild Join: Default prefix set for {guild.id}")
         await self.update_prefixes()
 
-    @commands.Cog.listener()
-    async def on_guild_remove(self, guild):
-        connection = await self.bot.db.acquire()
-        await connection.execute("""DELETE FROM guild_settings WHERE guild_id = $1""", guild.id)
-        await self.bot.db.release(connection)
-        print(f"Guild Remove: Cascade delete for {guild.id}")
-        
     async def update_prefixes(self):
         self.bot.prefix_cache.clear()
         connection = await self.bot.db.acquire()
@@ -287,11 +279,6 @@ class Mod(commands.Cog):
             await channel.set_permissions(i, overwrite=ow)
         
         await ctx.send(f'Blocked {" ,".join([i.mention for i in members])} from {channel.mention}')
-        
-        # ext.notifications output.
-        mute_channel = self.bot.get_channel(self.bot.notif_cache[ctx.guild.id]["mute_channel_id"])
-        if mute_channel is not None:
-            await ctx.send(f'{ctx.author} blocked {" ,".join([i.mention for i in members])} from {channel.mention}')
 
     @commands.command(usage="unblock <Optional: #channel> <@member1 @member2> <Optional: reason>")
     @commands.has_permissions(manage_channels=True)
@@ -304,10 +291,6 @@ class Mod(commands.Cog):
             await channel.set_permissions(i, overwrite=None)
 
         await ctx.send(f'Unblocked {" ,".join([i.mention for i in members])} from {channel.mention}')
-        # ext.notifications output.
-        mute_channel = self.bot.get_channel(self.bot.notif_cache[ctx.guild.id]["mute_channel_id"])
-        if mute_channel is not None:
-            await ctx.send(f'{ctx.author} unblocked {" ,".join([i.mention for i in members])} from {channel.mention}')
         
     @commands.has_permissions(manage_roles=True)
     @commands.bot_has_permissions(manage_roles=True)
@@ -327,11 +310,6 @@ class Mod(commands.Cog):
         
         await ctx.send(f"Muted {', '.join([i.mention for i in members])} for {reason}")
         
-        # ext.notifications output.
-        mute_channel = self.bot.get_channel(self.bot.notif_cache[ctx.guild.id]["mute_channel_id"])
-        if mute_channel is not None:
-            await mute_channel.send(f"{ctx.author} muted {', '.join([i.mention for i in members])} for {reason}")
-        
                 
     @commands.command()
     @commands.has_permissions(manage_roles=True)
@@ -345,11 +323,6 @@ class Mod(commands.Cog):
         for i in members:
             await i.remove_roles(muted_role)
         await ctx.send(f"Unmuted {', '.join([i.mention for i in members])}")
-
-        # ext.notifications output.
-        mute_channel = self.bot.get_channel(self.bot.notif_cache[ctx.guild.id]["mute_channel_id"])
-        if mute_channel is not None:
-            await mute_channel.send(f"{ctx.author} un-muted {', '.join([i.mention for i in members])}")
         
     
     @commands.command(aliases=["clear"])
@@ -488,7 +461,7 @@ class Mod(commands.Cog):
                 continue
         
             connection = await self.bot.db.acquire()
-            record = await connection.execute(""" INSERT INTO reminders (message_id, channel_id, guild_id,
+            record = await connection.fetchrow(""" INSERT INTO reminders (message_id, channel_id, guild_id,
             reminder_content,
             created_time, target_time. user_id, mod_action, mod_target) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING *""", ctx.message.id, ctx.channel.id, ctx.guild.id, reason, datetime.datetime.now(), remind_at,
@@ -522,29 +495,27 @@ class Mod(commands.Cog):
         
             for i in ctx.guild.text_channels:
                 await i.set_permissions(muted_role, overwrite=m_overwrite)
-    
-        # Channel
-        mute_channel = self.bot.get_channel(self.bot.notif_cache[ctx.guild.id]["mute_channel_id"])
-    
-        # Mute, send to notification channel if exists.
+
+        # Mute
         for i in members:
             await i.add_roles(muted_role, reason=f"{ctx.author}: {reason}")
             connection = await self.bot.db.acquire()
-            record = await connection.execute(""" INSERT INTO reminders (message_id, channel_id, guild_id,
-            reminder_content,
-            created_time, target_time. user_id, mod_action, mod_target) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-            RETURNING *""", ctx.message.id, ctx.channel.id, ctx.guild.id, reason, datetime.datetime.now(), remind_at,
-                                              ctx.author.id, "unmute", i.id)
+            record = await connection.fetchrow(""" INSERT INTO reminders
+            (message_id, channel_id, guild_id, reminder_content,
+             created_time, target_time, user_id, mod_action, mod_target)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            RETURNING *""",
+            ctx.message.id, ctx.channel.id, ctx.guild.id, reason,
+            ctx.message.created_at, remind_at, ctx.author.id, "unmute", i.id)
             await self.bot.db.release(connection)
             self.bot.reminders.append(self.bot.loop.create_task(spool_reminder(ctx.bot, record)))
     
-        if mute_channel is not None:
-            await mute_channel.send(f"{ctx.author} muted {[i.mention for i in members]} "
-                                    f"until {human_time} for {reason}.")
-    
         e = discord.Embed()
         e.title = "⏰ User muted"
-        e.description = f"{[i.mention for i in members]} will be unmuted for \n{reason}\nat\n {human_time}"
+        e.description = f"{', '.join([i.mention for i in members])} temporarily muted:"
+        e.add_field(name="Until", value=human_time)
+        if reason is not None:
+            e.add_field(name="Reason", value=reason)
         e.colour = 0x00ffff
         e.timestamp = remind_at
         await ctx.send(embed=e)
@@ -561,28 +532,21 @@ class Mod(commands.Cog):
         delta = await parse_time(time.lower())
         remind_at = datetime.datetime.now() + delta
         human_time = datetime.datetime.strftime(remind_at, "%H:%M:%S on %a %d %b")
-        mute_channel = self.bot.get_channel(self.bot.notif_cache[ctx.guild.id]["mute_channel_id"])
     
         ow = discord.PermissionOverwrite(read_messages=False, send_messages=False)
     
         # Mute, send to notification channel if exists.
         for i in members:
             await channel.set_permissions(i, overwrite=ow)
-            if mute_channel is not None:
-                await mute_channel.send(f"{i.mention} was muted until {human_time} by {ctx.author} for {reason}.")
         
             connection = await self.bot.db.acquire()
-            record = await connection.execute(""" INSERT INTO reminders (message_id, channel_id, guild_id,
+            record = await connection.fetchval(""" INSERT INTO reminders (message_id, channel_id, guild_id,
             reminder_content,
             created_time, target_time. user_id, mod_action, mod_target) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING *""", ctx.message.id, channel.id, ctx.guild.id, reason, datetime.datetime.now(), remind_at,
                                               ctx.author.id, "unblock", i.id)
             await self.bot.db.release(connection)
             self.bot.reminders.append(self.bot.loop.create_task(spool_reminder(ctx.bot, record)))
-    
-        if mute_channel is not None:
-            await mute_channel.send(f"{ctx.author} muted {[i.mention for i in members]} "
-                                    f"until {human_time} for {reason}.")
     
         e = discord.Embed()
         e.title = "⏰ User blocked"
