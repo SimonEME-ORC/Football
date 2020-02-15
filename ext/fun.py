@@ -9,8 +9,8 @@ import random
 
 from ext.utils.embed_paginator import paginate
 
-
 class Fun(commands.Cog):
+
     """ Toys """
     
     def __init__(self, bot):
@@ -73,12 +73,12 @@ class Fun(commands.Cog):
         e.set_footer(text=ftstr)
         await ctx.send(embed=e)
     
-    @commands.command()
-    async def poll(self, ctx, *, arg: commands.clean_content):
+    @commands.command(usage="poll <your question>")
+    async def poll(self, ctx, *, question: commands.clean_content):
         """ Thumbs up / Thumbs Down """
         e = discord.Embed(color=0x7289DA)
         e.title = f"Poll"
-        e.description = arg
+        e.description = question
         e.set_footer(text=f"Poll created by {ctx.author.name}")
         
         m = await ctx.send(embed=e)
