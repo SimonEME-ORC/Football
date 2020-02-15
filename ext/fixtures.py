@@ -85,7 +85,7 @@ class Fixtures(commands.Cog):
             self.driver.quit()
     
     def get_html(self, url, xpath, image_fetch=False, clicks=None, delete_elements=None, debug=False,
-                 multi_capture=None):
+                 multi_capture=None, multi_capture_script=None):
         
         # Build the base embed for this
         e = discord.Embed()
@@ -149,12 +149,11 @@ class Fixtures(commands.Cog):
                     print(err)
                     print(err.__traceback__)
                 else:
-                    self.driver.execute_script(
-                        "document.getElementsByClassName('playoff-scroll-button')[0].style.display = 'none';"
-                        "document.getElementsByClassName('playoff-scroll-button')[1].style.display = 'none';")
+                    if multi_capture_script is not None:
+                        self.driver.execute_script(multi_capture_script)
                     trg = self.driver.find_element_by_xpath(xpath)
                     captures.append(Image.open(BytesIO(trg.screenshot_as_png)))
-                # THIS SHOULD NOT BE HARD-CODED.
+                
 
                 max_iter -= 1
             return captures, e,  self.driver.page_source
@@ -404,7 +403,10 @@ class Fixtures(commands.Cog):
         multi = (By.LINK_TEXT, 'scroll right »')
         clicks = [(By.XPATH, ".//span[@class='button cookie-law-accept']")]
         delete = [(By.XPATH, './/div[@class="seoAdWrapper"]'), (By.XPATH, './/div[@class="banner--sticky"]')]
-        captures, e, src = self.get_html(url, xpath=xp, clicks=clicks, multi_capture=multi, delete_elements=delete)
+        script = "document.getElementsByClassName('playoff-scroll-button')[0].style.display = 'none';" \
+                 "document.getElementsByClassName('playoff-scroll-button')[1].style.display = 'none';"
+        captures, e, src = self.get_html(url, xpath=xp, clicks=clicks, multi_capture=multi,
+                                         multi_capture_script=script, delete_elements=delete)
         
         e.title = "Bracket"
         e.description = "Please click on picture -> open original to enlarge"
@@ -806,7 +808,10 @@ class Fixtures(commands.Cog):
         embeds = []
         e = discord.Embed()
         e.colour = discord.Colour.blurple()
-        e.set_author(name=f'Live Scores matching "{search_query}"')
+        if search_query:
+            e.set_author(name=f'Live Scores matching "{search_query}"')
+        else:
+            e.set_author(name="Live Scores for all known competitions")
         e.timestamp = datetime.datetime.now()
         dtn = datetime.datetime.now().strftime("%H:%M")
         matches = {k: v for k, v in self.bot.live_games.items() if search_query.lower() in k.lower()}
