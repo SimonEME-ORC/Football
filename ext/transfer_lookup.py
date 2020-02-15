@@ -246,12 +246,11 @@ class TransferLookup(commands.Cog):
             output = ""
             for item in input_list:
                 if len(item) + len(output) < 1009:
-                    input_list.remove(item)
-                    output += item
+                    output += input_list.pop(item)
                 else:
                     output += f"And {len(input_list)} more..."
                     break
-            e.add_field(name=title, value=output.strip(","))
+            e.add_field(name=title, value=output.strip(","), inline=False)
 
         for x, y in [("Players in", inlist), ("Loans In", inloans), ("Players out", outlist), ("Loans Out", outloans)]:
             write_field(x, y) if y else ""
