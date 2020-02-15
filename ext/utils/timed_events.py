@@ -1,6 +1,6 @@
-import asyncio
 import datetime
 import discord
+from discord.utils import sleep_until
 
 
 async def parse_time(time):
@@ -23,29 +23,27 @@ async def parse_time(time):
 async def spool_reminder(bot, record):
 	# Get data from records
 	channel = bot.get_channel(record['channel_id'])
-	msg = channel.get_message(record['message_id'])
-	user_id = record["user"]
+	msg = await channel.fetch_message(record['message_id'])
+	user_id = record["user_id"]
 	try:
 		mention = channel.guild.get_member(user_id).mention
 	except AttributeError:  # no guild
-		mention = channel.recipient
+		mention = channel.recipient.mention
 	
-	dtc = datetime.datetime.strptime(record["target_time"], '%Y-%m-%d %H:%M:%S.%f')
-	delta = dtc - datetime.datetime.now()
-	await asyncio.sleep(delta.total_seconds())
+	await sleep_until(record["target_time"])
 	
 	e = discord.Embed()
 	e.timestamp = record['created_time']
 	e.colour = 0x00ff00
 	
-	content = record['reminder_content']
+	e.title = "⏰ Reminder"
 	try:
-		e.description = f"{mention} you asked for [a reminder]!({msg.jump_url})"
+		e.url = msg.jump_url
 	except AttributeError:
-		e.description = f"{mention} you asked for a reminder!"
-	if content:
-		e.description += f"\n\n{content}"
-	e.title = f"⏰ Reminder"
+		pass
+	
+	if record['reminder_content'] is not None:
+		e.description = record['reminder_content']
 	
 	if record['mod_action'] is not None:
 		if record['mod_action'] == "unban":
@@ -69,21 +67,21 @@ async def spool_reminder(bot, record):
 				e.title = "Member un-muted"
 				e.description = f"{target.mention}"
 		elif record['mod_action'] == "unblock":
-			await channel.set_permissions(i, overwrite=None)
 			target = channel.guild.get_member(record["mod_target"])
+			await channel.set_permissions(target, overwrite=None)
 			e.title = "Member un-blocked"
 			e.description = f"Unblocked {target.mention} from {channel.mention}"
 	
 	if record['mod_action']:
-		return await channel.send(embed=e)
-	
-	try:
-		await channel.send(mention, embed=e)
-	except discord.NotFound:
+		await channel.send(embed=e)
+	else:
 		try:
-			await bot.get_user(user_id).send(mention, embed=e)
-		except discord.Forbidden:
-			pass
+			await channel.send(mention, embed=e)
+		except discord.NotFound:
+			try:
+				await bot.get_user(user_id).send(mention, embed=e)
+			except discord.Forbidden:
+				pass
 	
 	connection = await bot.db.acquire()
 	await connection.execute("""DELETE FROM reminders WHERE message_id = $1""", record['message_id'])
