@@ -279,20 +279,20 @@ async def search(self, ctx, qry, category, special=False, whitelist_fetch=False)
     def reply_check(msg):
         if ctx.message.author.id == msg.author.id:
             return msg.content in items
-
-
+        
     # Reaction Logic Loop.
     while True:
         try:
             received, dead = await asyncio.wait(
-                [ctx.bot.wait_for('message', check=reply_check, timeout=30),
-                 ctx.bot.wait_for('reaction_add', check=page_check, timeout=30)], return_when=asyncio.FIRST_COMPLETED)
+                [ctx.bot.wait_for('message', check=reply_check),
+                 ctx.bot.wait_for('reaction_add', check=page_check)],
+                timeout=30, return_when=asyncio.FIRST_COMPLETED)
         except asyncio.TimeoutError:
             try:
                 await m.edit(content="Timed out waiting for you to reply.", embed=None)
                 return await m.clear_reactions()
             except discord.Forbidden:
-                return
+                return await m.delete()
 
         for i in dead:
             i.cancel()
@@ -307,21 +307,18 @@ async def search(self, ctx, qry, category, special=False, whitelist_fetch=False)
             reaction, user = res
             if reaction.emoji == "⏮":  # first
                 page = 1
-                await m.remove_reaction("⏮", ctx.message.author)
             elif reaction.emoji == "◀":  # prev
-                await m.remove_reaction("◀", ctx.message.author)
                 page = page - 1 if page > 1 else page
             elif reaction.emoji == "▶":  # next
-                await m.remove_reaction("▶", ctx.message.author)
                 page = page + 1 if page < total_pages else page
             elif reaction.emoji == "⏭":  # last
                 page = total_pages
-                await m.remove_reaction("⏭", ctx.message.author)
             elif reaction.emoji == "🚫":  # eject
                 return await m.delete()
+            await m.remove_reaction(reaction.emoji, ctx.message.author)
 
         # Fetch the next page of results.
         e, tree, total_pages = await fetch_page(self, ctx, category, qry, page)
         lines, targets = await self.cats[category]["parser"](tree)
-        e, targets = make_embed(e, lines, targets, special)
+        e, items = make_embed(e, lines, targets, special)  # reassign item dict.
         await m.edit(embed=e)
