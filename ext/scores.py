@@ -1,5 +1,6 @@
 import asyncio
 from collections import defaultdict
+from copy import deepcopy
 
 import discord
 from discord.ext import commands, tasks
@@ -14,11 +15,11 @@ from selenium.webdriver.support import expected_conditions as ec
 import datetime
 import json
 
+from ext.utils.embed_paginator import paginate
 from ext.utils.selenium_driver import spawn_driver
 
 default_leagues = [
     "WORLD: Friendly international",
-    "WORLD: Friendly International",
     "EUROPE: Champions League",
     "EUROPE: Euro",
     "ENGLAND: Premier League",
@@ -52,6 +53,9 @@ class Scores(commands.Cog):
         self.bot.loop.create_task(self.update_cache())
         self.bot.scores = self.score_loop.start()
         self.driver = None
+   
+    def cog_unload(self):
+        self.bot.scores.cancel()
     
     async def update_cache(self):
         # Grab most recent data.
@@ -60,8 +64,8 @@ class Scores(commands.Cog):
             channels = await connection.fetch("""
             SELECT guild_id, scores_channels.channel_id, league
             FROM scores_channels
-            LEFT OUTER JOIN scores_channels_leagues
-            ON scores_channels.channel_id = scores_channels_leagues.channel_id""")
+            LEFT OUTER JOIN scores_leagues
+            ON scores_channels.channel_id = scores_leagues.channel_id""")
         await self.bot.db.release(connection)
         
         # Clear out our cache.
@@ -70,9 +74,6 @@ class Scores(commands.Cog):
         # Repopulate.
         for r in channels:
             self.cache[(r["guild_id"], r["channel_id"])].append(r["league"])
-    
-    def cog_unload(self):
-        self.bot.scores.cancel()
     
     # Core Loop
     @tasks.loop(minutes=1)
@@ -161,10 +162,9 @@ class Scores(commands.Cog):
     
     async def write_raw(self, games):
         for league, data in games.items():
-            # i is a game_id
             raw = f"**{league}**\n"  # used by live-score channels
             raw_with_link = f"**{league}**\n"  # used by scores command
-            for k, v in data.items():
+            for k, v in data.items():  # k is a game_id.
                 time = f"{data[k]['time']}"
                 
                 time = "✅ After Pens" if time == "After Pens" else time
@@ -189,9 +189,6 @@ class Scores(commands.Cog):
     
     async def localise_data(self):
         for (guild_id, channel_id), whitelist in self.cache.items():
-            if whitelist == [None]:
-                whitelist = default_leagues
-            
             if channel_id not in self.msg_dict:
                 self.msg_dict[channel_id] = {}
                 self.msg_dict[channel_id]["msg_list"] = []
@@ -212,7 +209,8 @@ class Scores(commands.Cog):
             
             if output == today:
                 output += "No games found for your tracked leagues today!" \
-                          "\n\nYou can add more leagues with `ls add league_name`."
+                          "\n\nYou can add more leagues with `ls add league_name, or reset to the default leagues" \
+                          "with `ls default`."
             self.msg_dict[channel_id]["raw_data"] += [output]
     
     async def spool_messages(self):
@@ -235,10 +233,16 @@ class Scores(commands.Cog):
                     try:
                         m = await channel.send(d)
                         self.msg_dict[channel_id]["msg_list"].append(m)
-                    except (discord.NotFound, discord.Forbidden) as e:
+                    except discord.Forbidden:
+                        continue  # This is your problem, not mine.
+                    except discord.NotFound:
+                        # This one, on the other hand, I probably fucked up.
+                        print(f"Couldn't find livescores channel {channel_id}")
+                    except Exception as e:
                         print("-- error sending message to scores channel --")
-                        print(d)
+                        print(channel.id)
                         print(e)
+                    
             else:
                 # Edit message pairs if pre-existing.
                 tuples = list(zip(self.msg_dict[channel_id]["msg_list"], self.msg_dict[channel_id]["raw_data"]))
@@ -249,77 +253,71 @@ class Scores(commands.Cog):
                         print("-- error editing scores channel --")
                         print(x)
                         print(e)
+
+    async def _search(self, ctx, m, qry):
+        # aiohttp lookup for json.
+        qry = qry.replace("'", "")
     
-    @commands.group(invoke_without_command=True)
-    @commands.has_permissions(manage_channels=True)
-    async def ls(self, ctx, channel: discord.TextChannel = None):
-        """ View the status of your live scores channels. """
-        e = discord.Embed(color=0x0000ff)
-        e.set_thumbnail(url=ctx.me.avatar_url)
-        e.title = "Live-scores channel config"
-        
-        score_channels = [i[1] for i in self.cache if ctx.guild.id in i]
-        if not score_channels:
-            return await ctx.send(f"{ctx.guild.name} has no live-scores channel set.")
-        
-        if len(score_channels) != 1:
-            if not channel:
-                channels = ", ".join([self.bot.get_channel(i).mention for i in score_channels])
-                e.description = f"{ctx.guild.name} currently has {len(score_channels)} score channels set: " \
-                                f"{channels}\n"
-                f"Use {ctx.prefix}ls #channel to get the status of a specific one."
-                return await ctx.send(embed=e)
-            elif channel not in score_channels:
-                e.description = f'{channel.mention} is not set as one of your score channels.'
-                return await ctx.send(embed=e)
-        else:
-            channel = score_channels[0]
-        
-        e.add_field(name="Channel", value=self.bot.get_channel(channel).mention)
-        leagues = self.cache[(ctx.guild.id, channel)]
-        val = "*This channel is using the default leagues*\n" if not leagues else ""
-        leagues = default_leagues if leagues == [None] else leagues
-        val += ", ".join(leagues)
-        e.add_field(name="Whitelist", value=val)
-        await ctx.send(embed=e)
+        qryurl = f"https://s.flashscore.com/search/?q={qry}&l=1&s=1&f=1%3B1&pid=2&sid=1"
+        async with self.bot.session.get(qryurl) as resp:
+            res = await resp.text()
+            res = res.lstrip('cjs.search.jsonpCallback(').rstrip(");")
+            res = json.loads(res)
     
-    @ls.command(usage="ls create")
-    @commands.has_permissions(manage_channels=True)
-    async def create(self, ctx):
-        """ Create a live-scores channel for your server. """
+        res_dict = {}
+        key = 0
+        # Remove irrelevant.
+        for i in res["results"]:
+            # Format for LEAGUE
+            if i["participant_type_id"] == 0:
+                # Sample League URL: https://www.flashscore.com/soccer/england/premier-league/
+                res_dict[str(key)] = {"Match": i['title']}
+                key += 1
+    
+        if not res_dict:
+            return await m.edit(content=f"No results for query: {qry}")
+    
+        if len(res_dict) == 1:
+            try:
+                await m.delete()
+            except discord.Forbidden:
+                pass
+            return res_dict["0"]["Match"]
+    
+        id_strings = ""
+        for i in res_dict:
+            id_strings += f"{i}: {res_dict[i]['Match']}\n"
+    
         try:
-            ow = {ctx.me: discord.PermissionOverwrite(read_messages=True, send_messages=True, manage_messages=True,
-                                                      read_message_history=True),
-                  ctx.guild.default_role: discord.PermissionOverwrite(read_messages=True, send_messages=False,
-                                                                      read_message_history=True)
-                  }
-            reason = f'{ctx.author} (ID: {ctx.author.id}) created a live-scores channel.'
-            ch = await ctx.guild.create_text_channel(name="live-scores", overwrites=ow, reason=reason)
-        except discord.Forbidden:
-            return await ctx.send(
-                "Unable to create live-scores channel. Please make sure I have the manage_channels permission.")
+            await m.edit(content=f"Please type matching id: ```{id_strings}```")
         except discord.HTTPException:
-            return await ctx.send(
-                "An unknown error occurred trying to create the live-scores channel, please try again later.")
-        
-        connection = await self.bot.db.acquire()
-        async with connection.transaction():
-            await connection.execute("""
-                INSERT INTO scores_channels (guild_id,channel_id) VALUES ($1,$2)
-                """, ctx.guild.id, ch.id)
-        
-        await ctx.send(f"The {ch.mention} channel was created succesfully.")
-        await self.bot.db.release(connection)
-        await self.update_cache()
+            # TODO: Paginate.
+            return await m.edit(content=f"Too many matches to display, please be more specific.")
     
+        def check(message):
+            if message.author.id == ctx.author.id and message.content in res_dict:
+                return True
+    
+        try:
+            match = await self.bot.wait_for("message", check=check, timeout=30)
+        except asyncio.TimeoutError:
+            return await m.delete()
+    
+        match_content = match.content
+        try:
+            await m.delete()
+            await match.delete()
+        except (discord.Forbidden, discord.NotFound):
+            pass
+        return res_dict[match_content]["Match"]
+
     # Delete from Db on delete..
     @commands.Cog.listener()
-    async def on_channel_delete(self, channel):
-        if (channel.guild.id, channel.id) in self.cache:
+    async def on_guild_channel_delete(self, channel):
+        if channel.id in [i[1] for i in self.cache]:
+            print(f"A live scores channel (Guild: {channel.guild.id}, Channel: {channel.id} was deleted.")
             connection = await self.bot.db.acquire()
-            await connection.execute("""
-                DELETE FROM scores_channels WHERE channel_id = $1
-                """, channel.id)
+            await connection.execute(""" DELETE FROM scores_channels WHERE channel_id = $1 """, channel.id)
             await self.bot.db.release(connection)
             await self.update_cache()
     
@@ -360,7 +358,72 @@ class Scores(commands.Cog):
                                     "modified.")
                         channels = []
         return channels
+
+    @commands.group(invoke_without_command=True)
+    @commands.has_permissions(manage_channels=True)
+    async def ls(self, ctx):
+        """ View the status of your live scores channels. """
+        e = discord.Embed(color=0x2ecc71)
+        e.set_thumbnail(url=ctx.me.avatar_url)
+        e.title = f"{ctx.guild.name} Live Scores channels"
     
+        score_channels = [self.bot.get_channel(i[1]) for i in self.cache if ctx.guild.id in i]
+        if not score_channels:
+            return await ctx.send(f"{ctx.guild.name} has no live-scores channel set.")
+    
+        page = 0
+        pages = len(score_channels)
+        embeds = []
+        for i in score_channels:
+            page += 1
+            e.description = f'{i.mention}'
+        
+            # Warn if they fuck up permissions.
+            if not ctx.me.permissions_in(i).send_messages:
+                e.description += "\n\n```css\n[WARNING]: I do not have send_messages permissions in that channel!"
+            e.set_footer(text=f"↔️{ctx.author}: Channel {page} of {pages}")
+            leagues = self.cache[(ctx.guild.id, i.id)]
+            if leagues != [None]:
+                leagues.sort()
+                leagues = "```yaml\n" + "\n".join(leagues) + "```"
+                e.add_field(name="This channel's Tracked Leagues", value=leagues)
+            embeds.append(deepcopy(e))
+            e.clear_fields()
+        await paginate(ctx, embeds)
+
+    @ls.command(usage="ls create (Optional: Channel-name)")
+    @commands.has_permissions(manage_channels=True)
+    async def create(self, ctx, *, name=None):
+        """ Create a live-scores channel for your server. """
+        try:
+            ow = {ctx.me: discord.PermissionOverwrite(read_messages=True, send_messages=True, manage_messages=True,
+                                                      read_message_history=True),
+                  ctx.guild.default_role: discord.PermissionOverwrite(read_messages=True, send_messages=False,
+                                                                      read_message_history=True)
+                  }
+            reason = f'{ctx.author} (ID: {ctx.author.id}) created a live-scores channel.'
+            if name is None:
+                name = "live-scores"
+            ch = await ctx.guild.create_text_channel(name=name, overwrites=ow, reason=reason)
+        except discord.Forbidden:
+            return await ctx.send(
+                "Unable to create live-scores channel. Please make sure I have the manage_channels permission.")
+        except discord.HTTPException:
+            return await ctx.send(
+                "An unknown error occurred trying to create the live-scores channel, please try again later.")
+    
+        connection = await self.bot.db.acquire()
+        async with connection.transaction():
+            await connection.execute(""" INSERT INTO scores_channels (guild_id, channel_id) VALUES ($1, $2) """,
+                                     ctx.guild.id, ch.id)
+            for i in default_leagues:
+                await connection.execute(""" INSERT INTO scores_leagues (channel_id, league) VALUES ($1, $2) """,
+                                         ch.id, i)
+    
+        await ctx.send(f"The {ch.mention} channel was created succesfully.")
+        await self.bot.db.release(connection)
+        await self.update_cache()
+
     @ls.command(usage="ls add <(Optional: #channel #channel2)> <search query>")
     @commands.has_permissions(manage_channels=True)
     async def add(self, ctx, channels: commands.Greedy[discord.TextChannel], *, qry: commands.clean_content = None):
@@ -387,22 +450,22 @@ class Scores(commands.Cog):
                     replies.append(f'🚫 {c.mention} is not set as a scores channel.')
                     continue
                 leagues = self.cache[(ctx.guild.id, c.id)]
-                if leagues == [None]:
-                    leagues = default_leagues.copy()
-                
-                if res in leagues:
-                    replies.append(f"⚠️**{res}** was already in {c.mention}'s tracked leagues.")
-                    continue
+ 
+                if leagues != [None]:
+                    if res in leagues:
+                        replies.append(f"⚠️**{res}** was already in {c.mention}'s tracked leagues.")
+                        continue
+                    else:
+                        leagues.append(res)
                 else:
-                    leagues.append(res)
+                    leagues = [res]
                 
-                async with connection.transaction():
-                    for league in leagues:
-                        await connection.execute("""
-                            INSERT INTO scores_channels_leagues (league,channel_id) 
-                            VALUES ($1,$2)
-                            ON CONFLICT DO NOTHING
-                            """, league, c.id)
+                for league in leagues:
+                    await connection.execute("""
+                        INSERT INTO scores_leagues (league,channel_id)
+                        VALUES ($1,$2)
+                        ON CONFLICT DO NOTHING
+                        """, league, c.id)
                 leagues = ', '.join(leagues)
                 replies.append(f"✅ **{res}** added to the tracked leagues for {c.mention},"
                                f" the new tracked leagues list is: ```yaml\n{leagues}```")
@@ -412,7 +475,8 @@ class Scores(commands.Cog):
         await ctx.send("\n".join(replies))
     
     @ls.group(name="remove", aliases=["del", "delete"],
-              usage="ls remove <(Optional: #channel #channel2)> <Country: League Name>")
+              usage="ls remove <(Optional: #channel #channel2)> <Country: League Name>",
+              invoke_without_command=True)
     @commands.has_permissions(manage_channels=True)
     async def _remove(self, ctx, channels: commands.Greedy[discord.TextChannel], *, target: commands.clean_content):
         """ Remove a competition from your live-scores channels """
@@ -432,20 +496,14 @@ class Scores(commands.Cog):
                     replies.append(f'{c.mention} is not set as a scores channel.')
                     continue
                 leagues = self.cache[(ctx.guild.id, c.id)]
-                if leagues == [None]:
-                    leagues = default_leagues.copy()
-                    leagues.remove(target)
-                    for lg in leagues:
-                        await connection.execute("""
-                            INSERT INTO scores_channels_leagues (league,channel_id) VALUES ($1,$2)
-                            ON CONFLICT DO NOTHING
-                        """, lg, c.id)
-                elif target not in leagues:
-                    replies.append(f"🚫 **{target}** was not in {c.mention}'s tracked leagues. (Check capitalisation?)")
+                
+                if target not in leagues:
+                    replies.append(f"🚫 **{target}** was not in {c.mention}'s tracked leagues. (Check "
+                                   f"capitalisation?)")
                     continue
                 else:
                     await connection.execute("""
-                        DELETE FROM scores_channels_leagues WHERE (league,channel_id) = ($1,$2)
+                        DELETE FROM scores_leagues WHERE (league,channel_id) = ($1,$2)
                     """, target, c.id)
                 leagues = ", ".join(leagues)
                 replies.append(f"✅ **{target}** was deleted from the tracked leagues for {c.mention},"
@@ -454,10 +512,33 @@ class Scores(commands.Cog):
         await self.update_cache()
         await ctx.send('\n'.join(replies))
     
+    @_remove.command()
+    @commands.has_permissions(manage_channels=True)
+    async def all(self, ctx, channels: commands.Greedy[discord.TextChannel]):
+        """Remove ALL competition from your live-scores channels """
+        channels = await self._pick_channels(ctx, channels)
+        
+        if not channels:
+            return  # rip
+        
+        connection = await self.bot.db.acquire()
+        replies = []
+        async with connection.transaction():
+            for c in channels:
+                if c.id not in [i[1] for i in self.cache]:
+                    replies.append(f"🚫 {c.mention} was not set as a scores channel.")
+                    continue
+                async with connection.transaction():
+                    await connection.execute("""DELETE FROM scores_leagues WHERE channel_id = $1""", c.id)
+                replies.append(f"✅ {c.mention} no longer tracks any leagues. Use `ls reset` to undo this.")
+        await self.bot.db.release(connection)
+        await self.update_cache()
+        await ctx.send("\n".join(replies))
+    
     @ls.command(usage="ls remove <(Optional: #channel #channel2)>")
     @commands.has_permissions(manage_channels=True)
     async def reset(self, ctx, channels: commands.Greedy[discord.TextChannel]):
-        """ Reset live-scores channels to the list of default competitions """
+        """ Reset live-scores channel(s) to the list of default competitions """
         channels = await self._pick_channels(ctx, channels)
         
         if not channels:
@@ -476,70 +557,16 @@ class Scores(commands.Cog):
                     continue
                 async with connection.transaction():
                     await connection.execute("""
-                        DELETE FROM scores_channels_leagues WHERE channel_id = $1
+                        DELETE FROM scores_leagues WHERE channel_id = $1
                     """, c.id)
+                for i in default_leagues:
+                    await connection.execute("""INSERT INTO scores_leagues (channel_id, league) VALUES ($1, $2)""",
+                                             c.id, i)
                 replies.append(f"✅ {c.mention} had it's tracked leagues reset to the default.")
         await self.bot.db.release(connection)
         await self.update_cache()
         await ctx.send("\n".join(replies))
     
-    async def _search(self, ctx, m, qry):
-        # aiohttp lookup for json.
-        qry = qry.replace("'", "")
-        
-        qryurl = f"https://s.flashscore.com/search/?q={qry}&l=1&s=1&f=1%3B1&pid=2&sid=1"
-        async with self.bot.session.get(qryurl) as resp:
-            res = await resp.text()
-            res = res.lstrip('cjs.search.jsonpCallback(').rstrip(");")
-            res = json.loads(res)
-        
-        res_dict = {}
-        key = 0
-        # Remove irrelevant.
-        for i in res["results"]:
-            # Format for LEAGUE
-            if i["participant_type_id"] == 0:
-                # Sample League URL: https://www.flashscore.com/soccer/england/premier-league/
-                res_dict[str(key)] = {"Match": i['title']}
-                key += 1
-        
-        if not res_dict:
-            return await m.edit(content=f"No results for query: {qry}")
-        
-        if len(res_dict) == 1:
-            try:
-                await m.delete()
-            except discord.Forbidden:
-                pass
-            return res_dict["0"]["Match"]
-        
-        id_strings = ""
-        for i in res_dict:
-            id_strings += f"{i}: {res_dict[i]['Match']}\n"
-        
-        try:
-            await m.edit(content=f"Please type matching id: ```{id_strings}```")
-        except discord.HTTPException:
-            # TODO: Paginate.
-            return await m.edit(content=f"Too many matches to display, please be more specific.")
-        
-        def check(message):
-            if message.author.id == ctx.author.id and message.content in res_dict:
-                return True
-        
-        try:
-            match = await self.bot.wait_for("message", check=check, timeout=30)
-        except asyncio.TimeoutError:
-            return await m.delete()
-        
-        match_content = match.content
-        try:
-            await m.delete()
-            await match.delete()
-        except (discord.Forbidden, discord.NotFound):
-            pass
-        return res_dict[match_content]["Match"]
-
 
 def setup(bot):
     bot.add_cog(Scores(bot))
