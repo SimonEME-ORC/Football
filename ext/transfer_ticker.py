@@ -365,7 +365,7 @@ class TransferTicker(commands.Cog):
             await self.update_cache()
             
     @commands.Cog.listener()
-    async def on_channel_delete(self, channel):
+    async def on_guild_channel_delete(self, channel):
         if channel.id in self.channel_cache[channel.guild.id]:
             connection = await self.bot.db.acquire()
             await connection.execute("""DELETE FROM transfers_channels WHERE channel_id = $1""", channel.id)
