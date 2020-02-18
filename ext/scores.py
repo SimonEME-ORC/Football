@@ -15,7 +15,7 @@ from selenium.webdriver.support import expected_conditions as ec
 import datetime
 import json
 
-from ext.utils.embed_paginator import paginate
+from ext.utils.embed_utils import paginate
 from ext.utils.selenium_driver import spawn_driver
 
 default_leagues = [
@@ -121,7 +121,7 @@ class Scores(commands.Cog):
         for i in fixture_list:
             # Header rows do not have IDs
             if not i.xpath('.//@id'):
-                lg = ": ".join(i.xpath('.//span//text()'))
+                lg = ": ".join(i.xpath('.//span//text()')).split(" - ")[0]
                 games[lg] = {}
             else:
                 game_id = ''.join(i.xpath('.//@id'))
@@ -201,6 +201,7 @@ class Scores(commands.Cog):
             for league in whitelist:
                 if league not in self.bot.live_games:
                     continue
+
                 if len(output) + len(self.bot.live_games[league]["raw"]) < 1999:
                     output += self.bot.live_games[league]["raw"] + "\n"
                 else:
@@ -314,12 +315,13 @@ class Scores(commands.Cog):
     # Delete from Db on delete..
     @commands.Cog.listener()
     async def on_guild_channel_delete(self, channel):
-        if channel.id in [i[1] for i in self.cache]:
+        if (channel.guild.id, channel.id) in self.cache:
             print(f"A live scores channel (Guild: {channel.guild.id}, Channel: {channel.id} was deleted.")
             connection = await self.bot.db.acquire()
             await connection.execute(""" DELETE FROM scores_channels WHERE channel_id = $1 """, channel.id)
             await self.bot.db.release(connection)
             await self.update_cache()
+            self.msg_dict.pop(channel.id)
     
     @commands.Cog.listener()
     async def on_guild_remove(self, guild):
