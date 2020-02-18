@@ -196,7 +196,7 @@ class Notifications(commands.Cog):
         await connection.release()
 
     # TODO: Blocked
-    @commands.Cog.listner()
+    @commands.Cog.listener()
     async def on_guild_channel_update(self, before, after):
         pass
 
@@ -301,7 +301,7 @@ class Notifications(commands.Cog):
             except IndexError:
                 await c.send("An emoji was removed.")
         else:
-            await c.send(f"The {new_emoji[0]} emoji was created.")
+            await c.send(f"The {new_emoji[0]} emoji was created by {new_emoji[0].user.mention}")
 
     @commands.Cog.listener()
     async def on_member_unban(self, guild, user):
