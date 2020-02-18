@@ -15,10 +15,10 @@ class GlobalChecks(commands.Cog):
         self.bot.add_check(self.disabled_commands)
         self.bot.add_check(self.ignored)
         self.bot.commands_used = Counter()
-
+    
     def ignored(self, ctx):
         return ctx.author.id not in self.bot.ignored
-
+    
     def disabled_commands(self, ctx):
         try:
             if ctx.command.name in self.bot.disabled_cache[ctx.guild.id]:
@@ -32,112 +32,92 @@ class GlobalChecks(commands.Cog):
 class Reactions(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-
+    
     @commands.Cog.listener()
     async def on_socket_response(self, msg):
         self.bot.socket_stats[msg.get('t')] += 1
-
+    
     @commands.Cog.listener()
     async def on_command(self, ctx):
         self.bot.commands_used[ctx.command.name] += 1
-
+    
     # Error Handler
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
-        # Let local error handling override.
-        if hasattr(ctx.command, 'on_error'):
-            return
-
-        # NoPM
-        if isinstance(error, commands.NoPrivateMessage):
-            return await ctx.send('Sorry, this command cannot be used in DMs.')
-
-        if isinstance(error, discord.Forbidden):
-            print(
-                f"Discord.Forbidden Error, check {ctx.command} bot_has_permissions  {ctx.message.content} ("
-                f"{ctx.author}) in {ctx.channel.name} on {ctx.guild.name}")
+        if isinstance(error, commands.CommandNotFound):
+            return  # Fail silently.
+        
+        elif isinstance(error, (commands.NoPrivateMessage, commands.MissingPermissions)):
+            if ctx.guild is None:
+                return await ctx.send('🚫 This command cannot be used in DMs')
+            
+            if len(error.missing_perms) == 1:
+                perm_string = error.missing_perms[0]
+            else:
+                last_perm = error.missing_perms.pop(-1)
+                perm_string = ", ".join(error.missing_perms) + " and " + last_perm
+            return await ctx.send(f'🚫 You need {perm_string} permissions to do that.')
+        
+        elif isinstance(error, (discord.Forbidden, commands.DisabledCommand)):
+            if isinstance(error, discord.Forbidden):
+                print(f"Discord.Forbidden Error, check {ctx.command} bot_has_permissions  {ctx.message.content}\n"
+                      f"{ctx.author}) in {ctx.channel.name} on {ctx.guild.name}")
             try:
                 await ctx.message.add_reaction('⛔')
             except discord.Forbidden:
                 return
-            
-        if isinstance(error, commands.DisabledCommand):
-            return  # Fail Silently.
         
-        if isinstance(error, commands.MissingPermissions):
+        elif isinstance(error, commands.BotMissingPermissions):
             if len(error.missing_perms) == 1:
                 perm_string = error.missing_perms[0]
             else:
                 last_perm = error.missing_perms.pop(-1)
                 perm_string = ", ".join(error.missing_perms) + " and " + last_perm
-            msg = f'🚫 You need {perm_string} permissions to do that.'
-            return await ctx.send(msg)
+            return await ctx.send(
+                f'🚫 I need {perm_string} permissions to do that.\n\n'
+                f'If you have another bot for this command, you can disable this command for me with '
+                f'{ctx.me.mention} disable {ctx.command}\n\nYou can also stop prefix clashes by using '
+                f'{ctx.me.mention}prefix remove {ctx.prefix} to stop me sharing the `{ctx.prefix}` prefix.')
         
-        if isinstance(error, commands.BotMissingPermissions):
-            if len(error.missing_perms) == 1:
-                perm_string = error.missing_perms[0]
-            else:
-                last_perm = error.missing_perms.pop(-1)
-                perm_string = ", ".join(error.missing_perms) + " and " + last_perm
-            msg = f'🚫 I need {perm_string} permissions to do that.\n\n'
-            msg += f'If you have another bot for this command, you can disable this command for me with ' \
-                   f'{ctx.me.mention} disable {ctx.command}\n\n'
-            msg += f"You can also stop prefix clashes by using {ctx.me.mention}prefix remove {ctx.prefix} to stop me " \
-                   f"using that prefix."
-            return await ctx.send(msg)
-
-        if isinstance(error, commands.CommandNotFound):
-            return
-
-        if isinstance(error, commands.CommandInvokeError):
-            print(f"Error: ({ctx.author} ({ctx.author.id}) on {ctx.guild.name} ({ctx.guild.id}) )\n"
-                  f"Context: {ctx.message.content}")
-            print(f'In {ctx.command.qualified_name}:')
+        elif isinstance(error, commands.CommandInvokeError):
+            print(f"Error: ({ctx.author} ({ctx.author.id}) on {ctx.guild.name} ({ctx.guild.id}))\n"
+                  f"Context: {ctx.message.content}\nIn {ctx.command.qualified_name}:")
             traceback.print_tb(error.original.__traceback__)
             print(f'{error.original.__class__.__name__}: {error.original}')
             return
-
-        if isinstance(error, commands.MissingRequiredArgument):
-            if ctx.command.usage:
-                return await ctx.send(
-                    f"⚠️ {error.param.name} is a missing argument that was not provided.\n```{ctx.command} usage: "
-                    f"{ctx.command.usage}```")
-            else:
-                print(f"Someone fucked up while using {ctx.command} but command.usage is not set.")
-                return
-
-        if isinstance(error, commands.CommandOnCooldown):
+        
+        elif isinstance(error, commands.CommandOnCooldown):
             await ctx.send(f'⏰ On cooldown for {str(error.retry_after).split(".")[0]}s', delete_after=5)
             return
         
-        if isinstance(error, commands.NSFWChannelRequired):
+        elif isinstance(error, commands.NSFWChannelRequired):
             await ctx.send(f"🚫 This command can only be used in NSFW channels.")
             return
-        
-        print(f"Unhandled Error Type: {type(error)}\n"
-              f"({ctx.author} on {ctx.guild.name}) caused the following error\n"
-              f"{error}\n"
-              f"Context: {ctx.message.content}\n")
-
+        else:
+            print(f"Unhandled Error Type: {error.original.__class__.__name__}\n"
+                  f"({ctx.author} on {ctx.guild.name}) caused the following error\n"
+                  f"{error}\n"
+                  f"Context: {ctx.message.content}\n")
+    
     @commands.Cog.listener()
     async def on_message_delete(self, message):
         # ignore bots
         if message.author.bot:
             return
-
+        
         # ignore dms
         if message.guild is None:
             return
-
+        
         # ignore Toonbot command messages.
         for i in self.bot.prefix_cache[message.guild.id]:
             if message.content.startswith(i):
                 return
-
+        
         # TODO - Cross server.
         if not message.guild.id == 332159889587699712:
             return
-
+        
         # Filter out deleted numbers - Toonbot.
         try:
             int(message.content)
@@ -145,9 +125,9 @@ class Reactions(commands.Cog):
             pass
         else:
             return
-
+        
         # Todo: Code "If message was not deleted by bot or user return "
-
+        
         delchan = self.bot.get_channel(id=335816981423063050)
         e = discord.Embed(title="Deleted Message")
         e.description = f"'{message.content}'"
@@ -165,14 +145,14 @@ class Reactions(commands.Cog):
                             value=f"{att.height}x{att.width}")
                 e.set_image(url=att.proxy_url)
         await delchan.send(embed=e)
-
+    
     @commands.Cog.listener()
     async def on_message(self, m):
         c = m.content.lower()
         # ignore bot messages
         if m.author.bot:
             return
-
+        
         if m.guild and m.guild.id == 332159889587699712:
             autokicks = ["make me a mod", "make me mod", "give me mod"]
             for i in autokicks:
