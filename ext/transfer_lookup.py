@@ -8,6 +8,8 @@ import datetime
 from importlib import reload
 
 
+# TODO: restructure into ext.utils.football classes.
+
 class TransferLookup(commands.Cog):
     """ Transfer market lookups """
 
@@ -264,6 +266,7 @@ class TransferLookup(commands.Cog):
             if resp.status != 200:
                 return await ctx.send(f"Error {resp.status} connecting to {resp.url}")
             tree = html.fromstring(await resp.text())
+            e.url = str(resp.url)
         e.set_author(name=tree.xpath('.//head/title[1]/text()')[0], url=str(resp.url))
         e.set_footer(text=discord.Embed.Empty)
 
@@ -289,6 +292,8 @@ class TransferLookup(commands.Cog):
 
         output = ""
         count = 0
+        if not rumorlist:
+            output = "No rumours about new signings found."
         for i in rumorlist:
             if len(i) + len(output) < 1985:
                 output += i
