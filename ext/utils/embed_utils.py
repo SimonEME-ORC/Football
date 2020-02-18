@@ -1,7 +1,23 @@
 import asyncio
-from asyncio import futures
+from io import BytesIO
 
+import aiohttp
 import discord
+from PIL import UnidentifiedImageError
+from colorthief import ColorThief
+
+
+async def get_colour(url):
+    async with aiohttp.ClientSession() as cs:
+        async with cs.get(url) as resp:
+            r = await resp.read()
+            # Convert to base 16 int.
+            f = BytesIO(r)
+            try:
+                c = ColorThief(f).get_color(quality=1)
+                return int('%02x%02x%02x' % c, 16)
+            except UnidentifiedImageError:
+                return discord.Colour.blurple()
 
 
 async def paginate(ctx, embeds, id_dict=None):
@@ -38,13 +54,13 @@ async def paginate(ctx, embeds, id_dict=None):
         try:
             if id_dict is not None:
                 finished, pending = asyncio.wait([ctx.bot.wait_for("message", check=id_check),
-                                                  ctx.bot.wait_for("reaction_add",check=react_check)],
+                                                  ctx.bot.wait_for("reaction_add", check=react_check)],
                                                  timeout=60,
                                                  return_when=asyncio.FIRST_COMPLETED)
-        
+                
                 result = finished.pop().result()
             else:
-                result = await ctx.bot.wait_for("reaction_add", check=check, timeout=60)
+                result = await ctx.bot.wait_for("reaction_add", check=react_check, timeout=60)
                 pending = []
         except asyncio.TimeoutError:
             try:
@@ -57,23 +73,23 @@ async def paginate(ctx, embeds, id_dict=None):
             for i in pending:
                 i.cancel()
         
-        if isinstance(result, discord.Reaction):
+        if len(result) == 2:  # Reaction.
             # We just want to change page, or cancel.
-            if result.emoji == "⏮":  # first
+            if result[0].emoji == "⏮":  # first
                 page = 0
-            if result.emoji == "◀":  # prev
+            if result[0].emoji == "◀":  # prev
                 if page > 0:
                     page += -1
-            if result.emoji == "▶":  # next
+            if result[0].emoji == "▶":  # next
                 if page < len(embeds) - 1:
                     page += 1
-            if result.emoji == "⏭":  # last
+            if result[0].emoji == "⏭":  # last
                 page = len(embeds) - 1
-            if result.emoji == "🚫":  # Delete:
+            if result[0].emoji == "🚫":  # Delete:
                 await m.delete()
                 return None
             try:
-                await m.remove_reaction(result.emoji, ctx.author)
+                await m.remove_reaction(result[0].emoji, ctx.author)
             except discord.Forbidden:
                 if not remind_once:
                     await ctx.send("I don't have the manage_reactions permissions to remove your reactions,"

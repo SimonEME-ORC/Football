@@ -5,12 +5,12 @@ import datetime
 import typing
 
 from ext.utils.timed_events import parse_time, spool_reminder
-from ext.utils.embed_paginator import paginate
+from ext.utils.embed_utils import paginate
 from discord.ext import commands
 import discord
 
 
-# TODO: Find a way to use a custom convertor for temp mute/ban and merge into main command.
+# TODO: Find a way to use a custom converter for temp mute/ban and merge into main command.
 
 async def get_prefix(bot, message):
     if message.guild is None:

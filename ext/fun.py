@@ -7,7 +7,7 @@ import asyncio
 import discord
 import random
 
-from ext.utils.embed_paginator import paginate
+from ext.utils.embed_utils import paginate
 
 class Fun(commands.Cog):
 

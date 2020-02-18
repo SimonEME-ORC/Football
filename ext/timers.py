@@ -4,7 +4,7 @@ from discord.ext import commands
 import datetime
 import discord
 
-from ext.utils.embed_paginator import paginate
+from ext.utils.embed_utils import paginate
 from ext.utils.timed_events import parse_time, spool_reminder
 
 
