@@ -54,26 +54,26 @@ class Info(commands.Cog):
         permissions = "\n".join([f"{i[0]} : {i[1]}" for i in permissions])
         await ctx.send(f"```py\n{permissions}```")
     
-    @commands.command(aliases=["lastmsg", "lastonline", "lastseen"])
-    async def seen(self, ctx, t: discord.Member = None):
+    @commands.command(aliases=["lastmsg", "lastonline", "lastseen"], usage="seen @user")
+    async def seen(self, ctx, target: discord.Member = None):
         """ Find the last message from a user in this channel """
         if t == None:
             return await ctx.send("No user provided")
         
         m = await ctx.send("Searching...")
         with ctx.typing():
-            if ctx.author == t:
+            if ctx.author == target:
                 return await ctx.send("Last seen right now, being an idiot.")
             
-            async for msg in ctx.channel.history(limit=50000):
-                if msg.author.id == t.id:
-                    if t.id == 178631560650686465:
+            async for msg in ctx.channel.history(limit=1000):
+                if msg.author.id == target.id:
+                    if target.id == 178631560650686465:
                         c = (f"{t.mention} last seen being a spacker in "
                              f" {ctx.channel.mention} at {msg.created_at} "
                              f"saying '{msg.content}'")
                         await m.edit(content=c)
                     else:
-                        c = (f"{t.mention} last seen in {ctx.channel.mention} "
+                        c = (f"{target.mention} last seen in {ctx.channel.mention} "
                              f"at {msg.created_at} saying '{msg.content}'")
                         await m.edit(content=c)
                     return
