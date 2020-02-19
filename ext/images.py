@@ -285,7 +285,7 @@ class ImageManip(commands.Cog):
             if match == ctx.author:
                 caption = f"{ctx.author.mention} matched with themself, How pathetic."
             elif match == ctx.me:
-                caption = f"{ctx.author.meention} Fancy a shag?"
+                caption = f"{ctx.author.mention} Fancy a shag?"
             else:
                 caption = f"{ctx.author.mention} matched with {match.mention}"
             icon = "https://cdn0.iconfinder.com/data/icons/social-flat-rounded-rects/512/tinder-512.png"
