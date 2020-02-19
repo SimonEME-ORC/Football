@@ -51,27 +51,26 @@ async def paginate(ctx, embeds, id_dict=None):
         
         # If we're passing an id_dict, we want to get the user's chosen result from the dict.
         # But we always want to be able to change page, or cancel the paginator.
-        try:
-            if id_dict is not None:
-                finished, pending = asyncio.wait([ctx.bot.wait_for("message", check=id_check),
-                                                  ctx.bot.wait_for("reaction_add", check=react_check)],
-                                                 timeout=60,
-                                                 return_when=asyncio.FIRST_COMPLETED)
-                
-                result = finished.pop().result()
-            else:
-                result = await ctx.bot.wait_for("reaction_add", check=react_check, timeout=60)
-                pending = []
-        except asyncio.TimeoutError:
+        if id_dict is not None:
+            finished, pending = asyncio.wait([ctx.bot.wait_for("message", check=id_check),
+                                              ctx.bot.wait_for("reaction_add", check=react_check)],
+                                             timeout=60,
+                                             return_when=asyncio.FIRST_COMPLETED)
             try:
-                await m.clear_reactions()
-            except discord.Forbidden:
-                pass
-            finally:
+                result = finished.pop().result()
+            except KeyError:  # pop from empty set.
                 return None
         else:
-            for i in pending:
-                i.cancel()
+            try:
+                result = await ctx.bot.wait_for("reaction_add", check=react_check, timeout=60)
+            except asyncio.TimeoutError:
+                return None
+            else:
+                pending = []
+        
+        # Kill other.
+        for i in pending:
+            i.cancel()
         
         if len(result) == 2:  # Reaction.
             # We just want to change page, or cancel.
