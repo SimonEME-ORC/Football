@@ -22,7 +22,7 @@ class GlobalChecks(commands.Cog):
     def disabled_commands(self, ctx):
         try:
             if ctx.command.name in self.bot.disabled_cache[ctx.guild.id]:
-                return False
+                raise commands.DisabledCommand
             else:
                 return True
         except (KeyError, AttributeError):
@@ -44,21 +44,10 @@ class Reactions(commands.Cog):
     # Error Handler
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
-        if isinstance(error, commands.CommandNotFound):
+        if isinstance(error, (commands.CommandNotFound, commands.CheckFailure)):
             return  # Fail silently.
         
-        elif isinstance(error, (commands.NoPrivateMessage, commands.MissingPermissions)):
-            if ctx.guild is None:
-                return await ctx.send('🚫 This command cannot be used in DMs')
-            
-            if len(error.missing_perms) == 1:
-                perm_string = error.missing_perms[0]
-            else:
-                last_perm = error.missing_perms.pop(-1)
-                perm_string = ", ".join(error.missing_perms) + " and " + last_perm
-            return await ctx.send(f'🚫 You need {perm_string} permissions to do that.')
-        
-        elif isinstance(error, (discord.Forbidden, commands.DisabledCommand)):
+        elif isinstance(error, (discord.Forbidden, commands.DisabledCommand, commands.MissingPermissions)):
             if isinstance(error, discord.Forbidden):
                 print(f"Discord.Forbidden Error, check {ctx.command} bot_has_permissions  {ctx.message.content}\n"
                       f"{ctx.author}) in {ctx.channel.name} on {ctx.guild.name}")
@@ -67,37 +56,64 @@ class Reactions(commands.Cog):
             except discord.Forbidden:
                 return
         
-        elif isinstance(error, commands.BotMissingPermissions):
-            if len(error.missing_perms) == 1:
-                perm_string = error.missing_perms[0]
+        # Embed errors.
+        e = discord.Embed()
+        e.colour = discord.Colour.red()
+        e.title = f"Error: {error.__class__.__name__}"
+        e.set_thumbnail(url=str(ctx.me.avatar_url))
+        
+        if isinstance(error, (commands.NoPrivateMessage, commands.BotMissingPermissions)):
+            if ctx.guild is None:
+                e.title = 'NoPrivateMessage'  # Ugly override.
+                e.description = '🚫 This command cannot be used in DMs'
             else:
-                last_perm = error.missing_perms.pop(-1)
-                perm_string = ", ".join(error.missing_perms) + " and " + last_perm
-            return await ctx.send(
-                f'🚫 I need {perm_string} permissions to do that.\n\n'
-                f'If you have another bot for this command, you can disable this command for me with '
-                f'{ctx.me.mention} disable {ctx.command}\n\nYou can also stop prefix clashes by using '
-                f'{ctx.me.mention}prefix remove {ctx.prefix} to stop me sharing the `{ctx.prefix}` prefix.')
+                if len(error.missing_perms) == 1:
+                    perm_string = error.missing_perms[0]
+                else:
+                    last_perm = error.missing_perms.pop(-1)
+                    perm_string = ", ".join(error.missing_perms) + " and " + last_perm
+            
+                if isinstance(error, commands.BotMissingPermissions):
+                    e.description = f'\🚫 I need {perm_string} permissions to do that.\n'
+                    fixing = f'Use {ctx.me.mention} `disable {ctx.command}` to disable this command\n' \
+                             f'Use {ctx.me.mention} `prefix remove {ctx.prefix}` ' \
+                             f'to stop me using the `{ctx.prefix}` prefix\n' \
+                             f'Or give me the missing permissions and I can perform this action.'
+                    e.add_field(name="Fixing This", value=fixing)
+            
+        elif isinstance(error, commands.MissingRequiredArgument):
+            e.description = f"{error.param.name} is a required argument but was not provided"
+            
+        elif isinstance(error, commands.BadArgument):
+            e.description = str(error)
         
         elif isinstance(error, commands.CommandInvokeError):
             print(f"Error: ({ctx.author} ({ctx.author.id}) on {ctx.guild.name} ({ctx.guild.id}))\n"
                   f"Context: {ctx.message.content}\nIn {ctx.command.qualified_name}:")
             traceback.print_tb(error.original.__traceback__)
             print(f'{error.original.__class__.__name__}: {error.original}')
-            return
+            e.title = error.original.__class__.__name__
+            e.description = f"```py{error.original.__traceback__}```"
+            e.add_field(name="Oops!", value="Painezor probably fucked this up. He has been notified.")
         
         elif isinstance(error, commands.CommandOnCooldown):
-            await ctx.send(f'⏰ On cooldown for {str(error.retry_after).split(".")[0]}s', delete_after=5)
-            return
+            e.description = f'⏰ On cooldown for {str(error.retry_after).split(".")[0]}s'
+            return await ctx.send(embed=e, delete_after=5)
         
         elif isinstance(error, commands.NSFWChannelRequired):
-            await ctx.send(f"🚫 This command can only be used in NSFW channels.")
-            return
+            e.description = f"🚫 This command can only be used in NSFW channels."
         else:
-            print(f"Unhandled Error Type: {error.original.__class__.__name__}\n"
+            print(f"Unhandled Error Type: {error.__class__.__name__}\n"
                   f"({ctx.author} on {ctx.guild.name}) caused the following error\n"
                   f"{error}\n"
                   f"Context: {ctx.message.content}\n")
+       
+        if ctx.command.usage is None:
+            useline = f"{ctx.prefix}{ctx.command.qualified_name} {ctx.command.signature}"
+        else:
+            useline = f"{ctx.prefix}{ctx.command.usage}"
+        e.add_field(name="Command Usage", value=useline)
+        await ctx.send(embed=e)
     
     @commands.Cog.listener()
     async def on_message_delete(self, message):
