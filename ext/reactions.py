@@ -1,13 +1,9 @@
 import discord
 from discord.ext import commands
 from collections import Counter
-import random
 import datetime
 import traceback
 
-
-# TODO: Create custom Reaction setups per server
-# TODO: Bad words filter.
 
 class GlobalChecks(commands.Cog):
     def __init__(self, bot):
@@ -114,6 +110,9 @@ class Reactions(commands.Cog):
         e.add_field(name="Command Usage", value=useline)
         await ctx.send(embed=e)
     
+    # TODO: Move to notifications.
+    # TODO: Create custom Reaction setups per server
+    # TODO: Bad words filter.
     @commands.Cog.listener()
     async def on_message_delete(self, message):
         # ignore bots
