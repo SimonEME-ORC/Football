@@ -252,7 +252,7 @@ class Mod(commands.Cog):
                     this_page = ""
                 this_page += unquote(f"\💀 {a}#{b}: {x.reason}\n")
             banpages.append(this_page)
-        page_number = 1
+            
         for i in banpages:
             e = discord.Embed(color=0x111)
             n = f"≡ {ctx.guild.name} discord ban list"
@@ -260,8 +260,6 @@ class Mod(commands.Cog):
             e.set_thumbnail(url="https://i.ytimg.com/vi/eoTDquDWrRI/hqdefault.jpg")
             e.title = "User (Reason)"
             e.description = i
-            e.set_footer(text=f"Page {page_number} of {len(banpages)}")
-            page_number += 1
             banembeds.append(deepcopy(e))
         await paginate(ctx, banpages)
     
@@ -305,10 +303,20 @@ class Mod(commands.Cog):
             for i in ctx.guild.text_channels:
                 await i.set_permissions(muted_role, overwrite=m_overwrite)
         
+        muted = []
+        not_muted = []
         for i in members:
-            await i.add_roles(muted_role, reason=f"{ctx.author}: {reason}")
-        
-        await ctx.send(f"Muted {', '.join([i.mention for i in members])} for {reason}")
+            if i.top_role >= ctx.me.top_role:
+                members.remove(i)
+                not_muted.append(i)
+                continue
+            else:
+                muted.append(i)
+                await i.add_roles(muted_role, reason=f"{ctx.author}: {reason}")
+        muted = f"Muted {', '.join([i.mention for i in muted])} for {reason}" if muted else ""
+        not_muted = f"⚠ Could not mute {', '.join([i.mention for i in not_muted])}," \
+                    f" they are the same or higher role than me." if not_muted else ""
+        await ctx.send("\n".join([i for i in [muted, not_muted] if i]))
         
                 
     @commands.command()
@@ -338,9 +346,12 @@ class Mod(commands.Cog):
         def is_me(m):
             return m.author == ctx.me or m.content.startswith(prefixes)
         
-        deleted = await ctx.channel.purge(limit=number, check=is_me)
-        s = "s" if len(deleted) > 1 else ""
-        await ctx.send(f'♻ Deleted {len(deleted)} bot and command messages{s}', delete_after=10)
+        try:
+            deleted = await ctx.channel.purge(limit=number, check=is_me)
+            s = "s" if len(deleted) > 1 else ""
+            await ctx.send(f'♻ Deleted {len(deleted)} bot and command messages{s}', delete_after=10)
+        except discord.NotFound:
+            await ctx.send('⚠ An error occurred, someone else deleted those messages before I did.', delete_after=5)
     
     @commands.group(invoke_without_command=True, usage='prefix: List all prefixes for the server')
     @commands.guild_only()
