@@ -12,11 +12,8 @@ class QuoteDB(commands.Cog):
         self.bot = bot
         
     async def embed_quotes(self, records: list):
-        page = 0
-        pages = len(records)
         embeds = []
         for r in records:
-            page += 1
             # Fetch data.
             channel = self.bot.get_channel(r["channel_id"])
             submitter = self.bot.get_user(r["submitter_user_id"])
@@ -41,9 +38,6 @@ class QuoteDB(commands.Cog):
                 e.description += f"**__Quote #{r['quote_id']}__**\n"
             
             e.description += r["message_content"]
-            
-            if pages > 1:
-                e.description += f"\n\n*Matching quote {page} of {pages}*"
                 
             try:
                 e.set_footer(text=f"Added by {submitter}", icon_url=submitter.avatar_url)
@@ -113,7 +107,7 @@ class QuoteDB(commands.Cog):
         
         embeds = await self.embed_quotes(r)
         await ctx.send(success)
-        await paginate(ctx, embeds)
+        await paginate(ctx, embeds, preserve_footer=True)
 
     @commands.group(invoke_without_command=True, aliases=["quotes"],
                     usage="quote <Optional: quote id or a @user to search quotes from them> ")
