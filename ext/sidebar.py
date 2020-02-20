@@ -1,3 +1,4 @@
+from collections import defaultdict
 
 from selenium.webdriver.support import expected_conditions as ec
 from selenium.webdriver.support.wait import WebDriverWait
@@ -11,7 +12,6 @@ import datetime
 import discord
 import math
 import praw
-import json
 import re
 
 
@@ -68,11 +68,10 @@ class Sidebar(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.bot.reddit = praw.Reddit(**bot.credentials["Reddit"])
-        self.sidebar_loop.start()
         self.driver = None
-        with open('teams.json') as f:
-            self.bot.teams = json.load(f)
-    
+        self.bot.teams = defaultdict()
+        self.sidebar_loop.start()
+        
     def cog_unload(self):
         self.sidebar_loop.cancel()
         if self.driver is not None:
@@ -87,6 +86,18 @@ class Sidebar(commands.Cog):
         sb, fixtures, results, last_result, get_match_threads = await self.bot.loop.run_in_executor(None, self.get_data)
         sb = build_sidebar(sb, table, fixtures, results, last_result, get_match_threads)
         await self.bot.loop.run_in_executor(None, self.post_sidebar, sb)
+
+    @sidebar_loop.before_loop
+    async def fetch_team_data(self):
+        await self.bot.wait_until_ready()
+        connection = await self.bot.db.acquire()
+        records = await connection.fetch(""" SELECT * FROM team_data""")
+        for r in records:
+            for k, v in r:
+                if k == "team":
+                    continue
+                self.bot.teams.update({r['team']: {k: v}})
+        await self.bot.db.release(connection)
     
     @commands.command(invoke_without_command=True)
     @commands.has_permissions(manage_messages=True)
@@ -108,7 +119,6 @@ class Sidebar(commands.Cog):
                 s.stylesheet.upload('sidebar', "sidebar.png")
                 style = s.stylesheet().stylesheet
                 s.stylesheet.update(style, reason=f"{ctx.author.name} Updated sidebar image via discord.")
-            
             
             # Scrape
             sb, fixtures, results, last_result, match_threads = await self.bot.loop.run_in_executor(None, self.get_data)
@@ -309,21 +319,22 @@ class Sidebar(commands.Cog):
             
             # Top of Sidebar Chunk
             if not last_opponent:
-                # Fetch badge if required
+                # Fetch badge if required, for the top of the sidebar.
                 def get_badge(link, team):
                     self.driver.get(link)
                     frame = self.driver.find_element_by_class_name(f"tlogo-{team}")
                     img = frame.find_element_by_xpath(".//img").get_attribute('src')
                     self.bot.loop.create_task(self.fetch_badge(img))
                 
+                # last op is for the last game at the top.
                 last_opponent = at if "Newcastle" in ht else ht
-                if at in self.bot.teams.keys():
+                if at in self.bot.teams:
                     lasta = (f"[{self.bot.teams[at]['shortname']}]"
                              f"({self.bot.teams[at]['subreddit']})")
                 else:
                     get_badge(lnk, "away")
                     lasta = f"[{at}](#temp/)"
-                if ht in self.bot.teams.keys():
+                if ht in self.bot.teams:
                     lasth = (f"[{self.bot.teams[ht]['shortname']}]"
                              f"({self.bot.teams[ht]['subreddit']}/)")
                 else:
