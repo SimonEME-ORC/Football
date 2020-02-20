@@ -1,53 +1,98 @@
 import asyncio
 import datetime
-
+import asyncpg
 import discord
+import praw
+from discord.ext import tasks
 from discord.ext import commands
 from lxml import html
-
-# TODO: Make pre-match thread function.
+from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.support.wait import WebDriverWait
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as ec
+from ext.utils.embed_utils import paginate
 from ext.utils.selenium_driver import spawn_driver
 
-# TODO: Convert teams to database
-# TODO: Migrate every mention of nufc/themagpiescss to database & store values.
+import ext.utils.football
+
 
 def get_goals(tree, xpath):
     goals = dict()
     for item in tree.xpath(xpath):
         strings = item.xpath('.//span/text()')
         player = strings[0]
-        g = "".join(strings[1:])
-        g = g.replace(' minutes', "").replace(',\xa0', "")
-        goals.update({player: g})
+        goals.update({player: "".join(strings[1:]).replace(' minutes', "")})
     return goals
 
 
+async def get_ref_link(bot, refname):
+    refname = refname.strip() # clean up nbsp.
+    surname = refname.split(' ')[0]
+    url = 'http://www.transfermarkt.co.uk/schnellsuche/ergebnis/schnellsuche'
+    p = {"query": surname, "Schiedsrichter_page": "0"}
+    async with bot.session.get(url, params=p) as ref_resp:
+        if ref_resp.status != 200:
+            return refname
+        tree = html.fromstring(await ref_resp.text())
+    matches = f".//div[@class='box']/div[@class='table-header'][contains(text(),'referees')]" \
+              f"/following::div[1]//tbody/tr"
+    trs = tree.xpath(matches)
+    if trs:
+        link = trs[0].xpath('.//td[@class="hauptlink"]/a/@href')[0]
+        link = f"http://www.transfermarkt.co.uk/{link}"
+        return f"[{refname}]({link})"
+
+    p = {"query": refname, "Schiedsrichter_page": "0"}
+    async with bot.session.get(url, params=p) as ref_resp:
+        if ref_resp.status != 200:
+            return refname
+        tree = html.fromstring(await ref_resp.text())
+        matches = f".//div[@class='box']/div[@class='table-header'][contains(text(),'referees')]" \
+                  f"/following::div[1]//tbody/tr"
+        trs = tree.xpath(matches)
+        if trs:
+            link = trs[0].xpath('.//td[@class="hauptlink"]/a/@href')[0]
+            link = f"http://www.transfermarkt.co.uk/{link}"
+            return f"[{refname}]({link})"
+        else:
+            return refname
+    
 class MatchThread:
-    def __init__(self, bot, bbc_name, subreddit=None, resume=None, fs_link=None):
+    def __init__(self, bot, kick_off, subreddit, fs_link, **kwargs):
         self.bot = bot
-        self.subreddit = subreddit
-        self.driver = None
         self.active = True
+        self.driver = None
+        self.kick_off = kick_off  # We use this for timing when to post things.
+        self.__dict__.update(kwargs)
         
-        # Scrape targets
-        self.bbc_name = bbc_name
-        self.bbc_link = ""
+        # Reddit stuff.
+        self.subreddit = subreddit
+        self.pre_match_url = None
+        self.match_thread_url = None
+        self.post_match_url = None
+        
+        # Scrape targets & triggers
         self.fs_link = fs_link
+        self.bbc_link = None
+        self.old_markdown = None
         
-        # Match Threads
+        # Match Thread Data
         self.data = dict()
         self.ticker = set()
         
         # Commence loop
-        self.task = self.bot.loop.create_task(self.match_thread_loop(resume))
-
+        self.task = self.bot.loop.create_task(self.match_thread_loop())
+    
     async def get_driver(self):
         self.driver = await self.bot.loop.run_in_executor(None, spawn_driver)
-
+    
     # Reddit posting shit.
     def make_post(self, title, markdown):
-        return self.bot.reddit.subreddit(self.subreddit).submit(title, selftext=markdown)
-
+        post = self.bot.reddit.subreddit(self.subreddit).submit(title, selftext=markdown)
+        if hasattr(self, "announcement_channel_id"):
+            self.bot.loop.create_task(self.send_notification(self.announcement_channel_id, post))
+        return post
+    
     # Fetch an existing reddit post.
     def fetch_post(self, resume):
         try:
@@ -56,15 +101,18 @@ class MatchThread:
             else:
                 post = self.bot.reddit.submission(id=resume)
         except Exception as e:
-            print("Error during resume post..")
+            print("Error during fetch post..")
             print(e)
             post = None
         return post
-
-    def get_pre_match(self):
-        thread = self.bot.reddit.subreddit('NUFC').search('flair:"Pre-match thread"', sort="new", syntax="lucene")[0]
-        return thread.url
-
+    
+    async def make_pre_match(self):
+        # TODO: Actually write the code.
+        # self.pre_match_url = post.url
+        title = "blah"
+        markdown = "blah"
+        return title, markdown
+    
     async def fetch_tv(self):
         tv = {}
         async with self.bot.session.get(f"https://www.livesoccertv.com/") as resp:
@@ -79,16 +127,16 @@ class MatchThread:
                     break
         if not tv:
             return None
-    
+        
         async with self.bot.session.get(tv["link"]) as resp:
             if resp.status != 200:
                 return tv
             tree = html.fromstring(await resp.text())
             tv_table = tree.xpath('.//table[@id="wc_channels"]//tr')
-        
+            
             if not tv_table:
                 return tv.update({"uk_tv": ""})
-        
+            
             for i in tv_table:
                 country = i.xpath('.//td[1]/span/text()')
                 if "United Kingdom" not in country:
@@ -101,11 +149,13 @@ class MatchThread:
             return tv
     
     async def scrape(self):
-        if not self.bbc_link:
+        if not self.bbc_link and hasattr(self, "bbc_name"):
             async with self.bot.session.get(
                     f"http://www.bbc.co.uk/sport/football/teams/{self.bbc_name}/scores-fixtures") as resp:
                 tree = html.fromstring(await resp.text(encoding="utf-8"))
                 self.bbc_link = "http://www.bbc.co.uk" + tree.xpath(".//a[contains(@class,'sp-c-fixture')]/@href")[-1]
+        else:
+            return
         
         async with self.bot.session.get(self.bbc_link) as resp:
             if resp.status != 200:
@@ -129,7 +179,7 @@ class MatchThread:
                     p = {"query": referee, "Schiedsrichter_page": "0"}
                     async with self.bot.session.get(url, params=p) as ref_resp:
                         if ref_resp.status == 200:
-                            tree = html.fromstring(await resp.text())
+                            tree = html.fromstring(await ref_resp.text())
                             matches = f".//div[@class='box']/div[@class='table-header'][contains(text(),'referees')]" \
                                       f"/following::div[1]//tbody/tr"
                             trs = tree.xpath(matches)
@@ -151,21 +201,15 @@ class MatchThread:
             if not self.data["home"]:  # We only need this once.
                 self.data["home"] = {"team": tree.xpath('.//span[@class="fixture__team-name-wrap"]//abbr/@title')[0]}
                 self.data["away"] = {"team": tree.xpath('.//span[@class="fixture__team-name-wrap"]//abbr/@title')[1]}
-                
-                # Get Stadium
-                try:
-                    stadium = self.bot.teams[self.data["home"]["team"]]['stadium']
-                    stadium_link = self.bot.teams[self.data["home"]["team"]]['stadlink']
-                    self.data["stadium"] = f"[{stadium}]({stadium_link})"
-                except KeyError:
-                    self.data["stadium"] = ""
-                    
+            
+            # TODO: Backup Scrape stadium info.
+            
             # Recurring checks.
             self.data["home"]["goals"] = get_goals(tree, './/ul[contains(@class,"fixture__scorers")][1]//li')
             self.data["away"]["goals"] = get_goals(tree, './/ul[contains(@class,"fixture__scorers")][2]//li')
             # Penalty Win Bar
             self.data["penalties"] = "".join(tree.xpath(".//span[contains(@class='fixture__win-message')]/text()"))
-
+            
             def parse_players(players: list, team_goals: dict):
                 squad = {}
                 for d in players:
@@ -213,16 +257,31 @@ class MatchThread:
             
             ticker = tree.xpath("//div[@class='lx-stream__feed']/article")
             await self.update_ticker(ticker)
-
-    def scrape_flash_score(self, url, mode: str = None):
+    
+    def scrape_flash_score(self, mode: str = None):
         # TODO: Scrape stuff...
+        tree = self.driver.page_source
         # Formations?
         # Match pictures?
         # Goal videos?
-        # Injured players?
-        # Head to head data?
+        if mode == "pre":
+            # Injured players?
+            # Head to head data?
+            pass
         pass
-
+    
+    async def send_notification(self, channel_id, post: praw.Reddit.post):
+        # Announce new posts to designated channels.
+        channel = await self.bot.get_channel(channel_id)
+        if channel is None:
+            return  # Rip
+        
+        e = discord.Embed()
+        e.colour = 0xFF4500
+        e.title = post.title
+        e.url = post.url
+        await channel.send(embed=e)
+    
     async def update_ticker(self, ticker):
         for i in ticker:
             header = "".join(i.xpath('.//h3//text()')).strip()
@@ -230,25 +289,25 @@ class MatchThread:
             content = "".join(i.xpath('.//p//text()'))
             note = ""
             emoji = ""
-        
+            
             key = False
             if "get involved" in header.lower():
                 continue  # we don't care.
-        
+            
             if "kick off" in header.lower():
                 header = "Kick off"
                 emoji = "⚽"
-        
+            
             elif "goal" in header.lower():
                 key = True
                 header = "Goal"
                 emoji = "⚽"
                 if "converts the penalty" in content.lower():
                     note = "Penalty"
-            
+                
                 elif "own goal" in content.lower():
                     note = "Own Goal"
-        
+            
             elif "substitution" in header.lower():
                 team, subs = content.replace("Substitution, ", "").split('.', 1)
                 on, off = subs.split('replaces')
@@ -258,23 +317,23 @@ class MatchThread:
             elif "booking" in header.lower():
                 header = "Booking"
                 emoji = "🟨"
-        
+            
             elif "dismissal" in header.lower():
                 key = True
                 emoji = "🟥"
                 if "second yellow" in content.lower():
                     note = "Second Yellow"
                     emoji = "🟨🟨🟥"
-        
+            
             elif "half time" in header.lower().replace('-', ' '):
                 header = "Half Time"
                 emoji = "⏸"
-        
+            
             elif "second half" in header.lower().replace('-', ' '):
                 header = "Second Half"
                 content = content.replace('Second Half', ' ')
                 emoji = "⚽"
-        
+            
             elif "full time" in header.lower().replace('-', ' '):
                 header = "Full Time"
             elif "penalties in progress" in header.lower().strip():
@@ -286,10 +345,10 @@ class MatchThread:
             else:
                 if header:
                     print(f"MTB: Unhandled header: {header}")
-            
+                
                 elif "Lineups are announced" in content:
                     continue  # we don't care.
-            
+                
                 # Format by content.
                 elif "First Half Extra Time begins" in content:
                     header = "First Half of Extra Time"
@@ -335,75 +394,71 @@ class MatchThread:
             x = {"key": key, "header": header, "emoji": emoji, "content": content, "note": note, "time": time}
             if x not in self.ticker:
                 self.ticker.update(x)
-
+    
     async def write_markdown(self, is_post_match=False):
         # Alias for easy replacing.
         home = self.data["home"]["team"]
         away = self.data["away"]["team"]
-    
+        
         # Date and Competition bar
         kickoff = f"{self.data['kickoff']['date']} at {self.data['kickoff']['time']}"
         markdown = "####" + " | ".join([kickoff, self.data['competition']]) + "\n\n"
-    
-        # Grab Match Icons
-        try:
+        
+        # Grab DB data
+        if home in self.bot.teams:
             home_icon = self.bot.teams[home]['icon']
-        except KeyError:
+            home_link = home + " " + self.bot.teams[home]['subreddit']
+        else:
             home_icon = ""
-        try:
-            away_icon = self.bot.teams[away]['icon']
-        except KeyError:
-            away_icon = ""
-    
-        try:
-            sr = self.bot.teams[home]["subreddit"]
-            home_link = f'[{home}]({sr})'
-        except KeyError:
             home_link = home
-    
-        try:
-            sr = self.bot.teams[away]["subreddit"]
-            away_link = f'[{away}]({sr})'
-        except KeyError:
+        
+        if away in self.bot.teams:
+            away_icon = self.bot.teams[away]['icon']
+            away_link = away + " " + self.bot.teams[away]['subreddit']
+        else:
+            away_icon = ""
             away_link = away
-    
+        
         score = f"{len(self.data['home']['goals'])} - {len(self.data['away']['goals'])}"
         markdown += f"# {home_icon} {home_link} {score} {away_link} {away_icon}\n\n"
-    
+        
         if is_post_match:
             title = f"Post-Match Thread: {home} {score} {away}"
         else:
             title = f"Match Thread: {home} vs {away}"
-    
+        
         if self.data['penalties']:
             markdown += "####" + self.data['penalties'] + "\n\n"
-    
+        
         # Referee and Venue
         referee = f"**🙈 Referee**: {self.data['referee']}" if self.data['referee'] else ""
         stadium = f"**🥅 Venue**: {self.data['stadium']}" if self.data['stadium'] else ""
         attendance = f" (👥 Attendance: {self.data['attendance']})" if self.data['attendance'] else ""
-
+        
         if any([referee, stadium, attendance]):
             markdown += "####" + " | ".join([i for i in [referee, stadium, attendance] if i]) + "\n\n"
-    
+        
         # Match Threads Bar.
-        if self.subreddit.lower() in ["nufc", "themagpiescss"]:
-            archive = "[Match Thread Archive](https://www.reddit.com/r/NUFC/wiki/archive)"
-        else:
-            archive = ""
-    
-        mts = " | ".join([f"[{k}]({v})" for k, v in self.data['threads'].items() if v is not None] + [archive])
-        markdown += "---\n\n##" + mts + "\n\n---\n\n"
-    
+        
+        archive = f"[Match Thread Archive]({self.archive_link}" if hasattr(self, "archive_link") else ""
+        pre = f"[Pre-Match Thread]({self.pre_match_url})" if self.pre_match_url else ""
+        match = f"[Match Thread]({self.match_thread_url})" if self.match_thread_url else ""
+        post = f"[Post-Match Thread]({self.post_match_url})" if self.post_match_url else ""
+        
+        threads = [i for i in [pre, match, post, archive] if i]
+        if threads:
+            markdown += "---\n\n##" + " | ".join(threads) + "\n\n---\n\n"
+        
         # Radio, TV.
         if not is_post_match:
-            if self.subreddit.lower() in ["nufc", "themagpiescss"]:
-                markdown += "[📻 Radio Commentary](https://www.nufc.co.uk/liveAudio.html)\n\n"
-                markdown += "[](#icon-discord) [Join the chat with us on Discord](http://discord.gg/tbyUQTV)\n\n"
+            if hasattr(self, "radio_link"):
+                markdown += f"[📻 Radio Commentary]({self.radio_link})\n\n"
+            if hasattr(self, "invite_link"):
+                markdown += f"[](#icon-discord) [Join the chat with us on Discord]({self.invite_link})\n\n"
             if self.data["tv"] is not None:
                 markdown += f"📺🇬🇧 **TV** (UK): {self.data['tv']['uk_tv']}\n\n" if self.data["tv"]["uk_tv"] else ""
                 markdown += f"📺🌍 **TV** (Intl): [International TV Coverage]({self.data['tv']['link']})"
-    
+        
         def format_team(match_data_team: dict, is_home=False):
             formatted_xi = []
             formatted_subs = []
@@ -422,7 +477,7 @@ class MatchThread:
                     s = f"🔻 {so} {sm}" if so and sm else ""
                     output = f"**{p}** {nm}{cr} {g} {s}"
                 formatted_xi.append(output)
-        
+            
             for p in match_data_team["subs"]:
                 # alias
                 nm = match_data_team['subs'][p]['name']
@@ -435,13 +490,13 @@ class MatchThread:
                 output = f"{p} {nm}{cr}{g}{s}"
                 formatted_subs.append(output)
             return formatted_xi, formatted_subs
-    
+        
         home_xi_markdown, home_sub_markdown = format_team(self.data["home"], is_home=True)
         away_xi_markdown, away_sub_markdown = format_team(self.data["away"])
-    
+        
         lineup_md = list(zip(home_xi_markdown, away_xi_markdown))
         lineup_md = "\n".join([f"{a} | {b}" for a, b in lineup_md])
-    
+        
         # Lineups & all the shite that comes with it.
         if self.data['home']["xi"] and self.data['away']["xi"]:
             markdown += f"---\n\n### Lineups"
@@ -454,24 +509,24 @@ class MatchThread:
             markdown += f"\n{home_icon} {home} | {away} {away_icon}\n"
             markdown += "--:|:--\n"
             markdown += f"{','.join(home_sub_markdown)} | {', '.join(away_sub_markdown)}\n"
-    
+        
         if self.data["stats"]:
             markdown += f"---\n\n### Match Stats	\n"
             markdown += f"{home_icon} {home}|v|{away} {away_icon}\n" \
                         f"--:|:--:|:--\n"
-        
+            
             for h, stat, a in self.data["stats"]:
                 markdown += f"{h} | {stat} | {a}\n"
-    
+        
         if self.data["pictures"]:
             # TODO: Format these, test if [](xyz 'title here') works
-            markdown += "###Match Photos\n\n"
+            markdown += "#### Match Photos\n\n"
             pic_id = 0
             for caption, url in self.data["pictures"]:
                 pic_id += 1
                 markdown += f"[{pic_id}]({url} '{caption}') "
             markdown += "\n\n"
-    
+        
         formatted_ticker = ""
         for i in self.ticker:
             # TODO: Manually parse all these.
@@ -479,7 +534,7 @@ class MatchThread:
             if is_post_match:
                 if not i["key"]:
                     continue
-                    
+            
             # Alias
             t = i['time']
             h = i['header']
@@ -487,10 +542,10 @@ class MatchThread:
             c = i["content"]
             n = i["note"]
             c = c.replace(h, "")  # strip header from content.
-        
+            
             if h == "end of match":
                 continue
-        
+            
             if h == "Substitute":
                 on = i["note"]["on"]
                 off = i["note"]["off"]
@@ -498,162 +553,276 @@ class MatchThread:
                 c, n = f"{team} 🔺 {on} 🔻 {off}", ""
             if h == "Corner":
                 c = c.replace(' ,', "")
-        
+            
             c = c.replace(home, f"{home_icon} {home}").replace(away, f"{away_icon} {away}")
             formatted_ticker += f'{t} {e} **{h}**: {c}{n}\n\n'
-    
+        
         markdown += "\n\n---\n\n" + formatted_ticker + "\n\n"
         markdown += "\n\n---\n\n^(*Beep boop, I am /u/Toon-bot, a bot coded ^badly by /u/Painezor. " \
                     "If anything appears to be weird or off, please let him know.*)"
         return title, markdown
     
-    async def match_thread_loop(self, resume=None):
-        # Spawn our driver.
-        if self.fs_link:
-            await self.get_driver()
-            self.driver.get(self.fs_link)
-            
-        num_iters = 0
+    async def match_thread_loop(self):
+        # Dupe check.
+        connection = await self.bot.db.acquire()
+        r = await connection.fetchrow("""SELECT FROM mtb_history WHERE (subreddit, fs_link) = ($1, $2)""",
+                                      self.subreddit, self.fs_link)
+        if r is not None:
+            self.post_match_url = r['post_match_url']
+            self.match_thread_url = r['match_thread_url']
+            self.pre_match_url = r['pre_match_url']
+        else:
+            await connection.execute("""INSERT INTO mtb_history (fs_link, subreddit)
+                                       VALUES ($1, $2)""", self.fs_link, self.subreddit)
         
+        await self.bot.db.release(connection)
+        
+        await self.get_driver()
+        self.driver.get(self.fs_link)
+
+        if hasattr(self, "pre_match_offset"):
+            await discord.utils.sleep_until(self.kick_off - datetime.timedelta(minutes=self.pre_match_offset))
+            
+            if self.pre_match_url is None:
+                title, markdown = await self.make_pre_match()
+                pre_match_instance = await self.bot.loop.run_in_executor(None, self.make_post, title, markdown)
+                self.pre_match_url = pre_match_instance.url
+                connection = await self.bot.db.acquire()
+                await connection.execute("""UPDATE mtb_history
+                                            SET pre_match_url = $1
+                                            WHERE (subreddit, fs_link) = ($2, $3)""",
+                                         self.pre_match_url, self.subreddit, self.fs_link)
+                await self.bot.db.release(connection)
+            else:
+                pre_match_instance = await self.bot.loop.run_in_executor(self.fetch_post(self.pre_match_url))
+                self.pre_match_url = pre_match_instance.url
+        else:
+            pre_match_instance = None
+
         # Gather initial data
+        await self.scrape_flash_score()
         await self.scrape()
         self.data["tv"] = await self.fetch_tv()
-
-        pre_match = self.bot.loop.run_in_executor(None, self.get_pre_match)
-        self.data['threads'] = {'Pre Match Thread': pre_match}
-
         title, markdown = await self.write_markdown()
         
+        # Sleep until ready to post.
+        if hasattr(self, "match_offset"):
+            await discord.utils.sleep_until(self.kick_off - datetime.timedelta(minutes=self.match_offset))
+        
         # Post initial thread or resume existing thread.
-        if resume is not None:
-            post = await self.bot.loop.run_in_executor(None, self.fetch_post, resume)
-        else:
+        if self.match_thread_url is None:
             post = await self.bot.loop.run_in_executor(None, self.make_post, title, markdown)
-
-        self.data["threads"].update({"Match thread": post.url})
-        while self.active and num_iters > 300:
+            connection = await self.bot.db.acquire()
+            await connection.execute("""UPDATE mtb_history
+                                        SET match_thread_url = $1
+                                        WHERE (subreddit, fs_link) = ($2, $3)""",
+                                     post.url, self.subreddit, self.fs_link)
+            await self.bot.db.release(connection)
+        else:
+            post = await self.bot.loop.run_in_executor(None, self.fetch_post, self.match_thread_url)
+            
+        self.match_thread_url = post.url
+        
+        for i in range(300):  # Maximum number of loops.
             await self.scrape()
             title, markdown = await self.write_markdown()
-            num_iters += 1
-            await self.bot.loop.run_in_executor(None,  post.edit, markdown)
+            
+            # Only need to update if something has changed.
+            if markdown != self.old_markdown:
+                await self.bot.loop.run_in_executor(None, post.edit, markdown)
+                self.old_markdown = markdown
+            
+            if not self.active:  # Set in self.scrape.
+                break
+            
             await asyncio.sleep(60)
         
         # Grab final data
         await self.scrape()
-        title, markdown = await self.write_markdown(is_post_match=True)
-        
         # Create post match thread, get link.
-        post_match_instance = await self.bot.loop.run_in_executor(None, self.make_post, title, markdown)
-
-        self.data['threads'].update({"Post-Match Thread": f"[Post-Match Thread]({post_match_instance.url})"})
+        if self.post_match_url is None:
+            post_match_instance = await self.bot.loop.run_in_executor(None, self.make_post, title, markdown)
+            post = await self.bot.loop.run_in_executor(None, self.make_post, title, markdown)
+            connection = await self.bot.db.acquire()
+            await connection.execute("""UPDATE mtb_history
+                                        SET post_match_url = $1
+                                        WHERE (subreddit, fs_link) = ($2, $3)""",
+                                     self.post_match_url, self.subreddit, self.fs_link)
+            await self.bot.db.release(connection)
+        else:
+            post_match_instance = await self.bot.loop.run_in_executor(self.fetch_post(self.post_match_url))
+        self.post_match_url = post_match_instance.url
         
         # Edit it's markdown to include the link.
         title, markdown = await self.write_markdown(is_post_match=True)
-        await self.bot.loop.run_in_executor(None,  post_match_instance.edit, markdown)
+        await self.bot.loop.run_in_executor(None, post_match_instance.edit, markdown)
         
-        # Then edit the match thread.
+        # Then edit the match thread with the link too.
         title, markdown = await self.write_markdown()
         await self.bot.loop.run_in_executor(None, post.edit, markdown)
         
+        # and finally, edit pre_match to include links
+        title, markdown = self.make_pre_match()
+        if hasattr(self, "pre_match_offset"):
+            if pre_match_instance is not None:
+                self.bot.loop.run_in_executor(None, pre_match_instance.edit, markdown)
+        
         # Clean up.
-        if self.fs_link:
+        if self.driver is not None:
             self.driver.quit()
 
 
 class MatchThreadCommands(commands.Cog):
     """ MatchThread Commands and Spooler."""
+    
     def __init__(self, bot):
         self.bot = bot
-        self.scheduled_threads = []
         self.active_threads = []
-        self.bot.loop.create_task(self.get_schedule())
+        self.driver = None
+        self.data = dict()  # TODO: Delete. This is only for test command.
+        # self.schedule_threads.start() # TODO: Uncomment when ready.
     
-    # TODO: Make sure this can work on other discords for their subreddits.
+    # TODO: Delete check when finished.
     def cog_check(self, ctx):
         if ctx.guild:
-            return ctx.guild.id in [238704683340922882, 332159889587699712]
+            return ctx.guild.id in [332159889587699712, 250252535699341312]
     
-    async def schedule_thread(self, post_at, identifier, subreddit, team_url):
-        await discord.utils.sleep_until(post_at)
-        self.active_threads.append(MatchThread(self.bot, team_url, subreddit=subreddit))
-        self.scheduled_threads.remove(identifier)
+    def get_fixtures(self, url):
+        self.driver.get(url)
+        try:
+            xpath = './/div[@class="sportName soccer"]'
+            WebDriverWait(self.driver, 5).until(ec.visibility_of_element_located((By.XPATH, xpath)))
+        except TimeoutException:
+            return []  # Rip
+        
+        tree = html.fromstring(self.driver.page_source)
+        rows = tree.xpath(".//div[contains(@class,'sportName soccer')]/div")
+        matches = []
+        for i in rows:
+            try:
+                url = i.xpath("./@id")[0].split("_")[-1]
+                url = "http://www.flashscore.com/match/" + url
+            except IndexError:
+                continue  # Not all rows have links.
+            
+            d = "".join(i.xpath('.//div[@class="event__time"]//text()')).strip("Pen").strip('AET')
+            if "Postp" not in d:  # Should be dd.mm hh:mm or dd.mm.yyyy
+                yn = datetime.datetime.today().year  # Year now
+                try:
+                    d = datetime.datetime.strptime(d, '%d.%m.%Y')
+                except ValueError:
+                    # This is ugly but February 29th can suck my dick.
+                    d = datetime.datetime.strptime(f"{datetime.datetime.now().year}.{d}", '%Y.%d.%m. %H:%M')
+                    
+                    if d < datetime.datetime.today():
+                        d = d.replace(year=yn + 1)
+            
+            h, a = i.xpath('.//div[contains(@class,"event__participant")]/text()')
+            h, a = h.strip(), a.strip()
+            matches.append((d, f"{h} vs {a}", url))
+        return matches
+    
+    async def spool_thread(self, kick_off: datetime.datetime, match: str, url: str, r: asyncpg.Record):
+        kwargs = {k: v for k, v in r}
+        kwargs.update({"fs_url": url})
+        subreddit = kwargs.pop('MatchThread')
+        bbc_name = kwargs.pop('bbc_name')
+        
+        for i in self.active_threads:
+            if i.subreddit == subreddit and i.bbc_name == bbc_name:
+                print(f'Not spooling duplicate thread: {subreddit} {bbc_name}.')
+                return
+        
+        print(f"Spooling match thread: {subreddit} {bbc_name}")
+        mt = MatchThread(self.bot, kick_off, subreddit, bbc_name, **kwargs)
+        self.active_threads.append(mt)
+    
+    @tasks.loop(hours=24)
+    async def schedule_threads(self):
+        # Number of minutes before the match to post
+        connection = await self.bot.db.acquire()
+        records = await connection.fetch(""" SELECT * FROM mtb_schedule """)
+        await self.bot.db.release(connection)
+        
+        for r in records:
+            # Get upcoming games from flashscore.
+            fixtures = await self.bot.loop.run_in_executor(None, self.get_fixtures(r["team_flashscore_link"]))
+            for time, match, url in fixtures:
+                if time - datetime.datetime.now() > datetime.timedelta(days=3):
+                    print(f'Spooling a match thread: {time} | {match} | {url}\n{r}')
+                    self.bot.loop.create_task(self.spool_thread(time, match, url, r))
+    
+    @schedule_threads.before_loop
+    async def before_stuff(self):
+        self.driver = await self.bot.loop.run_in_executor(None, spawn_driver)
+    
+    @schedule_threads.after_loop
+    async def after_stuff(self):
+        self.driver.quit()
     
     def cog_unload(self):
-        for i in self.scheduled_threads:
-            i.cancel()
-     
-    # Schedule a block of match threads.
-    async def get_schedule(self):
-        # Number of minutes before the match to post
-        match_thread_offset = 30
-        subreddit = "nufc"
-        team_url = "newcastle-united"
-        async with self.bot.session.get("https://www.nufc.co.uk/matches/first-team") as resp:
-            if resp.status != 200:
-                print(f"{resp.status} error in scheduler.")
-                return
+        for i in self.active_threads:
+            i.task.cancel()
+
+    def _test(self):
+        driver = spawn_driver()
+        print("Driver spawned.")
+        
+        # Finished: https://www.flashscore.com/match/EyG1EdgD (NEW - ARS)
+        # Upcoming: https://www.flashscore.com/match/lGuaXAah (NEW - PAL)
+        
+        driver.get("https://www.flashscore.com/match/EyG1EdgD")
+        print('Got page.')
+        referee = ""
+        venue = ""
+        try:
+            # Get venue / competition / referee.
+            xp = (By.XPATH, ".//div[@class='match-information-data']")
+            x = WebDriverWait(driver, 3).until(ec.presence_of_element_located(xp))
+        
+            tree = html.fromstring(driver.page_source)
+            match_info = tree.xpath(f".//div[@class='match-information-data']//text()")
+            competition = "".join(tree.xpath(".//span[@class='description__country']//text()"))
+            complink = "".join(tree.xpath(".//span[@class='description__country']//a/@onclick"))
+            print(f"complink: {complink}")
+            try:
+                complink = complink.split('\'')[1]
+                complink = f"http://www.flashscore.com{complink}"
+            except IndexError:
+                complink = ""
             
-            tree = html.fromstring(await resp.text())
-            blocks = tree.xpath('.//div[@class="fixtures__item__content"]')
-            
-            fixtures = {}
-            
-            for i in blocks:
-                date = "".join(i.xpath('.//p[@content]//text()')).strip()
-                if not date:
-                    continue
-                date = date.replace("3rd", "3").replace("th", "").replace("1st", "1").replace("2nd", "2")
-                venue = "".join(i.xpath('.//h4//text()')).strip()
-                opp = "".join(i.xpath('.//h3/span/text()')).strip()
-                
-                if "St. James'" in venue:
-                    fixtures[date] = f"Newcastle United vs {opp}"
-                else:
-                    fixtures[date] = f"{opp} vs Newcastle United"
-            
-            for k, v in fixtures.items():
-                k = datetime.datetime.strptime(k, "%d %B %Y %I:%M %p")
-                
-                # Offset by x mins
-                post_at = k - datetime.timedelta(minutes=match_thread_offset)
-                
-                schedule_text = f"**{k}**: {v}"
-                self.scheduled_threads.append(schedule_text)
-                
-                self.bot.loop.create_task(
-                    self.schedule_thread(post_at, schedule_text, subreddit=subreddit, team_url=team_url))
+            self.data['competition'] = f"[{competition}]({complink})" if complink else competition
+            for i in match_info:
+                i = i.replace(',\xa0', '')
+                if i.startswith('Referee'):
+                    self.data['referee'] = i.split(': ')[-1].split('(')[0]
+                if i.startswith('Venue'):
+                    self.data['venue'] = i.split(': ')[-1].split('(')[0]
+        except Exception as e:
+            print(e)
     
-    # Debug command - Force Test
-    @commands.command()
-    @commands.is_owner()
-    async def forcemt(self, ctx, *, subreddit="themagpiescss"):
-        if "r/" in subreddit:
-            subreddit = subreddit.split("r/")[1]
-        await ctx.send(f'Starting a match thread on r/{subreddit}...')
-        self.active_threads.append(MatchThread(bbc_name="newcastle-united", bot=ctx.bot, subreddit=subreddit))
+        # Get H2H data
+        ## H2h data at all venues
+        ## H2H data at Home venue
     
-    @commands.command()
-    @commands.is_owner()
-    async def resume(self, ctx, *, linkorbase64):
-        m = await ctx.send(f'Resuming match thread {linkorbase64}...')
-        self.active_threads.append(MatchThread(bbc_name="newcastle-united", bot=ctx.bot, resume=linkorbase64))
-        await m.edit(content='Resumed successfully.')
+        # Get form data
+        ## Last 5 games each
+        ## Last 5 home games home
+        ## Last 5 away games away
     
-    @commands.command(aliases=["mtbcheck"])
-    @commands.is_owner()
-    async def checkmtb(self, ctx):
-        e = discord.Embed()
-        e.colour = 0x000000
-        self.scheduled_threads.sort()
-        e.description = "\n".join(self.scheduled_threads)
-        e.title = "r/NUFC Scheduled Match Threads"
-        await ctx.send(embed=e)
+        # Get Current table
+    
+        # Get Injury & Suspension data
+    
+        driver.quit()
+        print("Driver closed.")
+        return
     
     @commands.command()
     @commands.is_owner()
-    async def override(self, ctx, var, *, value):
-        setattr(self, var, value)
-        await ctx.send(f'Match Thread Bot: Setting "{var}" to "{value}"')
+    async def mtbtest(self, ctx):
+        x = await self.bot.loop.run_in_executor(None, self._test)
+        
 
 
 def setup(bot):
