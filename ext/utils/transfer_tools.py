@@ -282,21 +282,21 @@ async def search(self, ctx, qry, category, special=False, whitelist_fetch=False)
         
     # Reaction Logic Loop.
     while True:
-        try:
-            received, dead = await asyncio.wait(
-                [ctx.bot.wait_for('message', check=reply_check),
-                 ctx.bot.wait_for('reaction_add', check=page_check)],
-                timeout=30, return_when=asyncio.FIRST_COMPLETED)
-        except asyncio.TimeoutError:
+        received, dead = await asyncio.wait(
+            [ctx.bot.wait_for('message', check=reply_check),
+             ctx.bot.wait_for('reaction_add', check=page_check)],
+            timeout=30, return_when=asyncio.FIRST_COMPLETED)
+        
+        if not received:
             try:
-                await m.edit(content="Timed out waiting for you to reply.", embed=None)
                 return await m.clear_reactions()
             except discord.Forbidden:
                 return await m.delete()
 
+        res = received.pop().result()
         for i in dead:
             i.cancel()
-        res = received.pop().result()
+            
         if isinstance(res, discord.Message):
             # It's a message.
             await m.delete()
