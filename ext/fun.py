@@ -9,6 +9,7 @@ import random
 
 from ext.utils.embed_utils import paginate
 
+
 class Fun(commands.Cog):
 
     """ Toys """
@@ -230,7 +231,7 @@ class Fun(commands.Cog):
             await message.add_reaction(":downvote:332196251959427073")
     
     @commands.command(hidden=True)
-    @commands.has_permissions(manage_reactions=True)
+    @commands.has_permissions(manage_messages=True)
     async def norafa(self, ctx, *, msgs=30):
         """ Remove reactions from last x messages """
         async for message in ctx.channel.history(limit=msgs):
@@ -270,9 +271,10 @@ class Fun(commands.Cog):
         e.set_thumbnail(url=tn)
         e.set_footer(icon_url="http://pix.iemoji.com/twit33/0056.png")
         un = ctx.author
-        count = 1
+        count = 0
         if resp:
             for i in resp:
+                count += 1
                 e.title = i["word"]
                 e.url = i["permalink"]
                 de = i["definition"]
@@ -285,12 +287,10 @@ class Fun(commands.Cog):
                 if i["example"]:
                     e.add_field(name="Example", value=i["example"])
                 
-                e.set_footer(text=f"Page {count} of {len(resp)} ({un}) | 👍🏻{i['thumbs_up']} 👎🏻{i['thumbs_down']}")
+                e.add_field(name='Votes', value="👍🏻{i['thumbs_up']} 👎🏻{i['thumbs_down']}")
                 this_e = e.copy()
                 embeds.append(this_e)
                 e.clear_fields()
-                count += 1
-        
         else:
             e.description = f"🚫 No results found for {lookup}."
             e.set_footer(text=un)
