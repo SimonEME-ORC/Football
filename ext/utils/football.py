@@ -2,14 +2,19 @@ from collections import defaultdict
 import datetime
 
 import typing
+from copy import deepcopy
+
 from lxml import html
 import aiohttp
 import discord
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as ec, wait
 
+from ext.utils import embed_utils
 from ext.utils.embed_utils import get_colour
 from ext.utils.selenium_driver import spawn_driver
+
+from typing import List
 
 
 async def get_stadiums(query):
@@ -53,11 +58,15 @@ async def get_stadiums(query):
 
 
 def get_html(url, xpath, driver=None):
-    driver = spawn_driver() if driver is None else driver
-    driver.get(url)
-    wait.WebDriverWait(driver, 5).until(ec.visibility_of_element_located((By.XPATH, xpath)))
-    return driver.page_source
+    func_driver = driver if driver is None else spawn_driver()
 
+    if func_driver.current_url != url:
+        func_driver.get(url)
+    wait.WebDriverWait(driver, 5).until(ec.visibility_of_element_located((By.XPATH, xpath)))
+    src = func_driver.page_source
+    if driver is None:
+        func_driver.quit()
+    return src
 
 class Fixture:
     def __init__(self, time: typing.Union[str, datetime.datetime], home: str, away: str, **kwargs):
@@ -68,7 +77,6 @@ class Fixture:
     
     @property
     async def to_embed_row(self):
-        # TODO: write.
         if isinstance(self.time, datetime.datetime):
             if self.time < datetime.datetime.now():  # in the past -> result
                 d = self.time.strftime('%a %d %b')
@@ -77,7 +85,7 @@ class Fixture:
         else:
             d = self.time
         
-        sc, tv = "", ""
+        sc, tv = "vs", ""
         if hasattr(self, "score") and self.score:
             sc = self.score
         if hasattr(self, "is_televised") and self.is_televised:
@@ -91,14 +99,15 @@ class Fixture:
 
 
 class FlashScoreFixtureList:
-    def __init__(self, driver, url):
-        self.driver = driver
+    def __init__(self, url, driver=None):
+        if driver is None:
+            self.driver = spawn_driver()
         self.url = url
         self.fs_page_title = None
         self.fs_page_image = None
         self.items = self.get_fixtures()
     
-    def get_fixtures(self):
+    def get_fixtures(self) -> List[Fixture]:
         src = get_html(self.url, './/div[@class="sportName soccer"]', driver=self.driver)
         logo = self.driver.find_element_by_xpath('.//div[contains(@class,"logo")]')
         if logo != "none":
@@ -138,6 +147,30 @@ class FlashScoreFixtureList:
                               country=country, league=league, url=url)
             fixtures.append(fixture)
         return fixtures
+    
+    @property
+    async def to_embeds(self) -> List[discord.Embed]:
+        e = discord.Embed()
+        print(self.url.split('/'))
+        if self.fs_page_title is not None:
+            e.title = self.fs_page_title
+        
+        if self.fs_page_image is not None:
+            e.set_thumbnail(url=self.fs_page_image)
+        e.colour = await embed_utils.get_colour(e.thumbnail.url)
+        pages = [self.items[i:i + 10] for i in range(0, len(self.items), 10)]
+        
+        embeds = []
+        count = 0
+        if not pages:
+            e.description = "No games found!"
+            embeds.append(e)
+            
+        for page in pages:
+            count += 1
+            e.description = "\n".join([await i.to_embed_row for i in page])
+            embeds.append(deepcopy(e))
+        return embeds
 
 
 class Stadium:
@@ -146,7 +179,7 @@ class Stadium:
         self.__dict__.update(kwargs)
     
     @property
-    async def to_embed(self):
+    async def to_embed(self) -> discord.Embed:
         e = discord.Embed()
         e.title = self.team
         if hasattr(self, "image") and self.image:  # Check not ""
