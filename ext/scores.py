@@ -22,6 +22,7 @@ default_leagues = [
     "WORLD: Friendly international",
     "EUROPE: Champions League",
     "EUROPE: Euro",
+    "EUROPE: Europa League",
     "ENGLAND: Premier League",
     "ENGLAND: Championship",
     "ENGLAND: League One",
@@ -210,8 +211,8 @@ class Scores(commands.Cog):
             
             if output == today:
                 output += "No games found for your tracked leagues today!" \
-                          "\n\nYou can add more leagues with `ls add league_name, or reset to the default leagues" \
-                          "with `ls default`."
+                          "\n\nYou can add more leagues with `.tb ls add league_name`, or reset to the default leagues"\
+                          "with `.tb ls default`.\nTo find out which leagues currently have games, use `.tb scores`"
             self.msg_dict[channel_id]["raw_data"] += [output]
     
     async def spool_messages(self):
@@ -374,16 +375,12 @@ class Scores(commands.Cog):
             return await ctx.send(f"{ctx.guild.name} has no live-scores channel set.")
     
         page = 0
-        pages = len(score_channels)
         embeds = []
         for i in score_channels:
-            page += 1
             e.description = f'{i.mention}'
-        
             # Warn if they fuck up permissions.
             if not ctx.me.permissions_in(i).send_messages:
-                e.description += "\n\n```css\n[WARNING]: I do not have send_messages permissions in that channel!"
-            e.set_footer(text=f"↔️{ctx.author}: Channel {page} of {pages}")
+                e.description += "```css\n[WARNING]: I do not have send_messages permissions in that channel!"
             leagues = self.cache[(ctx.guild.id, i.id)]
             if leagues != [None]:
                 leagues.sort()
