@@ -6,7 +6,6 @@ import typing
 import discord
 from discord.ext import commands
 
-
 from ext.utils.selenium_driver import spawn_driver
 from lxml import html
 from selenium.webdriver.support.ui import WebDriverWait
@@ -67,9 +66,9 @@ class Fixtures(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.driver = None
-        reload(transfer_tools)
-        reload(football)
-    
+        for package in [transfer_tools, football, embed_utils]:
+            reload(package)
+
     def cog_unload(self):
         if self.driver is not None:
             self.driver.quit()
@@ -258,7 +257,7 @@ class Fixtures(commands.Cog):
             h, a = i.xpath('.//div[contains(@class,"event__participant")]/text()')
             h, a = h.strip(), a.strip()
             matches.append(f"`{d}:` [{h} {sc} {a} {tv}]({url})")
-        e.title = title
+            e.title = title
         return e, matches
     
     def parse_table(self, url):
@@ -643,6 +642,9 @@ class Fixtures(commands.Cog):
     # TODO: Cache these.
     async def _fetch_default(self, ctx, m, qry, preferred=None, mode=None):
         # Check if default is set and return that.
+        if ctx.guild is None:
+            await m.edit(content="Please specify a search query.")
+            return None  # We do not have a guild.
         if qry is None:
             connection = await self.bot.db.acquire()
             r = await connection.fetchrow("""
