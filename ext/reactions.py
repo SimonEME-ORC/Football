@@ -52,7 +52,7 @@ class Reactions(commands.Cog):
                 print(f"Discord.Forbidden Error, check {ctx.command} bot_has_permissions  {ctx.message.content}\n"
                       f"{ctx.author}) in {ctx.channel.name} on {ctx.guild.name}")
             try:
-                await ctx.message.add_reaction('⛔')
+                return await ctx.message.add_reaction('⛔')
             except discord.Forbidden:
                 return
         
@@ -87,15 +87,6 @@ class Reactions(commands.Cog):
         elif isinstance(error, commands.BadArgument):
             e.description = str(error)
         
-        elif isinstance(error, commands.CommandInvokeError):
-            print(f"Error: ({ctx.author} ({ctx.author.id}) on {ctx.guild.name} ({ctx.guild.id}))\n"
-                  f"Context: {ctx.message.content}\nIn {ctx.command.qualified_name}:")
-            traceback.print_tb(error.original.__traceback__)
-            print(f'{error.original.__class__.__name__}: {error.original}')
-            e.title = error.original.__class__.__name__
-            e.description = f"```py{error.original.__traceback__}```"
-            e.add_field(name="Oops!", value="Painezor probably fucked this up. He has been notified.")
-        
         elif isinstance(error, commands.CommandOnCooldown):
             e.description = f'⏰ On cooldown for {str(error.retry_after).split(".")[0]}s'
             return await ctx.send(embed=e, delete_after=5)
@@ -103,8 +94,16 @@ class Reactions(commands.Cog):
         elif isinstance(error, commands.NSFWChannelRequired):
             e.description = f"🚫 This command can only be used in NSFW channels."
         else:
+            traceback.print_tb(error.original.__traceback__)
+            print(f'{error.original.__class__.__name__}: {error.original}')
+            e.title = error.original.__class__.__name__
+            tb_to_code = traceback.format_exception(type(error.original), error.original, error.original.__traceback__)
+            tb_to_code = ''.join(tb_to_code)
+            e.description = f"```py\n{tb_to_code}```"
+            e.add_field(name="Oops!", value="Painezor probably fucked this up. He has been notified.")
+            location = "a DM" if ctx.guild is None else f"{ctx.guild.name} ({ctx.guild.id})"
             print(f"Unhandled Error Type: {error.__class__.__name__}\n"
-                  f"({ctx.author} on {ctx.guild.name}) caused the following error\n"
+                  f"({ctx.author} ({ctx.author.id}) in {location} caused the following error\n"
                   f"{error}\n"
                   f"Context: {ctx.message.content}\n")
        
