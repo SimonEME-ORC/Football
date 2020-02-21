@@ -78,7 +78,8 @@ class Sidebar(commands.Cog):
             self.driver.quit()
     
     async def cog_check(self, ctx):
-        return ctx.guild.id in [332159889587699712, 250252535699341312]
+        if ctx.guild is not None:
+            return ctx.guild.id in [332159889587699712, 250252535699341312]
     
     @tasks.loop(hours=6)
     async def sidebar_loop(self):
