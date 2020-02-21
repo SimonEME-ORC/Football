@@ -414,7 +414,7 @@ class Fixtures(commands.Cog):
         """ Get btacket for a tournament """
         async with ctx.typing():
             m = await ctx.send("Searching...")
-            url = await self._fetch_default(ctx, m, qry, preferred="league")
+            url = await self._search(ctx, m, qry, preferred="league")
             if url is None:
                 return  # rip.
             
@@ -431,7 +431,7 @@ class Fixtures(commands.Cog):
         """ Get table for a league """
         async with ctx.typing():
             m = await ctx.send("Searching...")
-            url = await self._fetch_default(ctx, m, qry, preferred="league")
+            url = await self._search(ctx, m, qry, preferred="league")
             if url is None:
                 return  # rip.
             
@@ -443,44 +443,42 @@ class Fixtures(commands.Cog):
             except discord.HTTPException:
                 await ctx.send(f"Failed to grab table from <{url}>")
     
-    @commands.command(aliases=["fx"])
+    @commands.command(aliases=['fx'], usage="fixtures <team or league to search for>")
     async def fixtures(self, ctx, *, qry: commands.clean_content = None):
-        """ Displays upcoming fixtures for a team or league.
-            Navigate with reactions.
-        """
-        async with ctx.typing():
-            m = await ctx.send("Searching...")
-            url = await self._fetch_default(ctx, m, qry, preferred="team")
-            if url is None:
-                return  # rip.
-            
-            await m.edit(content=f'Grabbing fixtures data from <{url}>...', delete_after=5)
-            async with sl_lock:
-                e, matches = await self.bot.loop.run_in_executor(None, self.parse_match_list, url, "fixtures")
-            await build_embeds(ctx, e, description_rows=matches)
+        """ Fetch upcoming fixtures for a team or league.
+        Navigate pages using reactions. """
+        m = await ctx.send('Searching...')
+        url = await self._search(ctx, m, qry)
+        if url is None:
+            return  # rip
+        url += "/fixtures/"
+        fixtures = await self.bot.loop.run_in_executor(None, football.FlashScoreFixtureList, url, )
+        embeds = await fixtures.to_embeds
+        for e in embeds:
+            e.title = f"≡ Fixtures for {e.title}"
+        return await embed_utils.paginate(ctx, embeds)
     
-    @commands.command(aliases=["rx"])
+    @commands.command(aliases=['rx'], usage="results <team or league to search for>")
     async def results(self, ctx, *, qry: commands.clean_content = None):
-        """ Displays previous results for a team or league.
-            Navigate with reactions.
-        """
-        async with ctx.typing():
-            m = await ctx.send("Searching...")
-            url = await self._fetch_default(ctx, m, qry, preferred="team")
-            if url is None:
-                return  # rip.
-            
-            await m.edit(content=f'Grabbing results data from <{url}>...', delete_after=5)
-            async with sl_lock:
-                e, matches = await self.bot.loop.run_in_executor(None, self.parse_match_list, url, "results")
-            await build_embeds(ctx, e, description_rows=matches)
+        """ Get past results for a team or league.
+        Navigate pages using reactions. """
+        m = await ctx.send('Searching...')
+        url = await self._search(ctx, m, qry)
+        if url is None:
+            return  # rip
+        url += "/results/"
+        fixtures = await self.bot.loop.run_in_executor(None, football.FlashScoreFixtureList, url, )
+        embeds = await fixtures.to_embeds
+        for e in embeds:
+            e.title = f"≡ Results for {e.title}"
+        return await embed_utils.paginate(ctx, embeds)
     
     @commands.command(aliases=["suspensions"])
     async def injuries(self, ctx, *, qry: commands.clean_content = None):
         """ Get a team's current injuries """
         async with ctx.typing():
             m = await ctx.send("Searching...")
-            url = await self._fetch_default(ctx, m, qry, preferred="team")
+            url = await self._search(ctx, m, qry, preferred="team")
             if url is None:
                 return  # rip.
             
@@ -535,7 +533,7 @@ class Fixtures(commands.Cog):
         key = 0
         url = ""
         if qry is None:
-            url = await self._fetch_default(ctx, m, qry, preferred="team")
+            url = await self._search(ctx, m, qry, preferred="team")
             url = "" if url is None else url
         
         for league in self.bot.live_games:
@@ -591,7 +589,7 @@ class Fixtures(commands.Cog):
     async def squad(self, ctx, *, qry: commands.clean_content = None):
         async with ctx.typing():
             m = await ctx.send("Searching...")
-            url = await self._fetch_default(ctx, m, qry, preferred="team")
+            url = await self._search(ctx, m, qry, preferred="team")
             if url is None:
                 return  # rip.
             
@@ -612,7 +610,7 @@ class Fixtures(commands.Cog):
             await ctx.send("Trying to find top scorers for your default league...", delete_after=10)
         m = await ctx.send("...")
         
-        url = await self._fetch_default(ctx, m, league, preferred='league')
+        url = await self._search(ctx, m, league, preferred='league')
         if url is None:
             return  # rip
         
@@ -626,7 +624,7 @@ class Fixtures(commands.Cog):
         """ Get a team's top scorers across all competitions """
         async with ctx.typing():
             m = await ctx.send("Searching...")
-            url = await self._fetch_default(ctx, m, qry, preferred="team")
+            url = await self._search(ctx, m, qry, preferred="team")
             if url is None:
                 return  # rip.
             
@@ -638,75 +636,73 @@ class Fixtures(commands.Cog):
             async with sl_lock:
                 e, description_rows = await self.bot.loop.run_in_executor(None, self.parse_team, url, "Top scorers")
             await build_embeds(ctx, e, description_rows=description_rows)
-    
+
     # TODO: Cache these.
-    async def _fetch_default(self, ctx, m, qry, preferred=None, mode=None):
-        # Check if default is set and return that.
-        if ctx.guild is None:
-            await m.edit(content="Please specify a search query.")
-            return None  # We do not have a guild.
+    
+    async def _fetch_default(self, ctx, preferred=None):
+        connection = await self.bot.db.acquire()
+        r = await connection.fetchrow("""
+             SELecT * FROM scores_settings WHERE (guild_id) = $1
+             AND (default_league is NOT NULL OR default_team IS NOT NULL) """, ctx.guild.id)
+        await self.bot.db.release(connection)
+        if r:
+            team = r["default_team"]
+            league = r["default_league"]
+            # Decide if found, yell if not.
+            if any([league, team]):
+                if preferred == "team":
+                    return team if team else league
+                return league if league else team
+        return None
+    
+    async def _search(self, ctx, m, qry, preferred=None, mode=None):
         if qry is None:
-            connection = await self.bot.db.acquire()
-            r = await connection.fetchrow("""
-                 SELecT * FROM scores_settings
-                 WHERE (guild_id) = $1
-                 AND (default_league is NOT NULL OR default_team IS NOT NULL)
-             """, ctx.guild.id)
-            await self.bot.db.release(connection)
-            if r:
-                try:
-                    team = r["default_team"]
-                except KeyError:
-                    team = ""
-                try:
-                    league = r["default_league"]
-                except KeyError:
-                    league = ""
-                
-                # Decide if found, yell if not.
-                if any([league, team]):
-                    if preferred == "team":
-                        return team if team else league
-                    else:
-                        return league if league else team
-            
-            await m.edit(
-                content=f'Please specify a search query. A default team or league can be set by moderators '
-                        f'using {ctx.prefix}default <"team" or "league"> <search string>')
-            return None
+            err = "Please specify a search query."
+            if ctx.guild is not None:
+                result = await self._fetch_default(ctx, preferred)
+                if result is not None:
+                    return result
+                else:
+                    await ctx.send(err)
+                    return None
+            else:
+                err += f"\nA default team or league can be set by moderators using {ctx.prefix}default)"
+                await ctx.send(err)
+                return None
         
+        # TODO: Move to footbalk.py as a new Class, Perhaps FlashScoreJSONReply? FlashScorePicker?
         qry = qry.replace("'", "")
         url = f"https://s.flashscore.com/search/?q={qry}&l=1&s=1&f=1%3B1&pid=2&sid=1"
         async with self.bot.session.get(url) as resp:
             res = await resp.text()
             res = res.lstrip('cjs.search.jsonpCallback(').rstrip(");")
             res = json.loads(res)
-        
+
         resdict = {}
         key = 0
         # Remove irrel.
         for i in res["results"]:
             if i["participant_type_id"] == 0:  # League
                 if mode is not "team":
-                    # Sample League URL: https://www.flashscore.com/soccer/england/premier-league/
+                    # Example League URL: https://www.flashscore.com/soccer/england/premier-league/
                     resdict[str(key)] = {"Match": i['title'], "url": f"soccer/{i['country_name'].lower()}/{i['url']}"}
             elif i["participant_type_id"] == 1:  # Team
                 if mode is not "league":
-                    # Sample Team URL: https://www.flashscore.com/team/thailand-stars/jLsL0hAF/
+                    # Example Team URL: https://www.flashscore.com/team/thailand-stars/jLsL0hAF/
                     resdict[str(key)] = {"Match": i["title"], "url": f"team/{i['url']}/{i['id']}"}
             key += 1
-        
+
         if not resdict:
             await m.edit(content=f"No results for query: {qry}")
             return None
-        
+
         if len(resdict) == 1:
             return f'https://www.flashscore.com/{resdict["0"]["url"]}'
-        
+
         outtext = ""
         for i in resdict:
             outtext += f"{i}: {resdict[i]['Match']}\n"
-        
+
         try:
             await m.edit(content=f"Please type matching id: ```{outtext}```")
         except discord.HTTPException:
@@ -717,20 +713,17 @@ class Fixtures(commands.Cog):
             def check(message):
                 if message.author.id == ctx.author.id and message.content in resdict:
                     return True
-            
+    
             match = await self.bot.wait_for("message", check=check, timeout=30)
         except asyncio.TimeoutError:
             await m.edit(content="Timed out waiting for you to select matching ID.")
             return None
-        
-        mcontent = match.content
-        await m.edit(content=f"Grabbing data...", delete_after=5)
-        
+
         try:
             await match.delete()
         except (discord.NotFound, discord.Forbidden):
             pass
-        return f'https://www.flashscore.com/{resdict[mcontent]["url"]}'
+        return f'https://www.flashscore.com/{resdict[match.content]["url"]}'
     
     # TODO: Cache.
     @commands.has_permissions(manage_guild=True)
@@ -764,7 +757,7 @@ class Fixtures(commands.Cog):
             url = None
         else:  # Find
             m = await ctx.send(f'Searching for {qry}...')
-            url = await self._fetch_default(ctx, m, qry, mode=mode)
+            url = await self._search(ctx, m, qry, mode=mode)
             if not url:
                 return await ctx.send(f"Couldn't find anything for {qry}, try searching for something else.")
         
@@ -826,13 +819,13 @@ class Fixtures(commands.Cog):
         await embed_utils.paginate(ctx, embeds)
     
     @commands.command(aliases=['ground', 'venue'], usage="Stadium <team or stadium to search for.>")
+    @commands.is_owner()
     async def stadium(self, ctx, *, query):
         """ Lookup information about a team's stadiums """
-        embeds = await football.get_stadiums(query)
-        if embeds:
-            return await embed_utils.paginate(ctx, embeds)
-        else:
-            await ctx.send('🚫 No results found.')
+        stadiums = await football.get_stadiums(query)
+        embeds = [await i.to_embed for i in stadiums]
+        await embed_utils.paginate(ctx, embeds)
+
 
 
 def setup(bot):
