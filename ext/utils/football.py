@@ -11,62 +11,19 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as ec, wait
 
 from ext.utils import embed_utils
-from ext.utils.embed_utils import get_colour
 from ext.utils.selenium_driver import spawn_driver
 
 from typing import List
+import urllib.parse
 
 
-async def get_stadiums(query):
-    venue = query.replace(" ", "+")
-    output = []
-    async with aiohttp.ClientSession() as cs:
-        async with cs.get(f'https://www.footballgroundmap.com/search/{venue}') as resp:
-            await resp.text()
-            tree = html.fromstring(await resp.text())
-        
-        results = tree.xpath(".//div[@class='using-grid'][1]/div[@class='grid']/div")
-        
-        # Fetching colours is VERY resource intensive.
-        with_colour = False if len(results) > 20 else True
-        for i in results:
-            all_text = i.xpath(".//text()")
-            country = all_text[3]
-            league = all_text[5]
-            names = all_text[7:]
-            links_all = i.xpath('.//a[contains(@href, "/ground/")]/@href')
-            groups = zip(names[::2], names[1::2], links_all)
-            
-            grounds = defaultdict(dict)
-            
-            for former_or_current, name, link in groups:
-                grounds[former_or_current].update({name.title(): link})
-            
-            old_venues = grounds['Former Ground:']
-            venues = grounds['Ground:']
-            
-            output.append(await Stadium(
-                with_colour=with_colour,
-                venues=venues,
-                old_venues=old_venues,
-                image=i.xpath('.//img/@src')[0],
-                team=i.xpath('.//a[contains(@href, "team")]//text()')[0].title(),
-                team_url=i.xpath('.//a[contains(@href, "team")]/@href')[0],
-                league=f"**{country}**: {league}"
-            ).to_embed)
-        return output
-
-
-def get_html(url, xpath, driver=None):
-    func_driver = driver if driver is None else spawn_driver()
-
-    if func_driver.current_url != url:
-        func_driver.get(url)
-    wait.WebDriverWait(driver, 5).until(ec.visibility_of_element_located((By.XPATH, xpath)))
-    src = func_driver.page_source
-    if driver is None:
-        func_driver.quit()
+def get_html(url, expected_element_xpath, driver):
+    if driver.current_url != url:
+        driver.get(url)
+        wait.WebDriverWait(driver, 5).until(ec.visibility_of_element_located((By.XPATH, expected_element_xpath)))
+    src = driver.page_source
     return src
+
 
 class Fixture:
     def __init__(self, time: typing.Union[str, datetime.datetime], home: str, away: str, **kwargs):
@@ -174,32 +131,73 @@ class FlashScoreFixtureList:
 
 
 class Stadium:
-    def __init__(self, team, **kwargs):
+    def __init__(self, team, league, country, **kwargs):
         self.team = team
+        self.league = league
+        self.country = country
         self.__dict__.update(kwargs)
     
     @property
     async def to_embed(self) -> discord.Embed:
         e = discord.Embed()
-        e.title = self.team
+        e.set_author(name = self.team)
+        e.title = f"{self.country}: {self.league}"
+        if hasattr(self, "team_url"):
+            e.url = self.team_url
+            
         if hasattr(self, "image") and self.image:  # Check not ""
             e.set_thumbnail(url=self.image)
-            if hasattr(self, "with_colour") and self.with_colour:
-                e.colour = await get_colour(self.image)
-            else:
-                e.colour = discord.Colour.blurple()
+            e.colour = await embed_utils.get_colour(self.image)
         
         if hasattr(self, "link") and self.link:
             e.url = self.link
         
         if hasattr(self, "venues") and self.venues:
-            venues = "\n".join([f"[{k}]({v})" for k, v in self.venues.items()])
-            e.add_field(name="Grounds", value=venues, inline=False)
-        
-        if hasattr(self, "old_venues") and self.old_venues:
-            venues = "\n".join([f"[{k}]({v})" for k, v in self.old_venues.items()])
-            e.add_field(name="Former Grounds", value=venues, inline=False)
+            for i in self.venues:
+                venues = "\n".join([f"[{k}]({v})" for k, v in self.venues[i].items()])
+                e.add_field(name=i, value=venues, inline=False)
         
         if hasattr(self, "league"):
             e.description = self.league
+            
         return e
+
+
+async def get_stadiums(query) -> List[Stadium]:
+    query = urllib.parse.quote(query)
+    output = []
+    async with aiohttp.ClientSession() as cs:
+        async with cs.get(f'https://www.footballgroundmap.com/search/{query}') as resp:
+            await resp.text()
+            tree = html.fromstring(await resp.text())
+        
+        results = tree.xpath(".//div[@class='using-grid'][1]/div[@class='grid']/div")
+        
+        for i in results:
+            links = i.xpath('.//a[contains(@href, "/ground/")]/@href')
+            # Some nasty <div><element></element> text() <element></element></div> shit.
+            strings = i.xpath('.//small/following-sibling::*//text() | //small/following-sibling::text()')
+            # Pair "Ground:" or "Former Ground:"  Line with the name of the ground, then pair those with their links..
+            if not strings:
+                continue
+                
+            groups = zip(strings[::2], strings[1::2], links)
+            grounds = defaultdict(dict)
+            
+            # Grab the constructor data.
+            team = "".join(i.xpath('.//small/preceding-sibling::*//text()')).title()
+            country, league = i.xpath('.//small/a/text()')
+            std = Stadium(team=team, country=country, league=league)
+            
+            # Include any other info we can find.
+            std.image = i.xpath('.//img/@src')[0]
+            std.team_url = i.xpath('.//a[contains(@href, "team")]/@href')[0]
+            
+            # Convert string lists into a dict for easier parsing.
+            for former_or_current, name, link in groups:
+                print(former_or_current, name, link)
+                grounds[former_or_current].update({name.title(): link})
+            
+            std.venues = grounds
+            output.append(std)
+        return output
