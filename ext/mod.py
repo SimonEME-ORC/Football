@@ -65,7 +65,14 @@ class Mod(commands.Cog):
             guild_id = r["guild_id"]
             prefix = r["prefix"]
             self.bot.prefix_cache[guild_id].append(prefix)
-    
+        
+        # Items ending in space must come first.
+        for guild, pref_list in self.bot.prefix_cache.items():
+            for i in range(len(pref_list)):
+                if pref_list[i].endswith(' '):
+                    pref_list = [pref_list[i]] + pref_list[:i] + pref_list[i + 1:]
+            self.bot.prefix_cache[guild] = pref_list
+            
     async def update_cache(self):
         self.bot.disabled_cache = {}
         connection = await self.bot.db.acquire()
