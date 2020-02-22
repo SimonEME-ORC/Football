@@ -9,6 +9,8 @@ import random
 import json
 from io import BytesIO
 
+from ext.utils import embed_utils
+
 
 def draw_tinder(image, av, name):
     # Base Image
@@ -437,6 +439,26 @@ class ImageManip(commands.Cog):
                                 "Tried to send you your cat, but I can't send you messages."
                                 " Guess he's not getting adopted then.")
         await ctx.send("😿 Sorry, no cats want to be adopted by you.")
+        
+    @commands.command()
+    async def emoji(self, ctx, emoji: typing.Union[discord.Emoji, discord.PartialEmoji]):
+        """ View a bigger version of an Emoji """
+        e = discord.Embed()
+        e.title = emoji.name
+        if emoji.animated:
+            e.description = "This is an animated emoji."
+        url = str(emoji.url)
+        
+        try:
+            e.add_field(name="Emoji Source", value=f"{emoji.guild} (ID: {emoji.guild.id})")
+        except AttributeError:  # Partial Emoji doesn't have guild.
+            pass
+
+        e.colour = await embed_utils.get_colour(url)
+        
+        e.set_image(url=url)
+        e.set_footer(text=url)
+        await ctx.send(embed=e)
 
 
 def setup(bot):
