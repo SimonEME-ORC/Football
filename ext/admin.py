@@ -1,6 +1,7 @@
 from discord.ext import commands
 import discord
 from os import system
+import traceback
 import inspect
 import json
 
@@ -62,7 +63,8 @@ class Admin(commands.Cog):
         try:
             self.bot.load_extension(module)
         except Exception as e:
-            await ctx.send(f':no_entry_sign: {type(e).__name__}: {e} \n{e.__traceback__}')
+            await ctx.send(f':no_entry_sign: {type(e).__name__}: {e} '
+                           f'```py\n{"".join(traceback.format_exception(type(e), e, e.__traceback__))}```')
         else:
             await ctx.send(f':gear: Loaded {module}')
 
