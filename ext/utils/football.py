@@ -1,3 +1,4 @@
+import json
 from collections import defaultdict
 import datetime
 
@@ -53,12 +54,11 @@ class Fixture:
         else:
             output = f"`{d}:` {self.home} {sc} {self.away} {tv}"
         return output
-
+        
 
 class FlashScoreFixtureList:
-    def __init__(self, url, driver=None):
-        if driver is None:
-            self.driver = spawn_driver()
+    def __init__(self, url, driver):
+        self.driver = driver
         self.url = url
         self.fs_page_title = None
         self.fs_page_image = None
@@ -108,7 +108,6 @@ class FlashScoreFixtureList:
     @property
     async def to_embeds(self) -> List[discord.Embed]:
         e = discord.Embed()
-        print(self.url.split('/'))
         if self.fs_page_title is not None:
             e.title = self.fs_page_title
         
@@ -130,12 +129,60 @@ class FlashScoreFixtureList:
         return embeds
 
 
+class FlashScoreSearchResult:
+    def __init__(self, **kwargs):
+        self.__dict__.update(**kwargs)
+    
+    @property
+    def link(self):
+        if self.participant_type_id == 1:
+            # Example Team URL: https://www.flashscore.com/team/thailand-stars/jLsL0hAF/
+            return f"https://www.flashscore.com/team/{self.url}/{self.id}"
+        elif self.participant_type_id == 0:
+            # Example League URL: https://www.flashscore.com/soccer/england/premier-league/
+            # resdict[str(key)] = {"Match": i['title'], "url": f"soccer/{i['country_name'].lower()}/{i['url']}"
+            ctry = self.country_name.lower().replace(' ', '-')
+            return f"https://www.flashscore.com/soccer/{ctry}/{self.url}"
+        
+    @classmethod
+    def fixtures(cls, driver) -> FlashScoreFixtureList:
+        return FlashScoreFixtureList(str(cls.link) + "/fixtures", driver)
+    
+    @classmethod
+    def results(cls, driver) -> FlashScoreFixtureList:
+        return FlashScoreFixtureList(str(cls.link) + "/results", driver)
+
+
+async def get_fs_results(query) -> List[FlashScoreSearchResult]:
+        query = urllib.parse.quote(query)
+        url = f"https://s.flashscore.com/search/?q={query}&l=1&s=1&f=1%3B1&pid=2&sid=1"
+        async with aiohttp.ClientSession() as cs:
+            async with cs.get(url) as resp:
+                res = await resp.text()
+                res = res.lstrip('cjs.search.jsonpCallback(').rstrip(");")
+                res = json.loads(res)
+
+        results = []
+
+        for i in res['results']:
+            fsr = FlashScoreSearchResult(**i)
+            results.append(fsr)
+            
+        return results
+
+
 class Stadium:
-    def __init__(self, team, league, country, **kwargs):
+    def __init__(self, url, name, team, league, country, **kwargs):
+        self.url= url
+        self.name = name
         self.team = team
         self.league = league
         self.country = country
         self.__dict__.update(kwargs)
+    
+    @property
+    def to_picker_row(self) -> str:
+        return f"**{self.name}** ({self.country}: {self.team})"
     
     @property
     async def to_embed(self) -> discord.Embed:
@@ -186,17 +233,24 @@ async def get_stadiums(query) -> List[Stadium]:
             
             # Grab the constructor data.
             team = "".join(i.xpath('.//small/preceding-sibling::*//text()')).title()
-            country, league = i.xpath('.//small/a/text()')
-            std = Stadium(team=team, country=country, league=league)
+            ctry_league = i.xpath('.//small/a//text()')
+
+            if not stl:
+                continue
+            country = ctry_league[0]
+            try:
+                league = ctry_league[1]
+            except IndexError:
+                league = "N/A"
             
             # Include any other info we can find.
-            std.image = i.xpath('.//img/@src')[0]
-            std.team_url = i.xpath('.//a[contains(@href, "team")]/@href')[0]
+            team_badge = i.xpath('.//img/@src')[0]
+            team_url = i.xpath('.//a[contains(@href, "team")]/@href')[0]
             
             # Convert string lists into a dict for easier parsing.
             for former_or_current, name, link in groups:
-                print(former_or_current, name, link)
-                grounds[former_or_current].update({name.title(): link})
+                std = Stadium(url=link, name=name, type=former_or_current,
+                              team=team, team_url=team_url, team_badge=team_badge, country=country, league=league)
             
             std.venues = grounds
             output.append(std)
