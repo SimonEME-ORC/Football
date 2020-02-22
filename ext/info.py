@@ -68,7 +68,7 @@ class Info(commands.Cog):
             async for msg in ctx.channel.history(limit=1000):
                 if msg.author.id == target.id:
                     if target.id == 178631560650686465:
-                        c = (f"{t.mention} last seen being a spacker in "
+                        c = (f"{target.mention} last seen being a spacker in "
                              f" {ctx.channel.mention} at {msg.created_at} "
                              f"saying '{msg.content}'")
                         await m.edit(content=c)
