@@ -9,7 +9,7 @@ from discord.ext import commands
 from ext.utils.selenium_driver import spawn_driver
 from lxml import html
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium.common.exceptions import ElementNotInteractableException, TimeoutException
+from selenium.common.exceptions import ElementNotInteractableException, TimeoutException, StaleElementReferenceException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as ec
 
@@ -26,8 +26,7 @@ from importlib import reload
 # max_concurrency equivalent
 sl_lock = asyncio.Semaphore()
 
-# TODO: Refactor into ext.utils.football Classes
-# Starting with fixtures / results, for matchthread bot.
+# TODO: Finish Refactor into ext.utils.football Classes
 
 
 async def build_embeds(ctx, base_embed, description_rows=None, embed_fields=None):
@@ -109,7 +108,7 @@ class Fixtures(commands.Cog):
                 try:
                     x = WebDriverWait(self.driver, 3).until(ec.presence_of_element_located(z))
                     x.click()
-                except (TimeoutException, ElementNotInteractableException):
+                except (TimeoutException, ElementNotInteractableException, StaleElementReferenceException):
                     WebDriverWait(self.driver, 1)  # Wait for a second.
                     continue  # Can't click on what we can't find.
         
@@ -119,9 +118,9 @@ class Fixtures(commands.Cog):
             trg = self.driver.find_element_by_xpath(xpath)
             captures.append(Image.open(BytesIO(trg.screenshot_as_png)))
             while max_iter > 0:
-                element = sub_funcs['multi_capture']
+                locator = sub_funcs['multi_capture']
                 try:
-                    z = WebDriverWait(self.driver, 3).until(ec.visibility_of_element_located(element))
+                    z = WebDriverWait(self.driver, 3).until(ec.visibility_of_element_located(locator))
                     z.click()
                 except TimeoutException:
                     break
@@ -140,11 +139,9 @@ class Fixtures(commands.Cog):
             if element is None:
                 return None, e, self.driver.page_source
             self.driver.execute_script("arguments[0].scrollIntoView();", element)
-            im = Image.open(BytesIO(element.screenshot_as_png))
+            im = BytesIO(element.screenshot_as_png)
             
             output = BytesIO()
-            im.save(output, "PNG")
-            output.seek(0)
             df = discord.File(output, filename="img.png")
             return df, e, self.driver.page_source
         return e, self.driver.page_source
@@ -201,60 +198,6 @@ class Fixtures(commands.Cog):
             e.colour = 0xB3B3B3  # Gray
         
         return e, image
-    
-    def parse_match_list(self, url, return_mode):
-        url += f"/{return_mode}"
-        xp = './/div[@class="sportName soccer"]'
-        e, inner_html = self.get_html(url, xpath=xp)
-        
-        tree = html.fromstring(inner_html)
-        title = "".join(tree.xpath('.//div[@class="teamHeader__name"]/text()')).strip()
-        title = f"≡ {return_mode.title()} for {title}"
-        
-        xp = ".//div[contains(@class,'sportName soccer')]/div"
-        items = tree.xpath(xp)
-        matches = []
-        for i in items:
-            try:
-                url = i.xpath("./@id")[0].split("_")[-1]
-                url = "http://www.flashscore.com/match/" + url
-            except IndexError:
-                continue  # Not all rows have links.
-            
-            d = "".join(i.xpath('.//div[@class="event__time"]//text()')).strip("Pen").strip('AET')
-            if "Postp" not in d:  # Should be dd.mm hh:mm or dd.mm.yyyy
-                yn = datetime.datetime.today().year  # Year now
-                try:
-                    d = datetime.datetime.strptime(d, '%d.%m.%Y')
-                except ValueError:
-                    # This is ugly but February 29th can suck my dick.
-                    d = datetime.datetime.strptime(f"{datetime.datetime.now().year}.{d}", '%Y.%d.%m. %H:%M')
-                    
-                    # CHeck if game is next year.
-                    if return_mode == "fixtures":
-                        if d < datetime.datetime.today():
-                            d = d.replace(year=yn + 1)
-                
-                if d.year != yn:
-                    d = d.strftime('%d %b %Y')
-                else:
-                    if return_mode == "fixtures":
-                        d = d.strftime('%a %d %b %H:%M')
-                    else:
-                        d = d.strftime('%a %d %b')
-            
-            # TV
-            tv = i.xpath(".//div[contains(@class,'tv')]")
-            tv = "📺" if tv else ""
-            
-            # score
-            sc = " - ".join(i.xpath('.//div[contains(@class,"event__scores")]/span/text()'))
-            sc = "vs" if not sc else sc
-            h, a = i.xpath('.//div[contains(@class,"event__participant")]/text()')
-            h, a = h.strip(), a.strip()
-            matches.append(f"`{d}:` [{h} {sc} {a} {tv}]({url})")
-            e.title = title
-        return e, matches
     
     def parse_table(self, url):
         url += "/standings/"
@@ -414,7 +357,7 @@ class Fixtures(commands.Cog):
             if fsr is None:
                 return  # rip.
             
-            url = fsr
+            url = fsr.link()
             
             async with sl_lock:
                 file, e = await self.bot.loop.run_in_executor(None, self.parse_bracket, url)
@@ -429,9 +372,11 @@ class Fixtures(commands.Cog):
         async with ctx.typing():
             await ctx.send("Searching...", delete_after=5)
             fsr = await self._search(ctx, qry, mode="league")
+            
             if fsr is None:
                 return  # rip.
-            url = fsr
+            
+            url = fsr.link()
             
             async with sl_lock:
                 p = await self.bot.loop.run_in_executor(None, self.parse_table, url)
@@ -446,10 +391,11 @@ class Fixtures(commands.Cog):
         Navigate pages using reactions. """
         await ctx.send('Searching...', delete_after=5)
         fsr = await self._search(ctx, qry)
+        
         if fsr is None:
             return  # rip
         
-        url = fsr + "/fixtures/"
+        url = fsr.link() + "/fixtures/"
         fixtures = await self.bot.loop.run_in_executor(None, football.FlashScoreFixtureList, url, self.driver)
         embeds = await fixtures.to_embeds
         for e in embeds:
@@ -465,9 +411,8 @@ class Fixtures(commands.Cog):
         
         if fsr is None:
             return
-        url = fsr
+        url = fsr.link() + "/results"
         
-        url += "/results/"
         fixtures = await self.bot.loop.run_in_executor(None, football.FlashScoreFixtureList, url, self.driver)
         embeds = await fixtures.to_embeds
         for e in embeds:
@@ -484,10 +429,7 @@ class Fixtures(commands.Cog):
             if fsr is None:
                 return
             
-            url = fsr
-            
-            if url is None:
-                return  # rip.
+            url = fsr.link()
             
             async with sl_lock:
                 e, rows = await self.bot.loop.run_in_executor(None, self.parse_team, url, "injuries")
@@ -540,7 +482,7 @@ class Fixtures(commands.Cog):
         url = ""
         if qry is None:
             fsr = await self._search(ctx, qry, mode="team")
-            url = fsr
+            url = fsr.link()
             url = "" if url is None else url
         
         for league in self.bot.live_games:
@@ -597,7 +539,7 @@ class Fixtures(commands.Cog):
         async with ctx.typing():
             m = await ctx.send("Searching...")
             fsr = await self._search(ctx, qry, mode="team")
-            url = fsr
+            url = fsr.link()
             
             if url is None:
                 return  # rip.
@@ -622,7 +564,7 @@ class Fixtures(commands.Cog):
         if fsr is None:
             return  # rip
         
-        url = fsr
+        url = fsr.link()
 
         async with sl_lock:
             e, rows = await self.bot.loop.run_in_executor(None, self.parse_scorers, url, team)
@@ -636,7 +578,7 @@ class Fixtures(commands.Cog):
             fsr = await self._search(ctx, qry, mode="team")
             if fsr is None:
                 return  # rip.
-            url = fsr
+            url = fsr.link()
             
             if "team" not in url:
                 return await ctx.send("That looks like a league, not a team, "
@@ -669,7 +611,8 @@ class Fixtures(commands.Cog):
             if ctx.guild is not None:
                 result = await self._fetch_default(ctx, mode)
                 if result is not None:
-                    return result
+                    sr = football.FlashScoreSearchResult(override=result)  # Manually build one.
+                    return sr
                 else:
                     await ctx.send(err)
                     return None
@@ -689,7 +632,7 @@ class Fixtures(commands.Cog):
         if index is None:
             return  # Timeout or abort.
 
-        return search_results[index].link
+        return search_results[index]
     
     # TODO: Cache.
     @commands.has_permissions(manage_guild=True)
@@ -728,7 +671,7 @@ class Fixtures(commands.Cog):
             if fsr is None:
                 return await ctx.send(f"Couldn't find matching {mode} for {qry}, try searching for something else.")
             
-            url = fsr
+            url = fsr.link()
             
         connection = await self.bot.db.acquire()
         
@@ -786,6 +729,19 @@ class Fixtures(commands.Cog):
             embeds.append(deepcopy(e))
             page += 1
         await embed_utils.paginate(ctx, embeds)
+
+    @commands.command(usage="Stadium <team or stadium to search for.>")
+    async def stadium(self, ctx, *, query):
+        """ Lookup information about a team's stadiums """
+        stadiums = await football.get_stadiums(query)
+        item_list = [i.to_picker_row() for i in stadiums]
+    
+        index = await embed_utils.page_selector(ctx, item_list)
+    
+        if index is None:
+            return  # Timeout or abort.
+    
+        await ctx.send(embed=await stadiums[index].to_embed())
 
 
 def setup(bot):
