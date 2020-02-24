@@ -335,9 +335,18 @@ class Mod(commands.Cog):
         if not muted_role:
             return await ctx.send(f"No 'muted' role found on {ctx.guild.name}")
         
+        success, fail = [], []
         for i in members:
-            await i.remove_roles(muted_role)
-        await ctx.send(f"Unmuted {', '.join([i.mention for i in members])}")
+            try:
+                await i.remove_roles(muted_role)
+            except discord.Forbidden:
+                fail.append(i.mention)
+            else:
+                success.append(i.mention)
+
+        success = f"🆗 Unmuted {', '.join(success)}" if success else ""
+        fail = f"🚫 Could not unmute {', '.join(fail)}" if fail else ""
+        await ctx.send("\n".join(i for i in [success, fail] if i))
         
     
     @commands.command(aliases=["clear"])
