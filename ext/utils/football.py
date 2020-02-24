@@ -1,29 +1,16 @@
-import json
-from collections import defaultdict
-import datetime
-
-import typing
+from selenium.webdriver.support import expected_conditions as ec, wait
+from selenium.webdriver.common.by import By
+from ext.utils import embed_utils
 from copy import deepcopy
-
+import PIL.Image as Image
+from io import BytesIO
 from lxml import html
+import urllib.parse
+import datetime
 import aiohttp
 import discord
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support import expected_conditions as ec, wait
-
-from ext.utils import embed_utils
-from ext.utils.selenium_driver import spawn_driver
-
-from typing import List
-import urllib.parse
-
-
-def get_html(url, expected_element_xpath, driver):
-    if driver.current_url != url:
-        driver.get(url)
-        wait.WebDriverWait(driver, 5).until(ec.visibility_of_element_located((By.XPATH, expected_element_xpath)))
-    src = driver.page_source
-    return src
+import typing
+import json
 
 
 class Fixture:
@@ -54,7 +41,7 @@ class Fixture:
         else:
             output = f"`{d}:` {self.home} {sc} {self.away} {tv}"
         return output
-        
+
 
 class FlashScoreFixtureList:
     def __init__(self, url, driver):
@@ -64,7 +51,7 @@ class FlashScoreFixtureList:
         self.fs_page_image = None
         self.items = self.get_fixtures()
     
-    def get_fixtures(self) -> List[Fixture]:
+    def get_fixtures(self) -> typing.List[Fixture]:
         src = get_html(self.url, './/div[@class="sportName soccer"]', driver=self.driver)
         logo = self.driver.find_element_by_xpath('.//div[contains(@class,"logo")]')
         if logo != "none":
@@ -94,6 +81,8 @@ class FlashScoreFixtureList:
                     time = datetime.datetime.strptime(time, '%d.%m.%Y')
                 except ValueError:
                     time = datetime.datetime.strptime(f"{datetime.datetime.now().year}.{time}", '%Y.%d.%m. %H:%M')
+            else:
+                time = "Postpooned"
             
             is_televised = True if i.xpath(".//div[contains(@class,'tv')]") else False
             
@@ -106,7 +95,7 @@ class FlashScoreFixtureList:
         return fixtures
     
     @property
-    async def to_embeds(self) -> List[discord.Embed]:
+    async def to_embeds(self) -> typing.List[discord.Embed]:
         e = discord.Embed()
         if self.fs_page_title is not None:
             e.title = self.fs_page_title
@@ -121,7 +110,7 @@ class FlashScoreFixtureList:
         if not pages:
             e.description = "No games found!"
             embeds.append(e)
-            
+        
         for page in pages:
             count += 1
             e.description = "\n".join([await i.to_embed_row for i in page])
@@ -133,125 +122,177 @@ class FlashScoreSearchResult:
     def __init__(self, **kwargs):
         self.__dict__.update(**kwargs)
     
-    @property
     def link(self):
+        if hasattr(self, 'override'):
+            return self.override
         if self.participant_type_id == 1:
             # Example Team URL: https://www.flashscore.com/team/thailand-stars/jLsL0hAF/
             return f"https://www.flashscore.com/team/{self.url}/{self.id}"
         elif self.participant_type_id == 0:
             # Example League URL: https://www.flashscore.com/soccer/england/premier-league/
-            # resdict[str(key)] = {"Match": i['title'], "url": f"soccer/{i['country_name'].lower()}/{i['url']}"
             ctry = self.country_name.lower().replace(' ', '-')
             return f"https://www.flashscore.com/soccer/{ctry}/{self.url}"
-        
-    @classmethod
-    def fixtures(cls, driver) -> FlashScoreFixtureList:
-        return FlashScoreFixtureList(str(cls.link) + "/fixtures", driver)
     
-    @classmethod
-    def results(cls, driver) -> FlashScoreFixtureList:
-        return FlashScoreFixtureList(str(cls.link) + "/results", driver)
-
-
-async def get_fs_results(query) -> List[FlashScoreSearchResult]:
-        query = urllib.parse.quote(query)
-        url = f"https://s.flashscore.com/search/?q={query}&l=1&s=1&f=1%3B1&pid=2&sid=1"
-        async with aiohttp.ClientSession() as cs:
-            async with cs.get(url) as resp:
-                res = await resp.text()
-                res = res.lstrip('cjs.search.jsonpCallback(').rstrip(");")
-                res = json.loads(res)
-
-        results = []
-
-        for i in res['results']:
-            fsr = FlashScoreSearchResult(**i)
-            results.append(fsr)
-            
-        return results
+    def fixtures(self, driver) -> FlashScoreFixtureList:
+        return FlashScoreFixtureList(str(self.link()) + "/fixtures", driver)
+    
+    def results(self, driver) -> FlashScoreFixtureList:
+        return FlashScoreFixtureList(str(self.link()) + "/results", driver)
 
 
 class Stadium:
     def __init__(self, url, name, team, league, country, **kwargs):
-        self.url= url
-        self.name = name
+        self.url = url
+        self.name = name.title()
         self.team = team
         self.league = league
         self.country = country
         self.__dict__.update(kwargs)
     
-    @property
     def to_picker_row(self) -> str:
         return f"**{self.name}** ({self.country}: {self.team})"
     
-    @property
     async def to_embed(self) -> discord.Embed:
+        tree = html.fromstring(await get_html_async(self.url))
         e = discord.Embed()
-        e.set_author(name = self.team)
-        e.title = f"{self.country}: {self.league}"
-        if hasattr(self, "team_url"):
-            e.url = self.team_url
-            
-        if hasattr(self, "image") and self.image:  # Check not ""
-            e.set_thumbnail(url=self.image)
-            e.colour = await embed_utils.get_colour(self.image)
+        e.set_author(name="FootballGroundMap.com", url="http://www.footballgroundmap.com")
+        e.title = self.name
+        e.url = self.url
         
-        if hasattr(self, "link") and self.link:
-            e.url = self.link
+        image = "".join(tree.xpath('.//div[@class="page-img"]/img/@src'))
+
+        try:  # Check not ""
+            e.colour = await embed_utils.get_colour(self.team_badge)
+        except AttributeError:
+            pass
+
+        if image:
+            e.set_image(url=image.replace(' ', '%20'))
         
-        if hasattr(self, "venues") and self.venues:
-            for i in self.venues:
-                venues = "\n".join([f"[{k}]({v})" for k, v in self.venues[i].items()])
-                e.add_field(name=i, value=venues, inline=False)
+        # Teams
+        old = tree.xpath('.//tr/th[contains(text(), "Former home")]/following-sibling::td')
+        home = tree.xpath('.//tr/th[contains(text(), "home to")]/following-sibling::td')
         
-        if hasattr(self, "league"):
-            e.description = self.league
-            
+        for s in home:
+            team_list = []
+            links = s.xpath('.//a/@href')
+            teams = s.xpath('.//a/text()')
+            for x, y in list(zip(teams, links)):
+                if "/team/" in y:
+                    team_list.append(f"[{x}]({y})")
+            if team_list:
+                e.add_field(name="Home to", value=", ".join(team_list), inline=False)
+        
+        for s in old:
+            team_list = []
+            links = s.xpath('.//a/@href')
+            teams = s.xpath('.//a/text()')
+            for x, y in list(zip(teams, links)):
+                if "/team/" in y:
+                    team_list.append(f"[{x}]({y})")
+            if team_list:
+                e.add_field(name="Former home to", value=", ".join(team_list), inline=False)
+        
+        # Location
+        map_link = "".join(tree.xpath('.//figure/img/@src'))
+        address = "".join(tree.xpath('.//tr/th[contains(text(), "Address")]/following-sibling::td//text()'))
+        address = "Link to map" if not address else address
+        
+        if map_link:
+            e.add_field(name="Location", value=f"[{address}]({map_link})")
+        elif address:
+            e.add_field(name="Location", value=address, inline=False)
+        
+        # Misc Data.
+        e.description = ""
+        capacity = "".join(tree.xpath('.//tr/th[contains(text(), "Capacity")]/following-sibling::td//text()'))
+        cost = "".join(tree.xpath('.//tr/th[contains(text(), "Cost")]/following-sibling::td//text()'))
+        website = "".join(tree.xpath('.//tr/th[contains(text(), "Website")]/following-sibling::td//text()'))
+        att = "".join(tree.xpath('.//tr/th[contains(text(), "Record attendance")]/following-sibling::td//text()'))
+        if capacity:
+            e.description += f"Capacity: {capacity}\n"
+        if att:
+            e.description += f"Record Attendance: {att}\n"
+        if cost:
+            e.description += f"Cost: {cost}\n"
+        if website:
+            e.description += f"Website: {cost}\n"
+        
         return e
 
 
-async def get_stadiums(query) -> List[Stadium]:
-    query = urllib.parse.quote(query)
-    output = []
+async def get_html_async(url):
     async with aiohttp.ClientSession() as cs:
-        async with cs.get(f'https://www.footballgroundmap.com/search/{query}') as resp:
-            await resp.text()
-            tree = html.fromstring(await resp.text())
-        
-        results = tree.xpath(".//div[@class='using-grid'][1]/div[@class='grid']/div")
-        
-        for i in results:
-            links = i.xpath('.//a[contains(@href, "/ground/")]/@href')
-            # Some nasty <div><element></element> text() <element></element></div> shit.
-            strings = i.xpath('.//small/following-sibling::*//text() | //small/following-sibling::text()')
-            # Pair "Ground:" or "Former Ground:"  Line with the name of the ground, then pair those with their links..
-            if not strings:
-                continue
-                
-            groups = zip(strings[::2], strings[1::2], links)
-            grounds = defaultdict(dict)
-            
-            # Grab the constructor data.
-            team = "".join(i.xpath('.//small/preceding-sibling::*//text()')).title()
-            ctry_league = i.xpath('.//small/a//text()')
+        async with cs.get(url) as resp:
+            return await resp.text()
 
-            if not stl:
-                continue
-            country = ctry_league[0]
-            try:
-                league = ctry_league[1]
-            except IndexError:
-                league = "N/A"
+
+def get_html(url, expected_element_xpath, driver):
+    if driver.current_url != url:
+        driver.get(url)
+        wait.WebDriverWait(driver, 5).until(ec.visibility_of_element_located((By.XPATH, expected_element_xpath)))
+    src = driver.page_source
+    return src
+
+
+def fetch_image(url, expected_element_xpath, driver) -> typing.Union[BytesIO, None]:
+    if driver.current_url != url:
+        driver.get(url)
+    element = wait.WebDriverWait(driver, 5).until(ec.visibility_of_element_located((By.XPATH, expected_element_xpath)))
+    z = element.screenshot_as_png
+    driver.execute_script("arguments[0].scrollIntoView();", element)
+    image = Image.open(BytesIO(element.screenshot_as_png))
+    output = BytesIO()
+    image.save(output, "PNG")
+    output.seek(0)
+    return image
+
+
+async def get_fs_results(query) -> typing.List[FlashScoreSearchResult]:
+    query = query.replace("'", "")  # For some reason, ' completely breaks FS search, and people keep doing it?
+    query = urllib.parse.quote(query)
+    res = await get_html_async(f"https://s.flashscore.com/search/?q={query}&l=1&s=1&f=1%3B1&pid=2&sid=1")
+    
+    # Un-fuck FS JSON reply.
+    res = res.lstrip('cjs.search.jsonpCallback(').rstrip(");")
+    res = json.loads(res)
+    
+    results = []
+    
+    for i in res['results']:
+        fsr = FlashScoreSearchResult(**i)
+        results.append(fsr)
+    
+    return results
+
+
+async def get_stadiums(query) -> typing.List[Stadium]:
+    qry = urllib.parse.quote_plus(query)
+    stadiums = []
+    tree = html.fromstring(await get_html_async(f'https://www.footballgroundmap.com/search/{qry}'))
+    results = tree.xpath(".//div[@class='using-grid'][1]/div[@class='grid']/div")
+    for i in results:
+        team = "".join(i.xpath('.//small/preceding-sibling::a//text()')).title()
+        team_badge = i.xpath('.//img/@src')[0]
+        ctry_league = i.xpath('.//small/a//text()')
+        
+        if not ctry_league:
+            continue
+        country = ctry_league[0]
+        try:
+            league = ctry_league[1]
+        except IndexError:
+            league = ""
+        
+        subnodes = i.xpath('.//small/following-sibling::a')
+        for s in subnodes:
+            name = "".join(s.xpath('.//text()')).title()
+            link = "".join(s.xpath('./@href'))
+
+            if query.lower() not in name.lower() and query.lower() not in team.lower():
+                continue  # Filtering.
             
-            # Include any other info we can find.
-            team_badge = i.xpath('.//img/@src')[0]
-            team_url = i.xpath('.//a[contains(@href, "team")]/@href')[0]
-            
-            # Convert string lists into a dict for easier parsing.
-            for former_or_current, name, link in groups:
-                std = Stadium(url=link, name=name, type=former_or_current,
-                              team=team, team_url=team_url, team_badge=team_badge, country=country, league=league)
-            
-            std.venues = grounds
-            output.append(std)
-        return output
+            if not any(c.name == name for c in stadiums) and not any(c.url == link for c in stadiums):
+                stadiums.append(Stadium(url=link, name=name, team=team, team_badge=team_badge,
+                                        country=country, league=league))
+    return stadiums
