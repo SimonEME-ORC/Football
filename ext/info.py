@@ -1,9 +1,13 @@
 from discord.ext import commands
 from collections import Counter
+import ext.utils.codeblocks as codeblocks
+from importlib import reload
 import datetime
 import discord
 import typing
 import copy
+
+from ext.utils.embed_utils import get_colour
 
 
 class Info(commands.Cog):
@@ -11,7 +15,9 @@ class Info(commands.Cog):
     
     def __init__(self, bot):
         self.bot = bot
-        self.bot.commands_used = Counter()
+        reload(codeblocks)
+        if not hasattr(self.bot, "commands_used"):
+            self.bot.commands_used = Counter()
     
     @commands.command(aliases=['botstats', "uptime", "hello", "inviteme", "invite"])
     async def about(self, ctx):
@@ -55,11 +61,8 @@ class Info(commands.Cog):
         await ctx.send(f"```py\n{permissions}```")
     
     @commands.command(aliases=["lastmsg", "lastonline", "lastseen"], usage="seen @user")
-    async def seen(self, ctx, target: discord.Member = None):
+    async def seen(self, ctx, target: discord.Member):
         """ Find the last message from a user in this channel """
-        if t == None:
-            return await ctx.send("No user provided")
-        
         m = await ctx.send("Searching...")
         with ctx.typing():
             if ctx.author == target:
@@ -81,20 +84,16 @@ class Info(commands.Cog):
     
     @commands.group(invoke_without_command=True)
     @commands.guild_only()
-    async def info(self, ctx, *, member: typing.Union[discord.Member, int] = None):
+    async def info(self, ctx, *, member: typing.Union[discord.Member, discord.User] = None):
         """Shows info about a member.
         This cannot be used in private messages. If you don't specify
         a member then the info returned will be yours.
         """
         if member is None:
             member = ctx.author
-        elif isinstance(member, int):
-            member = await self.bot.fetch_user(member)
         
         e = discord.Embed()
-        
-        shared = sum(1 for m in self.bot.get_all_members() if m.id == member.id)
-        
+        e.description = member.mention
         e.set_footer(text='Account created').timestamp = member.created_at
         
         try:
@@ -105,9 +104,9 @@ class Info(commands.Cog):
                 voice = voice.channel
                 other_people = len(voice.members) - 1
                 voice_fmt = f'{voice.name} with {other_people} others' if other_people else f'{voice.name} alone'
-                voice = voice_fmt
                 e.add_field(name='Voice Chat', value=voice_fmt, inline=False)
             status = str(member.status).title()
+            
             if status == "Online":
                 status = "🟢 Online\n"
             elif status == "Offline":
@@ -121,28 +120,18 @@ class Info(commands.Cog):
             except KeyError:  # Fix on custom status update.
                 activity = ""
             
-            time_delta = member.joined_at - datetime.datetime.now()
-            if time_delta.total_seconds() > 600:  # 10 minutes
-                coloured_time = f"```glsl\n[{member.joined_at}]```"  # orange
-            elif time_delta.total_seconds() > 1440:  # 1 day
-                coloured_time = f"```fix\n[{member.joined_at}]```"  # yellow
-            elif time_delta.total_seconds() > 604800:  # 1 week
-                coloured_time = f"```brainfuck\n[{member.joined_at}]```"  # grey
-            elif time_delta.total_seconds() > 2419200:  # 1 month
-                coloured_time = f"```yaml\n[{member.joined_at}]```"  # cyan
-            elif time_delta.total_seconds() > 15780000:  # 6 months
-                coloured_time = f"```CSS\n{member.joined_at}```"  # green
-            else:
-                coloured_time = f"```ini\n[{member.joined_at}]```"  # blue
-                
-            e.add_field(name=f'Joined {ctx.guild.name}', value=coloured_time,inline=False)
+            coloured_time = codeblocks.time_to_colour(member.joined_at)
+            e.add_field(name=f'Joined {ctx.guild.name}', value=coloured_time, inline=False)
             e.colour = member.colour
         except AttributeError:
             status = ""
             activity = ""
             pass
         
-        field_1_text = f"{status}ID: {member.id}\n{activity}{shared} shared servers"
+        shared = sum(1 for m in self.bot.get_all_members() if m.id == member.id)
+        field_1_text = f"{status}ID: {member.id}\n{activity}"
+        if shared - 1:
+            field_1_text += f"Seen in {shared} other guilds."
         e.add_field(name="User info", value=field_1_text)
         e.set_author(name=str(member), icon_url=member.avatar_url or member.default_avatar_url)
         
@@ -158,51 +147,48 @@ class Info(commands.Cog):
     async def server_info(self, ctx):
         """ Shows information about the server """
         guild = ctx.guild
-        roles = [role.name.replace('@', '@\u200b') for role in guild.roles]
         
         secret_member = copy.copy(guild.me)
-        secret_member.roles = [guild.default_role]
         
         # figure out what channels are 'secret'
-        secret_channels = 0
-        secret_voice = 0
         text_channels = 0
         for channel in guild.channels:
-            perms = channel.permissions_for(secret_member)
-            is_text = isinstance(channel, discord.TextChannel)
-            text_channels += is_text
-            if is_text and not perms.read_messages:
-                secret_channels += 1
-            elif not is_text and (not perms.connect or not perms.speak):
-                secret_voice += 1
+            text_channels += isinstance(channel, discord.TextChannel)
         
-        regular_channels = len(guild.channels) - secret_channels
+        regular_channels = len(guild.channels)
         voice_channels = len(guild.channels) - text_channels
         mstatus = Counter(str(m.status) for m in guild.members)
+        members = f'Total {guild.member_count} ({mstatus["online"]} Online)'
         
         e = discord.Embed()
-        e.add_field(name="Server Name", value=guild.name)
-        e.add_field(name='ID', value=guild.id)
-        e.add_field(name='Owner', value=guild.owner.mention)
+        e.title = guild.name
+        e.description = f"Owner: {guild.owner.mention}\nGuild ID: {guild.id}"
+        e.description += f'\n\n{guild.member_count} Members ({mstatus["online"]} Online)' \
+                         f"\n{regular_channels} text channels "
+        if voice_channels:
+            e.description += f"and {voice_channels} Voice channels"
+            
+        if guild.premium_subscription_count:
+            e.description += f"\n{guild.premium_subscription_count} Nitro Boosts"
+        
+        if guild.discovery_splash:
+            e.set_image(url=guild.discovery_splash)
+
+        if guild.icon:
+            e.set_thumbnail(url=guild.icon_url)
+            e.colour = await get_colour(str(guild.icon_url))
+
         emojis = ""
         for emoji in guild.emojis:
             if len(emojis) + len(str(emoji)) < 1024:
                 emojis += str(emoji)
         if emojis:
-            e.add_field(name="Custom Emojis", value=emojis)
-        e.add_field(name="Region", value=str(guild.region).title())
-        e.add_field(name="Verification Level", value=str(guild.verification_level).title())
-        if guild.icon:
-            e.set_thumbnail(url=guild.icon_url)
+            e.add_field(name="Custom Emojis", value=emojis, inline=False)
         
-        channels = f'{regular_channels} text_channels ({secret_channels} secret)' \
-                   f'\nVoice {voice_channels} ({secret_voice} locked)'
-        e.add_field(name='Channels', value=channels)
-        
-        members = f'Total {guild.member_count} ({mstatus["online"]})'
-        e.add_field(name='Members', value=members)
-        e.add_field(name='Roles', value=', '.join(roles) if len(roles) < 10 else f'{len(roles)} roles')
-        e.set_footer(text='Created').timestamp = guild.created_at
+        roles = [role.mention for role in guild.roles]
+        e.add_field(name='Roles', value=', '.join(roles) if len(roles) < 20 else f'{len(roles)} roles', inline=False)
+        e.add_field(name="Creation Date", value=codeblocks.time_to_colour(guild.created_at))
+        e.set_footer(text=f"\nRegion: {str(guild.region).title()}")
         await ctx.send(embed=e)
     
     @commands.command()
