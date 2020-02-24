@@ -1,13 +1,16 @@
+from StringIO import StringIO
+
 from discord.ext import commands
 import discord
 from os import system
-import traceback
 import inspect
 import json
 
 # to expose to the eval command
 import datetime
 from collections import Counter
+
+from ext.utils import codeblocks
 
 
 class Admin(commands.Cog):
@@ -36,7 +39,7 @@ class Admin(commands.Cog):
             profile_img = await resp.read()
             await self.bot.user.edit(avatar=profile_img)
 
-    @commands.command()
+    @commands.command(aliases=['clean_console', 'cc'])
     @commands.is_owner()
     async def clear_console(self, ctx):
         """ Clear the command window. """
@@ -45,14 +48,14 @@ class Admin(commands.Cog):
         await ctx.send("Console cleared.")
         print(f"Console cleared at: {datetime.datetime.utcnow()}")
 
-    @commands.command(aliases=["releoad"])
+    @commands.command(aliases=["releoad", "relaod"])  # I can't fucking type.
     @commands.is_owner()
     async def reload(self, ctx, *, module: str):
         """Reloads a module."""
         try:
             self.bot.reload_extension(module)
         except Exception as e:
-            await ctx.send(f':no_entry_sign: {type(e).__name__}: {e}')
+            await ctx.send(codeblocks.error_to_codeblock(e))
         else:
             await ctx.send(f':gear: Reloaded {module}')
 
@@ -63,8 +66,7 @@ class Admin(commands.Cog):
         try:
             self.bot.load_extension(module)
         except Exception as e:
-            await ctx.send(f':no_entry_sign: {type(e).__name__}: {e} '
-                           f'```py\n{"".join(traceback.format_exception(type(e), e, e.__traceback__))}```')
+            await ctx.send(codeblocks.error_to_codeblock(e))
         else:
             await ctx.send(f':gear: Loaded {module}')
 
@@ -75,7 +77,7 @@ class Admin(commands.Cog):
         try:
             self.bot.unload_extension(module)
         except Exception as e:
-            await ctx.send(f':no_entry_sign: {type(e).__name__}: {e}')
+            await ctx.send(codeblocks.error_to_codeblock(e))
         else:
             await ctx.send(f':gear: Unloaded {module}')
 
@@ -99,25 +101,11 @@ class Admin(commands.Cog):
             if inspect.isawaitable(result):
                 result = await result
         except Exception as e:
-            return await ctx.send(f"```py\n{type(e).__name__}: {str(e)}```")
-
-        # Send to gist if too long.
-        if len(str(result)) > 2000:
-            p = {'scope': 'gist'}
-            tk = self.bot.credentials["Github"]["gisttoken"]
-            h = {'Authorization': f'token {tk}'}
-            payload = {"description": "Debug output.",
-                       "public": True,
-                       "files": {"Output": {"content": result}}}
-            cs = self.bot.session
-            async with cs.post("https://api.github.com/gists", params=p,
-                               headers=h, data=json.dumps(payload)) as resp:
-                if resp.status != 201:
-                    print(resp)
-                    await ctx.send(f"{resp.status} Failed uploading to gist.")
-                else:
-                    await ctx.send("Output too long, uploaded to gist"
-                                   f"{resp.url}")
+            etc = codeblocks.error_to_codeblock(e)
+            if len(etc) > 2000:
+                await ctx.send('Too long for discord, output sent to console.')
+            else:
+                return await ctx.send(etc)
         else:
             await ctx.send(f"```py\n{result}```")
 
