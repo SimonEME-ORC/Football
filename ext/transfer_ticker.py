@@ -454,7 +454,7 @@ class TransferTicker(commands.Cog):
     @commands.has_permissions(manage_channels=True)
     async def _unset(self, ctx, channels: commands.Greedy[discord.TextChannel]):
         channels = await self._pick_channels(ctx, channels)
-
+        
         connection = await self.bot.db.acquire()
         replies = []
         async with connection.transaction():
@@ -467,7 +467,8 @@ class TransferTicker(commands.Cog):
                 replies.append(f"✅ Deleted transfer ticker from {c.mention}")
         await self.bot.db.release(connection)
         await self.update_cache()
-        await ctx.send("\n".join(replies))
+        if replies:
+            await ctx.send("\n".join(replies))
 
 
 def setup(bot):
