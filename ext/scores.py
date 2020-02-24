@@ -40,6 +40,7 @@ default_leagues = [
 ]
 
 
+# TODO: Migrate to FlashScoreFixture
 # TODO: re-code vidi-printer
 
 
@@ -168,12 +169,12 @@ class Scores(commands.Cog):
             for k, v in data.items():  # k is a game_id.
                 time = f"{data[k]['time']}"
                 
-                time = "✅ After Pens" if time == "After Pens" else time
-                time = "✅ FT" if time == "FT" else time
-                time = "✅ AET" if time == "AET" else time
-                time = "⏸️ HT" if time == "HT" else time
+                time = "🟢 After Pens" if time == "After Pens" else time
+                time = "🟢 FT" if time == "FT" else time
+                time = "🟢 AET" if time == "AET" else time
+                time = "🟡️ HT" if time == "HT" else time
                 time = "🚫 PP" if time == "PP" else time
-                time = f"🔜 {time}" if ":" in time else time
+                time = f"🔵 {time}" if ":" in time else time
                 time = f"⚽ {time}" if "'" in time else time
                 
                 home = data[k]["home_team"]
@@ -250,11 +251,13 @@ class Scores(commands.Cog):
                 tuples = list(zip(self.msg_dict[channel_id]["msg_list"], self.msg_dict[channel_id]["raw_data"]))
                 for x, y in tuples:
                     try:
-                        await x.edit(content=y)
-                    except (discord.NotFound, discord.Forbidden) as e:
-                        print("-- error editing scores channel --")
-                        print(x)
-                        print(e)
+                        if x is not None:
+                            if x.content != y:
+                                await x.edit(content=y)
+                    except (discord.NotFound, discord.Forbidden):
+                        self.msg_dict[channel_id]['msg_list'] = [i if i != x else None for
+                                                                 i in self.msg_dict[channel_id]['msg_list']]
+                        pass
 
     async def _search(self, ctx, m, qry):
         # aiohttp lookup for json.
@@ -374,7 +377,6 @@ class Scores(commands.Cog):
         if not score_channels:
             return await ctx.send(f"{ctx.guild.name} has no live-scores channel set.")
     
-        page = 0
         embeds = []
         for i in score_channels:
             e.description = f'{i.mention}'
@@ -395,12 +397,11 @@ class Scores(commands.Cog):
     async def create(self, ctx, *, name=None):
         """ Create a live-scores channel for your server. """
         try:
-            ow = {ctx.me: discord.PermissionOverwrite(read_messages=True, send_messages=True, manage_messages=True,
-                                                      read_message_history=True),
+            ow = {ctx.me: discord.PermissionOverwrite(read_messages=True, send_messages=True,
+                                                      manage_messages=True, read_message_history=True),
                   ctx.guild.default_role: discord.PermissionOverwrite(read_messages=True, send_messages=False,
-                                                                      read_message_history=True)
-                  }
-            reason = f'{ctx.author} (ID: {ctx.author.id}) created a live-scores channel.'
+                                                                      read_message_history=True)}
+            reason = f'{ctx.author} (ID: {ctx.author.id}) created a Toonbot live-scores channel.'
             if name is None:
                 name = "live-scores"
             ch = await ctx.guild.create_text_channel(name=name, overwrites=ow, reason=reason)
@@ -413,18 +414,18 @@ class Scores(commands.Cog):
     
         connection = await self.bot.db.acquire()
         async with connection.transaction():
-            await connection.execute(""" INSERT INTO scores_channels (guild_id, channel_id) VALUES ($1, $2) """,
-                                     ctx.guild.id, ch.id)
+            await connection.execute(
+                """ INSERT INTO scores_channels (guild_id, channel_id) VALUES ($1, $2) """, ctx.guild.id, ch.id)
             for i in default_leagues:
-                await connection.execute(""" INSERT INTO scores_leagues (channel_id, league) VALUES ($1, $2) """,
-                                         ch.id, i)
+                await connection.execute(
+                    """ INSERT INTO scores_leagues (channel_id, league) VALUES ($1, $2) """, ch.id, i)
     
         await ctx.send(f"The {ch.mention} channel was created succesfully.")
         await self.bot.db.release(connection)
         await self.update_cache()
 
-    @ls.command(usage="ls add <(Optional: #channel #channel2)> <search query>")
     @commands.has_permissions(manage_channels=True)
+    @ls.command(usage="ls add <(Optional: #channel #channel2)> <search query>")
     async def add(self, ctx, channels: commands.Greedy[discord.TextChannel], *, qry: commands.clean_content = None):
         """ Add a league to your live-scores channel """
         channels = await self._pick_channels(ctx, channels)
