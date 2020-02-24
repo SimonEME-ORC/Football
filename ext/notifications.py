@@ -1,9 +1,10 @@
 import asyncio
 
 from discord.ext import commands
-import datetime
 import discord
 import typing
+
+from ext.utils import codeblocks
 
 
 class Notifications(commands.Cog):
@@ -243,19 +244,7 @@ class Notifications(commands.Cog):
         if new_member.bot:
             e.description = '**This is a bot account**'
         
-        time_delta = new_member.created_at - datetime.datetime.now()
-        if time_delta.total_seconds() > 600:  # 10 minutes
-            coloured_time = f"```glsl\n[{new_member.created_at}]```"  # orange
-        elif time_delta.total_seconds() > 1440:  # 1 day
-            coloured_time = f"```fix\n[{new_member.created_at}]```"  # yellow
-        elif time_delta.total_seconds() > 604800:  # 1 week
-            coloured_time = f"```brainfuck\n[{new_member.created_at}]```"  # grey
-        elif time_delta.total_seconds() > 2419200:  # 1 month
-            coloured_time = f"```yaml\n[{new_member.created_at}]```"  # cyan
-        elif time_delta.total_seconds() > 15780000:  # 6 months
-            coloured_time = f"```CSS\n{new_member.created_at}```"  # green
-        else:
-            coloured_time = f"```ini\n[{new_member.created_at}]```"  # blue
+        coloured_time = codeblocks.time_to_colour(new_member.created_at)
         
         e.add_field(name="Account Created", value=coloured_time)
         e.set_thumbnail(url=new_member.avatar_url)
