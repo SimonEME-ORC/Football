@@ -1,10 +1,7 @@
-from StringIO import StringIO
-
 from discord.ext import commands
 import discord
 from os import system
 import inspect
-import json
 
 # to expose to the eval command
 import datetime
