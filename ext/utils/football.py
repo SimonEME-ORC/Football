@@ -12,6 +12,11 @@ import discord
 import typing
 import json
 
+from ext.utils import selenium_driver
+from importlib import reload
+
+reload(selenium_driver)
+
 
 class Fixture:
     def __init__(self, time: typing.Union[str, datetime.datetime], home: str, away: str, **kwargs):
@@ -43,6 +48,30 @@ class Fixture:
         return output
 
 
+class Player:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
+class FlashScorePlayerList:
+    def __init__(self, url, driver):
+        self.driver = driver
+        self.url = url
+        self.fs_page_title = None
+        self.fs_page_image = None
+        self.items = self.get_players()
+    
+    def get_players(self) -> typing.List[Player]:
+        delete = [(By.XPATH, './/div[@id="lsid-window-mask"]')]
+        clicks = [(By.ID, 'overall-all')]
+        src = selenium_driver.get_html(self.url, './/div[contains(@class,"playerTable")]', driver=self.driver,
+                                       delete=delete, clicks=clicks)
+        players = []
+        x = html.fromstring(src)
+        
+        return x
+
+
 class FlashScoreFixtureList:
     def __init__(self, url, driver):
         self.driver = driver
@@ -52,7 +81,7 @@ class FlashScoreFixtureList:
         self.items = self.get_fixtures()
     
     def get_fixtures(self) -> typing.List[Fixture]:
-        src = get_html(self.url, './/div[@class="sportName soccer"]', driver=self.driver)
+        src = selenium_driver.get_html(self.driver, self.url, './/div[@class="sportName soccer"]')
         logo = self.driver.find_element_by_xpath('.//div[contains(@class,"logo")]')
         if logo != "none":
             logo = logo.value_of_css_property('background-image')
@@ -138,6 +167,15 @@ class FlashScoreSearchResult:
     
     def results(self, driver) -> FlashScoreFixtureList:
         return FlashScoreFixtureList(str(self.link()) + "/results", driver)
+    
+    def table(self, driver) -> BytesIO:
+        xp = './/div[@class="table__wrapper"]'
+        clicks = [(By.XPATH, ".//span[@class='button cookie-law-accept']")]
+        delete = [(By.XPATH, './/div[@class="seoAdWrapper"]'), (By.XPATH, './/div[@class="banner--sticky"]')]
+        err = f"No table found on {self.url}"
+        image = selenium_driver.get_image(driver, self.link() + "/standings/", xp, err,
+                                          clicks=clicks, delete=delete)
+        return image
 
 
 class Stadium:
@@ -160,12 +198,12 @@ class Stadium:
         e.url = self.url
         
         image = "".join(tree.xpath('.//div[@class="page-img"]/img/@src'))
-
+        
         try:  # Check not ""
             e.colour = await embed_utils.get_colour(self.team_badge)
         except AttributeError:
             pass
-
+        
         if image:
             e.set_image(url=image.replace(' ', '%20'))
         
@@ -227,27 +265,6 @@ async def get_html_async(url):
             return await resp.text()
 
 
-def get_html(url, expected_element_xpath, driver):
-    if driver.current_url != url:
-        driver.get(url)
-        wait.WebDriverWait(driver, 5).until(ec.visibility_of_element_located((By.XPATH, expected_element_xpath)))
-    src = driver.page_source
-    return src
-
-
-def fetch_image(url, expected_element_xpath, driver) -> typing.Union[BytesIO, None]:
-    if driver.current_url != url:
-        driver.get(url)
-    element = wait.WebDriverWait(driver, 5).until(ec.visibility_of_element_located((By.XPATH, expected_element_xpath)))
-    z = element.screenshot_as_png
-    driver.execute_script("arguments[0].scrollIntoView();", element)
-    image = Image.open(BytesIO(element.screenshot_as_png))
-    output = BytesIO()
-    image.save(output, "PNG")
-    output.seek(0)
-    return image
-
-
 async def get_fs_results(query) -> typing.List[FlashScoreSearchResult]:
     query = query.replace("'", "")  # For some reason, ' completely breaks FS search, and people keep doing it?
     query = urllib.parse.quote(query)
@@ -288,7 +305,7 @@ async def get_stadiums(query) -> typing.List[Stadium]:
         for s in subnodes:
             name = "".join(s.xpath('.//text()')).title()
             link = "".join(s.xpath('./@href'))
-
+            
             if query.lower() not in name.lower() and query.lower() not in team.lower():
                 continue  # Filtering.
             
