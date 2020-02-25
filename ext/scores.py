@@ -43,7 +43,6 @@ default_leagues = [
 # TODO: Migrate to FlashScoreFixture
 # TODO: re-code vidi-printer
 
-
 class Scores(commands.Cog):
     """ Live Scores channel module """
     
