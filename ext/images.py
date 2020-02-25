@@ -359,7 +359,7 @@ class ImageManip(commands.Cog):
             if target.id == 210582977493598208:
                 target = ctx.author
                 quote = "I think I'm smarter than Painezor"
-            async with self.bot.session.get(str(target.get_avatar_url_as(format="png", size=1024))) as resp:
+            async with self.bot.session.get(str(target.avatar_url_as(format="png", size=1024))) as resp:
                 if resp.status != 200:
                     return await ctx.send(f"Error retrieving avatar for target {target} {resp.status}")
                 image = await resp.content.read()
