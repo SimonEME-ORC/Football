@@ -29,6 +29,7 @@ sl_lock = asyncio.Semaphore()
 # TODO: Finish Refactor into ext.utils.football Classes
 
 
+# TODO: Kill this.
 async def build_embeds(ctx, base_embed, description_rows=None, embed_fields=None):
     # Un-Null.
     embed_fields = [] if embed_fields is None else embed_fields
@@ -70,6 +71,96 @@ class Fixtures(commands.Cog):
         if self.driver is not None:
             self.driver.quit()
     
+    # Master picker.
+    async def _search(self, ctx, qry, mode=None) -> str or None:
+        if qry is None:
+            err = "Please specify a search query."
+            if ctx.guild is not None:
+                result = await self._fetch_default(ctx, mode)
+                if result is not None:
+                    sr = football.FlashScoreSearchResult(override=result, title=f"{ctx.guild.name} default")
+                    return sr
+                else:
+                    await ctx.send(err)
+                    return None
+            else:
+                err += f"\nA default team or league can be set by moderators using {ctx.prefix}default)"
+                await ctx.send(err)
+                return None
+
+        search_results = await football.get_fs_results(qry)
+        pt = 0 if mode == "league" else 1 if mode == "team" else None  # Mode is a hard override.
+        if pt is not None:
+            item_list = [i.title for i in search_results if i.participant_type_id == pt]  # Check for specifics.
+        else:  # All if no mode
+            item_list = [i.title for i in search_results]
+        index = await embed_utils.page_selector(ctx, item_list)
+
+        if index is None:
+            return  # Timeout or abort.
+
+        return search_results[index]
+    
+    # TODO: Re-write this once LiveScores is converted to
+    async def pick_game(self, ctx, qry):
+        matches = []
+        key = 0
+        url = ""
+        if qry is None:
+            fsr = await self._search(ctx, qry, mode="team")
+            url = fsr.link()
+            url = "" if url is None else url
+    
+        for league in self.bot.live_games:
+            for game_id in self.bot.live_games[league]:
+                # Ignore our output strings.
+                if game_id in ("raw", 'raw_with_link'):
+                    continue
+            
+                home = self.bot.live_games[league][game_id]["home_team"]
+                away = self.bot.live_games[league][game_id]["away_team"]
+            
+                if game_id in url or qry in home.lower() or qry in away.lower():
+                    game = f"{home} vs {away} ({league})"
+                    matches.append((str(key), game, league, game_id))
+                    key += 1
+    
+        if not matches:
+            return None, None
+    
+        if len(matches) == 1:
+            # return league and game of only result.
+            return matches[0][2], matches[0][3]
+    
+        selector = "Please Type Matching ID```"
+        for i in matches:
+            selector += f"{i[0]}: {i[1]}\n"
+        selector += "```"
+    
+        try:
+            m = await ctx.send(selector, delete_after=30)
+        except discord.HTTPException:
+            # TODO: Paginate.
+            return await ctx.send(content=f"Too many matches to display, please be more specific.")
+    
+        def check(message):
+            if message.author.id == ctx.author.id and message.content.isdigit():
+                if int(message.content) < len(matches):
+                    return True
+    
+        try:
+            match = await self.bot.wait_for("message", check=check, timeout=30)
+            match = match.content
+        except asyncio.TimeoutError:
+            return None, None
+        else:
+            try:
+                await m.delete()
+            except discord.NotFound:
+                pass
+            return matches[int(match)][2], matches[int(match)][3]
+    
+    # TODO: Kill this.
     def get_html(self, url, xpath, **kwargs):
         sub_funcs = kwargs
         # Build the base embed for this
@@ -80,12 +171,13 @@ class Fixtures(commands.Cog):
         # Fetch the page
         self.driver.get(url)
         
-        # Get logo for embed if it exists.
-        xp = ".//div[contains(@class,'logo')]"
         try:
             element = WebDriverWait(self.driver, 5).until(ec.visibility_of_element_located((By.XPATH, xpath)))
         except TimeoutException:
             element = None  # Rip
+            
+        # Get logo for embed if it exists.
+        xp = ".//div[contains(@class,'logo')]"
         th = self.driver.find_element_by_xpath(xp)
         th = th.value_of_css_property('background-image')
         if th != "none":
@@ -139,13 +231,15 @@ class Fixtures(commands.Cog):
             if element is None:
                 return None, e, self.driver.page_source
             self.driver.execute_script("arguments[0].scrollIntoView();", element)
-            im = BytesIO(element.screenshot_as_png)
-            
+            im = Image.open(BytesIO(element.screenshot_as_png))
             output = BytesIO()
+            im.save(output, "PNG")
+            output.seek(0)
             df = discord.File(output, filename="img.png")
             return df, e, self.driver.page_source
         return e, self.driver.page_source
     
+    # TODO: Kill this.
     def parse_live(self, league, game, mode):
         game_uri = game.split('_')[-1]
         url = f"https://www.flashscore.com/match/{game_uri}/"
@@ -199,14 +293,7 @@ class Fixtures(commands.Cog):
         
         return e, image
     
-    def parse_table(self, url):
-        url += "/standings/"
-        clicks = [(By.XPATH, ".//span[@class='button cookie-law-accept']")]
-        xp = './/div[@class="table__wrapper"]'
-        delete = [(By.XPATH, './/div[@class="seoAdWrapper"]'), (By.XPATH, './/div[@class="banner--sticky"]')]
-        image, e, src = self.get_html(url, xpath=xp, clicks=clicks, image_fetch=True, delete_elements=delete)
-        return image
-    
+    # TODO : -> FSPlayerLISt
     def parse_scorers(self, url, team=None):
         url += "/standings"
         xp = ".//div[@class='tabs__group']"
@@ -251,6 +338,7 @@ class Fixtures(commands.Cog):
         e.title = title
         return e, description_rows
     
+    #TODO -> FS Player List
     def parse_team(self, url, mode):
         url += "/squad"
         xp = './/div[contains(@class,"playerTable")]'
@@ -318,6 +406,7 @@ class Fixtures(commands.Cog):
             description_rows = ["No goal data found."] if not description_rows else description_rows
         return e, description_rows
     
+    # TODO: rewrite,
     def parse_bracket(self, url):
         url += "/draw/"
         xp = './/div[@id="box-table-type--1"]'
@@ -348,6 +437,7 @@ class Fixtures(commands.Cog):
         file = discord.File(fp=output, filename="img.png")
         return file, e
     
+    # TODO: Re-write
     @commands.command(aliases=['draw'])
     async def bracket(self, ctx, *, qry: commands.clean_content = None):
         """ Get btacket for a tournament """
@@ -366,7 +456,7 @@ class Fixtures(commands.Cog):
             e.title = f"Bracket for {qry}"
             await ctx.send(file=file, embed=e)
     
-    @commands.command()
+    @commands.command(usage="table <league to search for>>")
     async def table(self, ctx, *, qry: commands.clean_content = None):
         """ Get table for a league """
         async with ctx.typing():
@@ -376,14 +466,11 @@ class Fixtures(commands.Cog):
             if fsr is None:
                 return  # rip.
             
-            url = fsr.link()
-            
             async with sl_lock:
-                p = await self.bot.loop.run_in_executor(None, self.parse_table, url)
-            try:
-                await ctx.send(file=p)
-            except discord.HTTPException:
-                await ctx.send(f"Failed to grab table from <{url}>")
+                p = await self.bot.loop.run_in_executor(None, fsr.table, self.driver)
+            
+            p = discord.File(fp=p, filename=f"Table {fsr.title} {datetime.datetime.now().date}.png")
+            await ctx.send(file=p)
     
     @commands.command(aliases=['fx'], usage="fixtures <team or league to search for>")
     async def fixtures(self, ctx, *, qry: commands.clean_content = None):
@@ -393,11 +480,12 @@ class Fixtures(commands.Cog):
         fsr = await self._search(ctx, qry)
         
         if fsr is None:
-            return  # rip
+            return  # Handled in _search.
         
-        url = fsr.link() + "/fixtures/"
-        fixtures = await self.bot.loop.run_in_executor(None, football.FlashScoreFixtureList, url, self.driver)
-        embeds = await fixtures.to_embeds
+        async with sl_lock:
+            fslist = await self.bot.loop.run_in_executor(None, fsr.fixtures, self.driver)
+        embeds = await fslist.to_embeds
+
         for e in embeds:
             e.title = f"≡ Fixtures for {e.title}"
         return await embed_utils.paginate(ctx, embeds)
@@ -411,10 +499,11 @@ class Fixtures(commands.Cog):
         
         if fsr is None:
             return
-        url = fsr.link() + "/results"
         
-        fixtures = await self.bot.loop.run_in_executor(None, football.FlashScoreFixtureList, url, self.driver)
-        embeds = await fixtures.to_embeds
+        async with sl_lock:
+            fslist = await self.bot.loop.run_in_executor(None, fsr.results, self.driver)
+        embeds = await fslist.to_embeds
+        
         for e in embeds:
             e.title = f"≡ Results for {e.title}"
         return await embed_utils.paginate(ctx, embeds)
@@ -476,64 +565,6 @@ class Fixtures(commands.Cog):
             e.set_image(url="attachment://img.png")
             await ctx.send(file=file, embed=e)
     
-    async def pick_game(self, ctx, qry):
-        matches = []
-        key = 0
-        url = ""
-        if qry is None:
-            fsr = await self._search(ctx, qry, mode="team")
-            url = fsr.link()
-            url = "" if url is None else url
-        
-        for league in self.bot.live_games:
-            for game_id in self.bot.live_games[league]:
-                # Ignore our output strings.
-                if game_id in ("raw", 'raw_with_link'):
-                    continue
-                
-                home = self.bot.live_games[league][game_id]["home_team"]
-                away = self.bot.live_games[league][game_id]["away_team"]
-                
-                if game_id in url or qry in home.lower() or qry in away.lower():
-                    game = f"{home} vs {away} ({league})"
-                    matches.append((str(key), game, league, game_id))
-                    key += 1
-        
-        if not matches:
-            return None, None
-        
-        if len(matches) == 1:
-            # return league and game of only result.
-            return matches[0][2], matches[0][3]
-        
-        selector = "Please Type Matching ID```"
-        for i in matches:
-            selector += f"{i[0]}: {i[1]}\n"
-        selector += "```"
-        
-        try:
-            m = await ctx.send(selector, delete_after=30)
-        except discord.HTTPException:
-            # TODO: Paginate.
-            return await ctx.send(content=f"Too many matches to display, please be more specific.")
-        
-        def check(message):
-            if message.author.id == ctx.author.id and message.content.isdigit():
-                if int(message.content) < len(matches):
-                    return True
-        
-        try:
-            match = await self.bot.wait_for("message", check=check, timeout=30)
-            match = match.content
-        except asyncio.TimeoutError:
-            return None, None
-        else:
-            try:
-                await m.delete()
-            except discord.NotFound:
-                pass
-            return matches[int(match)][2], matches[int(match)][3]
-    
     @commands.command(aliases=["team", "roster"])
     async def squad(self, ctx, *, qry: commands.clean_content = None):
         async with ctx.typing():
@@ -570,6 +601,7 @@ class Fixtures(commands.Cog):
             e, rows = await self.bot.loop.run_in_executor(None, self.parse_scorers, url, team)
         await build_embeds(ctx, e, description_rows=rows)
     
+    # TODO: -> FSSearchResult
     @scorers.command()
     async def team(self, ctx, *, qry: commands.clean_content = None):
         """ Get a team's top scorers across all competitions """
@@ -604,35 +636,6 @@ class Fixtures(commands.Cog):
                     return team if team else league
                 return league if league else team
         return None
-    
-    async def _search(self, ctx, qry, mode=None) -> str or None:
-        if qry is None:
-            err = "Please specify a search query."
-            if ctx.guild is not None:
-                result = await self._fetch_default(ctx, mode)
-                if result is not None:
-                    sr = football.FlashScoreSearchResult(override=result)  # Manually build one.
-                    return sr
-                else:
-                    await ctx.send(err)
-                    return None
-            else:
-                err += f"\nA default team or league can be set by moderators using {ctx.prefix}default)"
-                await ctx.send(err)
-                return None
-
-        search_results = await football.get_fs_results(qry)
-        pt = 0 if mode == "league" else 1 if mode == "team" else None  # Mode is a hard override.
-        if pt is not None:
-            item_list = [i.title for i in search_results if i.participant_type_id == pt]  # Check for specifics.
-        else:  # All if no mode
-            item_list = [i.title for i in search_results]
-        index = await embed_utils.page_selector(ctx, item_list)
-
-        if index is None:
-            return  # Timeout or abort.
-
-        return search_results[index]
     
     # TODO: Cache.
     @commands.has_permissions(manage_guild=True)
@@ -692,6 +695,7 @@ class Fixtures(commands.Cog):
         else:
             return await ctx.send(f'Your commands will no longer use a default {mode}')
     
+    # TODO: -> FSSearchResult
     @commands.command(usage="scores <league- to search for>")
     async def scores(self, ctx, *, search_query: commands.clean_content = ""):
         """ Fetch current scores for a specified league """
