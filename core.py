@@ -41,7 +41,7 @@ class Bot(commands.Bot):
 		# Startup Modules
 		load = [
 			'ext.reactions',  # needs to be loaded fist.
-			'ext.automod', 'ext.admin', 'ext.fixtures', 'ext.fun', 'ext.images', 'ext.info', 'ext.mod',	'ext.mtb',
+			'ext.automod', 'ext.admin', 'ext.errors', 'ext.fixtures', 'ext.fun', 'ext.images', 'ext.info', 'ext.mod',	'ext.mtb',
 			'ext.notifications', 'ext.nufc', 'ext.quotes', 'ext.scores', 'ext.sidebar', 'ext.timers',
 			'ext.twitter','ext.transfer_lookup', "ext.transfer_ticker", 'ext.tv',
 		]

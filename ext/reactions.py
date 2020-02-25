@@ -30,85 +30,8 @@ class Reactions(commands.Cog):
         self.bot = bot
     
     @commands.Cog.listener()
-    async def on_socket_response(self, msg):
-        self.bot.socket_stats[msg.get('t')] += 1
-    
-    @commands.Cog.listener()
     async def on_command(self, ctx):
         self.bot.commands_used[ctx.command.name] += 1
-    
-    # Error Handler
-    @commands.Cog.listener()
-    async def on_command_error(self, ctx, error):
-        if isinstance(error, (commands.CommandNotFound, commands.CheckFailure)):
-            return  # Fail silently.
-        
-        elif isinstance(error, (discord.Forbidden, commands.DisabledCommand, commands.MissingPermissions)):
-            if isinstance(error, discord.Forbidden):
-                print(f"Discord.Forbidden Error, check {ctx.command} bot_has_permissions  {ctx.message.content}\n"
-                      f"{ctx.author}) in {ctx.channel.name} on {ctx.guild.name}")
-            try:
-                return await ctx.message.add_reaction('⛔')
-            except discord.Forbidden:
-                return
-        
-        # Embed errors.
-        e = discord.Embed()
-        e.colour = discord.Colour.red()
-        e.title = f"Error: {error.__class__.__name__}"
-        e.set_thumbnail(url=str(ctx.me.avatar_url))
-        
-        if isinstance(error, (commands.NoPrivateMessage, commands.BotMissingPermissions)):
-            if ctx.guild is None:
-                e.title = 'NoPrivateMessage'  # Ugly override.
-                e.description = '🚫 This command cannot be used in DMs'
-            else:
-                if len(error.missing_perms) == 1:
-                    perm_string = error.missing_perms[0]
-                else:
-                    last_perm = error.missing_perms.pop(-1)
-                    perm_string = ", ".join(error.missing_perms) + " and " + last_perm
-            
-                if isinstance(error, commands.BotMissingPermissions):
-                    e.description = f'\🚫 I need {perm_string} permissions to do that.\n'
-                    fixing = f'Use {ctx.me.mention} `disable {ctx.command}` to disable this command\n' \
-                             f'Use {ctx.me.mention} `prefix remove {ctx.prefix}` ' \
-                             f'to stop me using the `{ctx.prefix}` prefix\n' \
-                             f'Or give me the missing permissions and I can perform this action.'
-                    e.add_field(name="Fixing This", value=fixing)
-            
-        elif isinstance(error, commands.MissingRequiredArgument):
-            e.description = f"{error.param.name} is a required argument but was not provided"
-            
-        elif isinstance(error, commands.BadArgument):
-            e.description = str(error)
-        
-        elif isinstance(error, commands.CommandOnCooldown):
-            e.description = f'⏰ On cooldown for {str(error.retry_after).split(".")[0]}s'
-            return await ctx.send(embed=e, delete_after=5)
-        
-        elif isinstance(error, commands.NSFWChannelRequired):
-            e.description = f"🚫 This command can only be used in NSFW channels."
-        else:
-            traceback.print_tb(error.original.__traceback__)
-            print(f'{error.original.__class__.__name__}: {error.original}')
-            e.title = error.original.__class__.__name__
-            tb_to_code = traceback.format_exception(type(error.original), error.original, error.original.__traceback__)
-            tb_to_code = ''.join(tb_to_code)
-            e.description = f"```py\n{tb_to_code}```"
-            e.add_field(name="Oops!", value="Painezor probably fucked this up. He has been notified.")
-            location = "a DM" if ctx.guild is None else f"{ctx.guild.name} ({ctx.guild.id})"
-            print(f"Unhandled Error Type: {error.__class__.__name__}\n"
-                  f"({ctx.author} ({ctx.author.id}) in {location} caused the following error\n"
-                  f"{error}\n"
-                  f"Context: {ctx.message.content}\n")
-       
-        if ctx.command.usage is None:
-            useline = f"{ctx.prefix}{ctx.command.qualified_name} {ctx.command.signature}"
-        else:
-            useline = f"{ctx.prefix}{ctx.command.usage}"
-        e.add_field(name="Command Usage", value=useline)
-        await ctx.send(embed=e)
     
     # TODO: Move to notifications.
     # TODO: Create custom Reaction setups per server
