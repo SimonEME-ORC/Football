@@ -124,41 +124,42 @@ class Scores(commands.Cog):
             if not i.xpath('.//@id'):
                 lg = ": ".join(i.xpath('.//span//text()')).split(" - ")[0]
                 games[lg] = {}
-            else:
-                game_id = ''.join(i.xpath('.//@id'))
-                games[lg][game_id] = {}
-                
-                # Time
-                time = i.xpath('.//div[contains(@class,"event__stage--block")]//text()')
-                if not time:
-                    time = i.xpath('.//div[contains(@class,"event__time")]//text()')
-                
-                time = "".join(time).replace('FRO', "").strip("\xa0").strip()
-                if "Finished" in time:
-                    time = "FT"
-                elif "Extra Time" in time:
-                    time = time.replace('Extra Time', "ET ") + "'"
-                elif "Break Time" in time:
-                    time = time.replace('Break Time', "FT, ET Soon") + "'"
-                elif "After ET" in time:
-                    time = "AET"
-                elif "Half Time" in time:
-                    time = "HT"
-                elif "Postponed" in time:
-                    time = "PP"
-                elif "After Pen" in time:
-                    time = "After Pens"
-                elif ":" not in time:
-                    time += "'"
-                games[lg][game_id]["time"] = time
-                games[lg][game_id]["home_team"] = "".join(i.xpath('.//div[contains(@class,"home")]//text()')).strip()
-                games[lg][game_id]["home_team"] = games[lg][game_id]["home_team"].replace('GOAL', " **GOAL** ")
-                games[lg][game_id]["away_team"] = "".join(i.xpath('.//div[contains(@class,"away")]//text()')).strip()
-                games[lg][game_id]["away_team"] = games[lg][game_id]["away_team"].replace('GOAL', " **GOAL** ")
-                # games[lg][game_id]["aggregate"] = "".join(i.xpath('.//div[@class="event__part"]//text()')).strip()
-                score = "".join(i.xpath('.//div[contains(@class,"event__scores")]//text()')).strip()
-                score = "vs" if not score else score.replace("(", " (")
-                games[lg][game_id]["score"] = score
+                continue
+
+            game_id = ''.join(i.xpath('.//@id'))
+            games[lg][game_id] = {}
+            
+            # Time
+            time = i.xpath('.//div[contains(@class,"event__stage--block")]//text()')
+            if not time:
+                time = i.xpath('.//div[contains(@class,"event__time")]//text()')
+            
+            time = "".join(time).replace('FRO', "").strip("\xa0").strip()
+            if "Finished" in time:
+                time = "FT"
+            elif "Extra Time" in time:
+                time = time.replace('Extra Time', "ET ") + "'"
+            elif "Break Time" in time:
+                time = time.replace('Break Time', "FT, ET Soon") + "'"
+            elif "After ET" in time:
+                time = "AET"
+            elif "Half Time" in time:
+                time = "HT"
+            elif "Postponed" in time:
+                time = "PP"
+            elif "After Pen" in time:
+                time = "After Pens"
+            elif ":" not in time:
+                time += "'"
+            games[lg][game_id]["time"] = time
+            games[lg][game_id]["home_team"] = "".join(i.xpath('.//div[contains(@class,"home")]//text()')).strip()
+            games[lg][game_id]["home_team"] = games[lg][game_id]["home_team"].replace('GOAL', " **GOAL** ")
+            games[lg][game_id]["away_team"] = "".join(i.xpath('.//div[contains(@class,"away")]//text()')).strip()
+            games[lg][game_id]["away_team"] = games[lg][game_id]["away_team"].replace('GOAL', " **GOAL** ")
+            # games[lg][game_id]["aggregate"] = "".join(i.xpath('.//div[@class="event__part"]//text()')).strip()
+            score = "".join(i.xpath('.//div[contains(@class,"event__scores")]//text()')).strip()
+            score = "vs" if not score else score.replace("(", " (")
+            games[lg][game_id]["score"] = score
         return games
     
     async def write_raw(self, games):
