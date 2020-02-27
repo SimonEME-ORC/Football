@@ -1,8 +1,6 @@
-from selenium.webdriver.support import expected_conditions as ec, wait
 from selenium.webdriver.common.by import By
 from ext.utils import embed_utils
 from copy import deepcopy
-import PIL.Image as Image
 from io import BytesIO
 from lxml import html
 import urllib.parse
@@ -12,10 +10,11 @@ import discord
 import typing
 import json
 
-from ext.utils import selenium_driver
+from ext.utils import selenium_driver, transfer_tools
 from importlib import reload
 
 reload(selenium_driver)
+reload(transfer_tools)
 
 
 class Fixture:
@@ -51,6 +50,18 @@ class Fixture:
 class Player:
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
+    
+    @property
+    def player_embed_row(self):
+        return f"`{str(self.number).rjust(2)}`: {self.flag} [{self.name}]({self.link}) {self.position}{self.injury}"
+    
+    @property
+    def injury_embed_row(self):
+        return f"{self.flag} [{self.name}]({self.link}) ({self.position}): {self.injury}"
+    
+    @property
+    def scorer_embed_row(self):
+        return f"{self.flag} [{self.name}]({self.link}) {self.goals} in {self.apps} appearances"
 
 
 class FlashScorePlayerList:
@@ -59,17 +70,107 @@ class FlashScorePlayerList:
         self.url = url
         self.fs_page_title = None
         self.fs_page_image = None
-        self.items = self.get_players()
-    
+        self.players = self.get_players()
+        
     def get_players(self) -> typing.List[Player]:
         delete = [(By.XPATH, './/div[@id="lsid-window-mask"]')]
         clicks = [(By.ID, 'overall-all')]
-        src = selenium_driver.get_html(self.url, './/div[contains(@class,"playerTable")]', driver=self.driver,
-                                       delete=delete, clicks=clicks)
-        players = []
-        x = html.fromstring(src)
+        xp = './/div[contains(@class,"playerTable")]'
         
-        return x
+        src = selenium_driver.get_html(self.driver, self.url, xp,  delete=delete, clicks=clicks)
+        tree = html.fromstring(src)
+        rows = tree.xpath('.//div[contains(@id,"overall-all-table")]//div[contains(@class,"profileTable__row")]')[1:]
+
+        logo = self.driver.find_element_by_xpath('.//div[contains(@class,"logo")]')
+        if logo != "none":
+            logo = logo.value_of_css_property('background-image')
+            self.fs_page_image = logo.strip("url(").strip(")").strip('"')
+        self.fs_page_title = "".join(tree.xpath('.//div[@class="teamHeader__name"]/text()')).strip()
+            
+        players = []
+        position = ""
+        for i in rows:
+            pos = "".join(i.xpath('./text()')).strip()
+            if pos:  # The way the data is structured contains a header row with the player's position.
+                try:
+                    position = pos.rsplit('s')[0]
+                except IndexError:
+                    position = pos
+                continue  # There will not be additional data.
+    
+            name = "".join(i.xpath('.//div[contains(@class,"")]/a/text()'))
+            try:   # Name comes in reverse order.
+                player_split = name.split(' ', 1)
+                name = f"{player_split[1]} {player_split[0]}"
+            except IndexError:
+                pass
+            
+            country = "".join(i.xpath('.//span[contains(@class,"flag")]/@title'))
+            flag = transfer_tools.get_flag(country)
+            number = "".join(i.xpath('.//div[@class="tableTeam__squadNumber"]/text()'))
+            try:
+                age, apps, g, y, r = i.xpath(
+                    './/div[@class="playerTable__icons playerTable__icons--squad"]//div/text()')
+            except ValueError:
+                age = "".join(i.xpath('.//div[@class="playerTable__icons playerTable__icons--squad"]//div/text()'))
+                apps = g = y = r = 0
+            injury = "".join(i.xpath('.//span[contains(@class,"absence injury")]/@title'))
+            if injury:
+                injury = f"<:injury:682714608972464187> " + injury  # I really shouldn't hard code emojis.
+    
+            link = "".join(i.xpath('.//div[contains(@class,"")]/a/@href'))
+            link = f"http://www.flashscore.com{link}" if link else ""
+            
+            try:
+                number = int(number)
+            except ValueError:
+                number = 00
+            
+            pl = Player(name=name, number=number, country=country, link=link, position=position,
+                        age=age, apps=apps, goals=g, yellows=y, reds=r, injury=injury, flag=flag)
+            players.append(pl)
+        return players
+    
+    @property
+    async def base_embed(self):
+        e = discord.Embed()
+        if self.fs_page_image:
+            e.set_thumbnail(url=self.fs_page_image)
+            e.colour = await embed_utils.get_colour(self.fs_page_image)
+        return e
+    
+    @property
+    async def squad_as_embed(self):
+        e = await self.base_embed
+        srt = sorted(self.players, key=lambda x: x.number)
+        players = [i.player_embed_row for i in srt]
+        if self.fs_page_title:
+            e.title = f"All players for {self.fs_page_title}"
+            e.url = self.url
+        embeds = embed_utils.rows_to_embeds(e, players)
+        return embeds
+        
+    @property
+    async def injuries_to_embeds(self):
+        pl = [i for i in self.players if i.injury]
+        description_rows = [i.injury_embed_row for i in pl] if pl else ['No injuries found']
+        e = await self.base_embed
+        if self.fs_page_title:
+            e.title = f"Injuries for {self.fs_page_title}"
+            e.url = self.url
+        embeds = embed_utils.rows_to_embeds(e, description_rows)
+        return embeds
+    
+    @property
+    async def scorers_to_embeds(self):
+        pl = [i for i in self.players if i.goals > 0]
+        description_rows = [i.goal_embed_row for i in pl] if pl else ['No goals found.']
+        e = await self.base_embed
+        if self.fs_page_title:
+            e.title = f"Top Scorers for {self.fs_page_title}"
+            e.url = self.url
+        embeds = embed_utils.rows_to_embeds(e, description_rows)
+        return embeds
 
 
 class FlashScoreFixtureList:
@@ -111,7 +212,7 @@ class FlashScoreFixtureList:
                 except ValueError:
                     time = datetime.datetime.strptime(f"{datetime.datetime.now().year}.{time}", '%Y.%d.%m. %H:%M')
             else:
-                time = "Postpooned"
+                time = "🚫 Postponed "
             
             is_televised = True if i.xpath(".//div[contains(@class,'tv')]") else False
             
@@ -135,13 +236,11 @@ class FlashScoreFixtureList:
         pages = [self.items[i:i + 10] for i in range(0, len(self.items), 10)]
         
         embeds = []
-        count = 0
         if not pages:
             e.description = "No games found!"
             embeds.append(e)
         
         for page in pages:
-            count += 1
             e.description = "\n".join([await i.to_embed_row for i in page])
             embeds.append(deepcopy(e))
         return embeds
@@ -151,6 +250,7 @@ class FlashScoreSearchResult:
     def __init__(self, **kwargs):
         self.__dict__.update(**kwargs)
     
+    @property
     def link(self):
         if hasattr(self, 'override'):
             return self.override
@@ -163,20 +263,45 @@ class FlashScoreSearchResult:
             return f"https://www.flashscore.com/soccer/{ctry}/{self.url}"
     
     def fixtures(self, driver) -> FlashScoreFixtureList:
-        return FlashScoreFixtureList(str(self.link()) + "/fixtures", driver)
+        return FlashScoreFixtureList(str(self.link) + "/fixtures", driver)
     
     def results(self, driver) -> FlashScoreFixtureList:
-        return FlashScoreFixtureList(str(self.link()) + "/results", driver)
-    
+        return FlashScoreFixtureList(str(self.link) + "/results", driver)
+
+
+class FlashScoreCompetition(FlashScoreSearchResult):
+    def __init__(self,  **kwargs):
+        super().__init__(**kwargs)
+
     def table(self, driver) -> BytesIO:
         xp = './/div[@class="table__wrapper"]'
         clicks = [(By.XPATH, ".//span[@class='button cookie-law-accept']")]
         delete = [(By.XPATH, './/div[@class="seoAdWrapper"]'), (By.XPATH, './/div[@class="banner--sticky"]')]
-        err = f"No table found on {self.url}"
-        image = selenium_driver.get_image(driver, self.link() + "/standings/", xp, err,
-                                          clicks=clicks, delete=delete)
+        if hasattr(self, "override"):
+            err = f"No table found on {self.override}"
+        else:
+            err = f"No table found for {self.title}"
+        image = selenium_driver.get_image(driver, self.link + "/standings/", xp, err, clicks=clicks, delete=delete)
         return image
 
+
+class FlashScoreTeam(FlashScoreSearchResult):
+    def __init__(self,  **kwargs):
+        super().__init__(**kwargs)
+    
+    @property
+    def link(self):
+        if hasattr(self, 'override'):
+            return self.override
+        else:
+            # Example Team URL: https://www.flashscore.com/team/thailand-stars/jLsL0hAF/
+            return f"https://www.flashscore.com/team/{self.url}/{self.id}"
+    
+    def players(self, driver) -> FlashScorePlayerList:
+        return FlashScorePlayerList(str(self.link) + "/squad", driver)
+    
+    # TODO: Table. Get all leagues team is in, give selector menu, edit css property to highlight row
+    
 
 class Stadium:
     def __init__(self, url, name, team, league, country, **kwargs):
@@ -187,9 +312,11 @@ class Stadium:
         self.country = country
         self.__dict__.update(kwargs)
     
+    @property
     def to_picker_row(self) -> str:
         return f"**{self.name}** ({self.country}: {self.team})"
     
+    @property
     async def to_embed(self) -> discord.Embed:
         tree = html.fromstring(await get_html_async(self.url))
         e = discord.Embed()
@@ -277,7 +404,18 @@ async def get_fs_results(query) -> typing.List[FlashScoreSearchResult]:
     results = []
     
     for i in res['results']:
-        fsr = FlashScoreSearchResult(**i)
+        try:
+            assert i['participant_type_id'] in (0, 1), f"Unrecognised participant-type_id for {i}"
+        except AssertionError as e:
+            print(e)
+            continue
+            
+        if i['participant_type_id'] == 0:
+            fsr = FlashScoreCompetition(**i)
+        elif i['participant_type_id'] == 1:
+            fsr = FlashScoreTeam(**i)
+        else:
+            fsr = None
         results.append(fsr)
     
     return results
