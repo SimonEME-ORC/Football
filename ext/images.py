@@ -157,14 +157,14 @@ def draw_tard(image, quote):
         ttf = 'Whitney-Medium.ttf'
         font = ImageFont.truetype(ttf, font_size)
         width = 300
-        quote_text = textwrap.fill(quote_text, width=wid)
+        quote_text = textwrap.fill(quote_text, width=width)
         while font_size > 0:
             # Make lines thinner if too wide.
             while width > 1:
                 if font.getsize(quote_text)[0] < 237 and f.getsize(quote)[1] < 89:
                     return width, font
                 width -= 1
-                quote_text = textwrap.fill(quote, width=wid)
+                quote_text = textwrap.fill(quote, width=width)
                 font = ImageFont.truetype(ttf, font_size)
             font_size -= 1
             font = ImageFont.truetype(ttf, font_size)
@@ -183,6 +183,7 @@ def draw_tard(image, quote):
     df = discord.File(output, filename="retarded.png")
     return df
 
+
 def ruin(image):
     """ Generates the Image """
     im = Image.open(BytesIO(image))
@@ -195,6 +196,7 @@ def ruin(image):
     # output
     df = discord.File(output, filename="retarded.png")
     return df
+
 
 async def get_faces(ctx, target):
     """ Retrieve face features from Project Oxford """
