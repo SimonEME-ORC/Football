@@ -4,6 +4,7 @@ from io import BytesIO
 
 import aiohttp
 import discord
+import typing
 from PIL import UnidentifiedImageError
 from colorthief import ColorThief
 
@@ -29,6 +30,15 @@ async def get_colour(url=None):
                 return discord.Colour.blurple()
 
 
+def rows_to_embeds(base_embed, rows, per_row = 10) -> typing.List[discord.Embed]:
+    pages = [rows[i:i + per_row] for i in range(0, len(rows), per_row)]
+    embeds = []
+    for page_items in pages:
+        base_embed.description = "\n".join(page_items)
+        embeds.append(deepcopy(base_embed))
+    return embeds
+
+
 async def page_selector(ctx, item_list, base_embed=None) -> int:
     if base_embed is None:
         base_embed = discord.Embed()
@@ -51,18 +61,14 @@ async def page_selector(ctx, item_list, base_embed=None) -> int:
 
 
 async def paginate(ctx, embeds, preserve_footer=False, items=None, wait_length: int = 60) -> int or None:
-    if not embeds:
-        await ctx.send('Nothing found.')
-        return None
-    count = 0
-    
-    for e in embeds:
-        count += 1
-        page_line = f"{ctx.author}: Page {count} of {len(embeds)}"
-        if preserve_footer:
-            e.add_field(name="Page", value=page_line)
-        else:
-            e.set_footer(icon_url=PAGINATION_FOOTER_ICON, text=page_line)
+    assert len(embeds) > 0, "No results found."
+    if len(embeds) > 1:
+        for x, y in enumerate(embeds, 1):
+            page_line = f"{ctx.author}: Page {x} of {len(embeds)}"
+            if preserve_footer:
+                y.add_field(name="Page", value=page_line)
+            else:
+                y.set_footer(icon_url=PAGINATION_FOOTER_ICON, text=page_line)
     
     # Paginator
     page = 0
@@ -173,7 +179,7 @@ async def paginate(ctx, embeds, preserve_footer=False, items=None, wait_length: 
                     page += 1
                     
             elif result[0].emoji == "⏭":  # last
-                page = len(embeds) - 1
+                page = embeds[-1]
                 
             elif result[0].emoji == "🚫":  # Delete:
                 
@@ -182,10 +188,8 @@ async def paginate(ctx, embeds, preserve_footer=False, items=None, wait_length: 
                     i.cancel()
                 return None
             
-            try:
+            if ctx.me.permissions_in(ctx.channel).manage_messages:
                 await m.remove_reaction(result[0].emoji, ctx.author)
-            except discord.Forbidden:
-                pass  # swallow this error.
             await m.edit(embed=embeds[page])
 
 
