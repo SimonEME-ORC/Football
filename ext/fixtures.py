@@ -80,13 +80,10 @@ class Fixtures(commands.Cog):
                 if result is not None:
                     sr = football.FlashScoreSearchResult(override=result, title=f"{ctx.guild.name} default")
                     return sr
-                else:
-                    await ctx.send(err)
-                    return None
             else:
                 err += f"\nA default team or league can be set by moderators using {ctx.prefix}default)"
-                await ctx.send(err)
-                return None
+            await ctx.send(err)
+            return None
 
         search_results = await football.get_fs_results(qry)
         pt = 0 if mode == "league" else 1 if mode == "team" else None  # Mode is a hard override.
@@ -101,360 +98,6 @@ class Fixtures(commands.Cog):
 
         return search_results[index]
     
-    # TODO: Re-write this once LiveScores is converted to
-    async def pick_game(self, ctx, qry):
-        matches = []
-        key = 0
-        url = ""
-        if qry is None:
-            fsr = await self._search(ctx, qry, mode="team")
-            url = fsr.link()
-            url = "" if url is None else url
-    
-        for league in self.bot.live_games:
-            for game_id in self.bot.live_games[league]:
-                # Ignore our output strings.
-                if game_id in ("raw", 'raw_with_link'):
-                    continue
-            
-                home = self.bot.live_games[league][game_id]["home_team"]
-                away = self.bot.live_games[league][game_id]["away_team"]
-            
-                if game_id in url or qry in home.lower() or qry in away.lower():
-                    game = f"{home} vs {away} ({league})"
-                    matches.append((str(key), game, league, game_id))
-                    key += 1
-    
-        if not matches:
-            return None, None
-    
-        if len(matches) == 1:
-            # return league and game of only result.
-            return matches[0][2], matches[0][3]
-    
-        selector = "Please Type Matching ID```"
-        for i in matches:
-            selector += f"{i[0]}: {i[1]}\n"
-        selector += "```"
-    
-        try:
-            m = await ctx.send(selector, delete_after=30)
-        except discord.HTTPException:
-            # TODO: Paginate.
-            return await ctx.send(content=f"Too many matches to display, please be more specific.")
-    
-        def check(message):
-            if message.author.id == ctx.author.id and message.content.isdigit():
-                if int(message.content) < len(matches):
-                    return True
-    
-        try:
-            match = await self.bot.wait_for("message", check=check, timeout=30)
-            match = match.content
-        except asyncio.TimeoutError:
-            return None, None
-        else:
-            try:
-                await m.delete()
-            except discord.NotFound:
-                pass
-            return matches[int(match)][2], matches[int(match)][3]
-    
-    # TODO: Kill this.
-    def get_html(self, url, xpath, **kwargs):
-        sub_funcs = kwargs
-        # Build the base embed for this
-        e = discord.Embed()
-        e.timestamp = datetime.datetime.now()
-        e.url = url
-        
-        # Fetch the page
-        self.driver.get(url)
-        
-        try:
-            element = WebDriverWait(self.driver, 5).until(ec.visibility_of_element_located((By.XPATH, xpath)))
-        except TimeoutException:
-            element = None  # Rip
-            
-        # Get logo for embed if it exists.
-        xp = ".//div[contains(@class,'logo')]"
-        th = self.driver.find_element_by_xpath(xp)
-        th = th.value_of_css_property('background-image')
-        if th != "none":
-            logo_url = th.strip("url(").strip(")").strip('"')
-            e.set_thumbnail(url=logo_url)
-        
-        # Delete floating ad banners or other shit that gets in the way
-        if "delete_elements" in sub_funcs:
-            for z in sub_funcs['delete_elements']:
-                try:
-                    x = WebDriverWait(self.driver, 3).until(ec.presence_of_element_located(z))
-                except TimeoutException:
-                    continue  # Element does not exist, do not need to delete it.
-                scr = """var element = arguments[0];element.parentNode.removeChild(element);"""
-                self.driver.execute_script(scr, x)
-        
-        # Hide cookie popups, switch tabs, etc.
-        if "clicks" in sub_funcs:
-            for z in sub_funcs['clicks']:
-                try:
-                    x = WebDriverWait(self.driver, 3).until(ec.presence_of_element_located(z))
-                    x.click()
-                except (TimeoutException, ElementNotInteractableException, StaleElementReferenceException):
-                    WebDriverWait(self.driver, 1)  # Wait for a second.
-                    continue  # Can't click on what we can't find.
-        
-        if "multi_capture" in sub_funcs:
-            max_iter = 10
-            captures = []
-            trg = self.driver.find_element_by_xpath(xpath)
-            captures.append(Image.open(BytesIO(trg.screenshot_as_png)))
-            while max_iter > 0:
-                locator = sub_funcs['multi_capture']
-                try:
-                    z = WebDriverWait(self.driver, 3).until(ec.visibility_of_element_located(locator))
-                    z.click()
-                except TimeoutException:
-                    break
-                except ElementNotInteractableException as err:
-                    print(err)
-                    print(err.__traceback__)
-                else:
-                    if "multi_capture_script" in sub_funcs:
-                        self.driver.execute_script(sub_funcs['multi_capture_script'])
-                        trg = self.driver.find_element_by_xpath(xpath)
-                        captures.append(Image.open(BytesIO(trg.screenshot_as_png)))
-                max_iter -= 1
-            return captures, e, self.driver.page_source
-        
-        if 'image_fetch' in sub_funcs:
-            if element is None:
-                return None, e, self.driver.page_source
-            self.driver.execute_script("arguments[0].scrollIntoView();", element)
-            im = Image.open(BytesIO(element.screenshot_as_png))
-            output = BytesIO()
-            im.save(output, "PNG")
-            output.seek(0)
-            df = discord.File(output, filename="img.png")
-            return df, e, self.driver.page_source
-        return e, self.driver.page_source
-    
-    # TODO: Kill this.
-    def parse_live(self, league, game, mode):
-        game_uri = game.split('_')[-1]
-        url = f"https://www.flashscore.com/match/{game_uri}/"
-        if mode == "stats":
-            url += "#match-statistics;0"
-            xp = ".//div[@class='statBox']"
-        elif mode == "formation":
-            url += "#lineups;1"
-            xp = './/div[@id="lineups-content"]'
-        elif mode == "summary":
-            xp = ".//div[@id='summary-content']"
-        else:
-            print(f"Can't parse stats for invalid mode: {mode}")
-            return
-        
-        image, e, inner_html = self.get_html(url, xpath=xp, image_fetch=True)
-        
-        home = self.bot.live_games[league][game]["home_team"]
-        away = self.bot.live_games[league][game]["away_team"]
-        score = self.bot.live_games[league][game]["score"]
-        time = self.bot.live_games[league][game]["time"]
-        
-        e.set_author(name=f"≡ {home} {score} {away} ({time})")
-        e.title = league
-        e.timestamp = datetime.datetime.now()
-        if image is None:
-            e.description = f"⛔ Sorry, no {mode} found for this match."
-        if "PP" in time:
-            e.colour = 0xDB4437  # Red
-            e.description = "This match has been postponed."
-        elif "HT" in time:
-            e.colour = 0xF4B400  # Amber
-        elif "FT" in time:
-            e.colour = 0x4285F4  # Blue
-        elif "+" in time:
-            e.colour = 0x9932CC  # Purple
-        elif "'" in time:
-            e.colour = 0x0F9D58  # Green
-        else:
-            try:
-                h, m = time.split(':')
-                now = datetime.datetime.now()
-                when = datetime.datetime.now().replace(hour=int(h), minute=int(m))
-                x = when - now
-                e.set_footer(text=f"Kickoff in {x}")
-                e.timestamp = when
-            except (IndexError, ValueError):
-                e.description = "Live data not available for this match."
-            
-            e.colour = 0xB3B3B3  # Gray
-        
-        return e, image
-    
-    # TODO : -> FSPlayerLISt
-    def parse_scorers(self, url, team=None):
-        url += "/standings"
-        xp = ".//div[@class='tabs__group']"
-        clicks = [(By.ID, "tabitem-top_scorers")]
-        
-        e, inner_html = self.get_html(url, xpath=xp, clicks=clicks)
-        
-        tree = html.fromstring(inner_html)
-        
-        title = "".join(tree.xpath('.//div[@class="teamHeader__name"]/text()')).strip()
-        rows = tree.xpath('.//div[@id="table-type-10"]//div[contains(@class,"table__row")]')
-        description_rows = []
-        for i in rows:
-            items = i.xpath('.//text()')
-            items = [i.strip() for i in items if i.strip()]
-            uri = "".join(i.xpath(".//span[@class='team_name_span']//a/@onclick")).split("'")
-            
-            try:
-                tm_url = "http://www.flashscore.com/" + uri[3]
-            except IndexError:
-                tm_url = ""
-            try:
-                p_url = "http://www.flashscore.com/" + uri[1]
-            except IndexError:
-                p_url = ""
-            
-            rank, name, tm, goals, assists = items
-            tm = f" ([{tm}]({tm_url})) " if tm else ""
-            
-            if team is not None:
-                if team.lower() not in tm.lower():
-                    continue
-            
-            country = "".join(i.xpath('.//span[contains(@class,"flag")]/@title')).strip()
-            flag = transfer_tools.get_flag(country)
-            description_rows.append(f'`{rank}` {flag} [{name}]({p_url}){tm}: {goals} Goals, {assists} Assists')
-        
-        if team:
-            title = f"≡ Top Scorers (from {team.title()}) for {title}"
-        else:
-            title = f"≡ Top Scorers for {title}"
-        e.title = title
-        return e, description_rows
-    
-    #TODO -> FS Player List
-    def parse_team(self, url, mode):
-        url += "/squad"
-        xp = './/div[contains(@class,"playerTable")]'
-        
-        delete = [(By.XPATH, './/div[@id="lsid-window-mask"]')]
-        clicks = [(By.ID, 'overall-all')]
-        e, inner_html = self.get_html(url, xpath=xp, clicks=clicks, delete_elements=delete)
-        tree = html.fromstring(inner_html)
-        
-        title = "".join(tree.xpath('.//div[@class="teamHeader__name"]/text()')).strip()
-        title = f"≡ {mode.title()} for {title}"
-        rows = tree.xpath('.//div[contains(@id,"overall-all-table")]//div[contains(@class,"profileTable__row")]')[1:]
-        tuples = []
-        position = ""
-        for i in rows:
-            pos = "".join(i.xpath('./text()')).strip()
-            if pos:  # The way the data is structured contains a header row with the player's position.
-                try:
-                    position = pos.rsplit('s')[0]
-                except IndexError:
-                    position = pos
-                continue  # There will not be additional data.
-            
-            name = "".join(i.xpath('.//div[contains(@class,"")]/a/text()'))
-            country = "".join(i.xpath('.//span[contains(@class,"flag")]/@title'))
-            flag = transfer_tools.get_flag(country)
-            
-            sq = "".join(i.xpath('.//div[@class="tableTeam__squadNumber"]/text()'))
-            try:
-                age, apps, g, y, r = i.xpath(
-                    './/div[@class="playerTable__icons playerTable__icons--squad"]//div/text()')
-            except ValueError:
-                age = "".join(i.xpath('.//div[@class="playerTable__icons playerTable__icons--squad"]//div/text()'))
-                apps = g = y = r = 0
-            injury = "".join(i.xpath('.//span[contains(@class,"absence injury")]/@title'))
-            
-            link = "".join(i.xpath('.//div[contains(@class,"")]/a/@href'))
-            link = f"http://www.flashscore.com{link}" if link else ""
-            
-            # Put name in the right order.
-            try:
-                player_split = name.split(' ', 1)
-                name = f"{player_split[1]} {player_split[0]}"
-            except IndexError:
-                pass
-            
-            tuples.append((sq, flag, name, link, position, injury, age, apps, int(g), y, r))
-        e.title = title
-        
-        if mode == "squad":
-            embed_fields = []
-            for x in list(set([i[4] for i in tuples])):  # All unique Positions.
-                embed_fields.append((x, ", ".join(
-                    [f"`{z[0]}` {z[2]}".replace("``", "") for z in tuples if z[4] == x])))
-            return e, embed_fields
-        
-        description_rows = []
-        if mode == "injuries":
-            description_rows = [f"{i[1]} [{i[2]}]({i[3]}) ({i[4]}): {i[5]}" for i in tuples if i[5]]
-            description_rows = ["No injuries found!"] if not description_rows else description_rows
-        elif mode == "Top scorers":
-            filtered = [i for i in tuples if i[8]]
-            output = sorted(filtered, key=lambda v: v[8], reverse=True)
-            description_rows = [f"{i[1]} [{i[2]}]({i[3]}): {i[8]} Goals" for i in output]  # 0 is falsey.
-            description_rows = ["No goal data found."] if not description_rows else description_rows
-        return e, description_rows
-    
-    # TODO: rewrite,
-    def parse_bracket(self, url):
-        url += "/draw/"
-        xp = './/div[@id="box-table-type--1"]'
-        multi = (By.LINK_TEXT, 'scroll right »')
-        clicks = [(By.XPATH, ".//span[@class='button cookie-law-accept']")]
-        delete = [(By.XPATH, './/div[@class="seoAdWrapper"]'), (By.XPATH, './/div[@class="banner--sticky"]')]
-        script = "document.getElementsByClassName('playoff-scroll-button')[0].style.display = 'none';" \
-                 "document.getElementsByClassName('playoff-scroll-button')[1].style.display = 'none';"
-        captures, e, src = self.get_html(url, xpath=xp, clicks=clicks, multi_capture=multi,
-                                         multi_capture_script=script, delete_elements=delete)
-        
-        e.title = "Bracket"
-        e.description = "Please click on picture -> open original to enlarge"
-        e.timestamp = datetime.datetime.now()
-        # Captures is a list of opened PIL images.
-        w = int(captures[0].width / 3 * 2 + sum(i.width / 3 for i in captures))
-        h = captures[0].height
-        
-        canvas = Image.new('RGB', (w, h))
-        x = 0
-        for i in captures:
-            canvas.paste(i, (x, 0))
-            x += int(i.width / 3)
-        output = BytesIO()
-        canvas.save(output, "PNG")
-        output.seek(0)
-        canvas.save('canvas.png', "png")
-        file = discord.File(fp=output, filename="img.png")
-        return file, e
-    
-    # TODO: Re-write
-    @commands.command(aliases=['draw'])
-    async def bracket(self, ctx, *, qry: commands.clean_content = None):
-        """ Get btacket for a tournament """
-        async with ctx.typing():
-            await ctx.send("Searching...", delete_after=5)
-            fsr = await self._search(ctx, qry, mode="league")
-            if fsr is None:
-                return  # rip.
-            
-            url = fsr.link()
-            
-            async with sl_lock:
-                file, e = await self.bot.loop.run_in_executor(None, self.parse_bracket, url)
-            
-            e.set_image(url="attachment://img.png")
-            e.title = f"Bracket for {qry}"
-            await ctx.send(file=file, embed=e)
     
     @commands.command(usage="table <league to search for>>")
     async def table(self, ctx, *, qry: commands.clean_content = None):
@@ -462,7 +105,6 @@ class Fixtures(commands.Cog):
         async with ctx.typing():
             await ctx.send("Searching...", delete_after=5)
             fsr = await self._search(ctx, qry, mode="league")
-            
             if fsr is None:
                 return  # rip.
             
@@ -478,7 +120,6 @@ class Fixtures(commands.Cog):
         Navigate pages using reactions. """
         await ctx.send('Searching...', delete_after=5)
         fsr = await self._search(ctx, qry)
-        
         if fsr is None:
             return  # Handled in _search.
         
@@ -496,7 +137,6 @@ class Fixtures(commands.Cog):
         Navigate pages using reactions. """
         await ctx.send('Searching...', delete_after=5)
         fsr = await self._search(ctx, qry)
-        
         if fsr is None:
             return
         
@@ -508,22 +148,7 @@ class Fixtures(commands.Cog):
             e.title = f"≡ Results for {e.title}"
         return await embed_utils.paginate(ctx, embeds)
     
-    @commands.command(aliases=["suspensions"])
-    async def injuries(self, ctx, *, qry: commands.clean_content = None):
-        """ Get a team's current injuries """
-        async with ctx.typing():
-            await ctx.send("Searching...", delete_after=5)
-            fsr = await self._search(ctx, qry, mode="team")
-            
-            if fsr is None:
-                return
-            
-            url = fsr.link()
-            
-            async with sl_lock:
-                e, rows = await self.bot.loop.run_in_executor(None, self.parse_team, url, "injuries")
-            await build_embeds(ctx, e, description_rows=rows)
-    
+    # TODO: Migrate.
     @commands.command()
     async def stats(self, ctx, *, qry: commands.clean_content):
         """ Look up the stats for one of today's games """
@@ -536,7 +161,8 @@ class Fixtures(commands.Cog):
                 e, file = await self.bot.loop.run_in_executor(None, self.parse_live, league, game, "stats")
             e.set_image(url="attachment://img.png")
             await ctx.send(file=file, embed=e)
-    
+
+    # TODO: Migrate.
     @commands.command(usage="formation <team to search for>", aliases=["formations", "lineup", "lineups"])
     async def formation(self, ctx, *, qry: commands.clean_content):
         """ Get the formations for the teams in one of today's games """
@@ -564,22 +190,34 @@ class Fixtures(commands.Cog):
                 e, file = await  self.bot.loop.run_in_executor(None, self.parse_live, league, game, "summary")
             e.set_image(url="attachment://img.png")
             await ctx.send(file=file, embed=e)
+
+    @commands.command(aliases=["suspensions"])
+    async def injuries(self, ctx, *, qry: commands.clean_content = None):
+        """ Get a team's current injuries """
+        async with ctx.typing():
+            await ctx.send("Searching...", delete_after=5)
+            fsr = await self._search(ctx, qry, mode="team")
+        
+            if fsr is None:
+                return
+        
+            async with sl_lock:
+                players = await self.bot.loop.run_in_executor(None, fsr.players, self.driver)
+                embeds = await players.injuries_to_embeds
+            await embed_utils.paginate(ctx, embeds)
     
     @commands.command(aliases=["team", "roster"])
     async def squad(self, ctx, *, qry: commands.clean_content = None):
         async with ctx.typing():
             m = await ctx.send("Searching...")
             fsr = await self._search(ctx, qry, mode="team")
-            url = fsr.link()
             
-            if url is None:
-                return  # rip.
-            
-            await m.edit(content=f'Grabbing team squad data from <{url}>...', delete_after=5)
             async with sl_lock:
-                e, embed_fields = await self.bot.loop.run_in_executor(None, self.parse_team, url, "squad")
-            await build_embeds(ctx, e, embed_fields=embed_fields)
+                players = await self.bot.loop.run_in_executor(None, fsr.players, self.driver)
+                embeds = await players.squad_as_embed
+            await embed_utils.paginate(ctx, embeds)
     
+    # TODO -> FSSearchResult
     @commands.group(invoke_without_command=True, aliases=['sc'])
     async def scorers(self, ctx, league: typing.Optional[commands.clean_content], *,
                       team: commands.clean_content = None):
@@ -595,13 +233,13 @@ class Fixtures(commands.Cog):
         if fsr is None:
             return  # rip
         
-        url = fsr.link()
+        url = fsr.link
 
         async with sl_lock:
             e, rows = await self.bot.loop.run_in_executor(None, self.parse_scorers, url, team)
         await build_embeds(ctx, e, description_rows=rows)
     
-    # TODO: -> FSSearchResult
+    # TODO: -> FSSearchResult -> FSPlayerList
     @scorers.command()
     async def team(self, ctx, *, qry: commands.clean_content = None):
         """ Get a team's top scorers across all competitions """
@@ -610,15 +248,11 @@ class Fixtures(commands.Cog):
             fsr = await self._search(ctx, qry, mode="team")
             if fsr is None:
                 return  # rip.
-            url = fsr.link()
-            
-            if "team" not in url:
-                return await ctx.send("That looks like a league, not a team, "
-                                      "please check which sub-command you're using.")
             
             async with sl_lock:
-                e, description_rows = await self.bot.loop.run_in_executor(None, self.parse_team, url, "Top scorers")
-            await build_embeds(ctx, e, description_rows=description_rows)
+                players = await self.bot.loop.run_in_executor(None, fsr.squad_as_embed, self.driver)
+                embeds = await players.scorers_to_embeds
+            await embed_utils.paginate(ctx, embeds)
 
     # TODO: Cache these.
     async def _fetch_default(self, ctx, mode=None):
@@ -674,7 +308,7 @@ class Fixtures(commands.Cog):
             if fsr is None:
                 return await ctx.send(f"Couldn't find matching {mode} for {qry}, try searching for something else.")
             
-            url = fsr.link()
+            url = fsr.link
             
         connection = await self.bot.db.acquire()
         
@@ -738,14 +372,301 @@ class Fixtures(commands.Cog):
     async def stadium(self, ctx, *, query):
         """ Lookup information about a team's stadiums """
         stadiums = await football.get_stadiums(query)
-        item_list = [i.to_picker_row() for i in stadiums]
+        item_list = [i.to_picker_row for i in stadiums]
     
         index = await embed_utils.page_selector(ctx, item_list)
     
         if index is None:
             return  # Timeout or abort.
     
-        await ctx.send(embed=await stadiums[index].to_embed())
+        await ctx.send(embed=await stadiums[index].to_embed)
+
+    # TODO: Re-write this once LiveScores is converted to football.Fixture
+    async def pick_game(self, ctx, qry):
+        matches = []
+        key = 0
+        url = ""
+        if qry is None:
+            fsr = await self._search(ctx, qry, mode="team")
+            url = fsr.link
+            url = "" if url is None else url
+    
+        for league in self.bot.live_games:
+            for game_id in self.bot.live_games[league]:
+                # Ignore our output strings.
+                if game_id in ("raw", 'raw_with_link'):
+                    continue
+            
+                home = self.bot.live_games[league][game_id]["home_team"]
+                away = self.bot.live_games[league][game_id]["away_team"]
+            
+                if game_id in url or qry in home.lower() or qry in away.lower():
+                    game = f"{home} vs {away} ({league})"
+                    matches.append((str(key), game, league, game_id))
+                    key += 1
+    
+        if not matches:
+            return None, None
+    
+        if len(matches) == 1:
+            # return league and game of only result.
+            return matches[0][2], matches[0][3]
+    
+        selector = "Please Type Matching ID```"
+        for i in matches:
+            selector += f"{i[0]}: {i[1]}\n"
+        selector += "```"
+    
+        try:
+            m = await ctx.send(selector, delete_after=30)
+        except discord.HTTPException:
+            # TODO: Paginate.
+            return await ctx.send(content=f"Too many matches to display, please be more specific.")
+    
+        def check(message):
+            if message.author.id == ctx.author.id and message.content.isdigit():
+                if int(message.content) < len(matches):
+                    return True
+    
+        try:
+            match = await self.bot.wait_for("message", check=check, timeout=30)
+            match = match.content
+        except asyncio.TimeoutError:
+            return None, None
+        else:
+            try:
+                await m.delete()
+            except discord.NotFound:
+                pass
+            return matches[int(match)][2], matches[int(match)][3]
+
+    # TODO: Kill this.
+    def get_html(self, url, xpath, **kwargs):
+        sub_funcs = kwargs
+        # Build the base embed for this
+        e = discord.Embed()
+        e.timestamp = datetime.datetime.now()
+        e.url = url
+    
+        # Fetch the page
+        self.driver.get(url)
+    
+        try:
+            element = WebDriverWait(self.driver, 5).until(ec.visibility_of_element_located((By.XPATH, xpath)))
+        except TimeoutException:
+            element = None  # Rip
+    
+        # Get logo for embed if it exists.
+        xp = ".//div[contains(@class,'logo')]"
+        th = self.driver.find_element_by_xpath(xp)
+        th = th.value_of_css_property('background-image')
+        if th != "none":
+            logo_url = th.strip("url(").strip(")").strip('"')
+            e.set_thumbnail(url=logo_url)
+    
+        # Delete floating ad banners or other shit that gets in the way
+        if "delete_elements" in sub_funcs:
+            for z in sub_funcs['delete_elements']:
+                try:
+                    x = WebDriverWait(self.driver, 3).until(ec.presence_of_element_located(z))
+                except TimeoutException:
+                    continue  # Element does not exist, do not need to delete it.
+                scr = """var element = arguments[0];element.parentNode.removeChild(element);"""
+                self.driver.execute_script(scr, x)
+    
+        # Hide cookie popups, switch tabs, etc.
+        if "clicks" in sub_funcs:
+            for z in sub_funcs['clicks']:
+                try:
+                    x = WebDriverWait(self.driver, 3).until(ec.presence_of_element_located(z))
+                    x.click()
+                except (TimeoutException, ElementNotInteractableException, StaleElementReferenceException):
+                    WebDriverWait(self.driver, 1)  # Wait for a second.
+                    continue  # Can't click on what we can't find.
+    
+        if "multi_capture" in sub_funcs:
+            max_iter = 10
+            captures = []
+            trg = self.driver.find_element_by_xpath(xpath)
+            captures.append(Image.open(BytesIO(trg.screenshot_as_png)))
+            while max_iter > 0:
+                locator = sub_funcs['multi_capture']
+                try:
+                    z = WebDriverWait(self.driver, 3).until(ec.visibility_of_element_located(locator))
+                    z.click()
+                except TimeoutException:
+                    break
+                except ElementNotInteractableException as err:
+                    print(err)
+                    print(err.__traceback__)
+                else:
+                    if "multi_capture_script" in sub_funcs:
+                        self.driver.execute_script(sub_funcs['multi_capture_script'])
+                        trg = self.driver.find_element_by_xpath(xpath)
+                        captures.append(Image.open(BytesIO(trg.screenshot_as_png)))
+                max_iter -= 1
+            return captures, e, self.driver.page_source
+    
+        if 'image_fetch' in sub_funcs:
+            if element is None:
+                return None, e, self.driver.page_source
+            self.driver.execute_script("arguments[0].scrollIntoView();", element)
+            im = Image.open(BytesIO(element.screenshot_as_png))
+            output = BytesIO()
+            im.save(output, "PNG")
+            output.seek(0)
+            df = discord.File(output, filename="img.png")
+            return df, e, self.driver.page_source
+        return e, self.driver.page_source
+
+    # TODO: Kill this.
+    def parse_live(self, league, game, mode):
+        game_uri = game.split('_')[-1]
+        url = f"https://www.flashscore.com/match/{game_uri}/"
+        if mode == "stats":
+            url += "#match-statistics;0"
+            xp = ".//div[@class='statBox']"
+        elif mode == "formation":
+            url += "#lineups;1"
+            xp = './/div[@id="lineups-content"]'
+        elif mode == "summary":
+            xp = ".//div[@id='summary-content']"
+        else:
+            print(f"Can't parse stats for invalid mode: {mode}")
+            return
+    
+        image, e, inner_html = self.get_html(url, xpath=xp, image_fetch=True)
+    
+        home = self.bot.live_games[league][game]["home_team"]
+        away = self.bot.live_games[league][game]["away_team"]
+        score = self.bot.live_games[league][game]["score"]
+        time = self.bot.live_games[league][game]["time"]
+    
+        e.set_author(name=f"≡ {home} {score} {away} ({time})")
+        e.title = league
+        e.timestamp = datetime.datetime.now()
+        if image is None:
+            e.description = f"⛔ Sorry, no {mode} found for this match."
+        if "PP" in time:
+            e.colour = 0xDB4437  # Red
+            e.description = "This match has been postponed."
+        elif "HT" in time:
+            e.colour = 0xF4B400  # Amber
+        elif "FT" in time:
+            e.colour = 0x4285F4  # Blue
+        elif "+" in time:
+            e.colour = 0x9932CC  # Purple
+        elif "'" in time:
+            e.colour = 0x0F9D58  # Green
+        else:
+            try:
+                h, m = time.split(':')
+                now = datetime.datetime.now()
+                when = datetime.datetime.now().replace(hour=int(h), minute=int(m))
+                x = when - now
+                e.set_footer(text=f"Kickoff in {x}")
+                e.timestamp = when
+            except (IndexError, ValueError):
+                e.description = "Live data not available for this match."
+        
+            e.colour = 0xB3B3B3  # Gray
+    
+        return e, image
+
+    # TODO : -> FSPlayerLISt (Comes from league, not team.)
+    def parse_scorers(self, url, team=None):
+        url += "/standings"
+        xp = ".//div[@class='tabs__group']"
+        clicks = [(By.ID, "tabitem-top_scorers")]
+    
+        e, inner_html = self.get_html(url, xpath=xp, clicks=clicks)
+    
+        tree = html.fromstring(inner_html)
+    
+        title = "".join(tree.xpath('.//div[@class="teamHeader__name"]/text()')).strip()
+        rows = tree.xpath('.//div[@id="table-type-10"]//div[contains(@class,"table__row")]')
+        description_rows = []
+        for i in rows:
+            items = i.xpath('.//text()')
+            items = [i.strip() for i in items if i.strip()]
+            uri = "".join(i.xpath(".//span[@class='team_name_span']//a/@onclick")).split("'")
+        
+            try:
+                tm_url = "http://www.flashscore.com/" + uri[3]
+            except IndexError:
+                tm_url = ""
+            try:
+                p_url = "http://www.flashscore.com/" + uri[1]
+            except IndexError:
+                p_url = ""
+        
+            rank, name, tm, goals, assists = items
+            tm = f" ([{tm}]({tm_url})) " if tm else ""
+        
+            if team is not None:
+                if team.lower() not in tm.lower():
+                    continue
+        
+            country = "".join(i.xpath('.//span[contains(@class,"flag")]/@title')).strip()
+            flag = transfer_tools.get_flag(country)
+            description_rows.append(f'`{rank}` {flag} [{name}]({p_url}){tm}: {goals} Goals, {assists} Assists')
+    
+        if team:
+            title = f"≡ Top Scorers (from {team.title()}) for {title}"
+        else:
+            title = f"≡ Top Scorers for {title}"
+        e.title = title
+        return e, description_rows
+
+    # TODO: rewrite,
+    def parse_bracket(self, url):
+        url += "/draw/"
+        xp = './/div[@id="box-table-type--1"]'
+        multi = (By.LINK_TEXT, 'scroll right »')
+        clicks = [(By.XPATH, ".//span[@class='button cookie-law-accept']")]
+        delete = [(By.XPATH, './/div[@class="seoAdWrapper"]'), (By.XPATH, './/div[@class="banner--sticky"]')]
+        script = "document.getElementsByClassName('playoff-scroll-button')[0].style.display = 'none';" \
+                 "document.getElementsByClassName('playoff-scroll-button')[1].style.display = 'none';"
+        captures, e, src = self.get_html(url, xpath=xp, clicks=clicks, multi_capture=multi,
+                                         multi_capture_script=script, delete_elements=delete)
+    
+        e.title = "Bracket"
+        e.description = "Please click on picture -> open original to enlarge"
+        e.timestamp = datetime.datetime.now()
+        # Captures is a list of opened PIL images.
+        w = int(captures[0].width / 3 * 2 + sum(i.width / 3 for i in captures))
+        h = captures[0].height
+    
+        canvas = Image.new('RGB', (w, h))
+        x = 0
+        for i in captures:
+            canvas.paste(i, (x, 0))
+            x += int(i.width / 3)
+        output = BytesIO()
+        canvas.save(output, "PNG")
+        output.seek(0)
+        canvas.save('canvas.png', "png")
+        file = discord.File(fp=output, filename="img.png")
+        return file, e
+
+    # TODO: Re-write
+    @commands.command(aliases=['draw'])
+    async def bracket(self, ctx, *, qry: commands.clean_content = None):
+        """ Get btacket for a tournament """
+        async with ctx.typing():
+            await ctx.send("Searching...", delete_after=5)
+            fsr = await self._search(ctx, qry, mode="league")
+            if fsr is None:
+                return  # rip.
+        
+            url = fsr.link
+        
+            async with sl_lock:
+                file, e = await self.bot.loop.run_in_executor(None, self.parse_bracket, url)
+        
+            e.set_image(url="attachment://img.png")
+            e.title = f"Bracket for {qry}"
+            await ctx.send(file=file, embed=e)
 
 
 def setup(bot):
