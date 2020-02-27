@@ -277,7 +277,7 @@ class Notifications(commands.Cog):
     @commands.Cog.listener()
     async def on_guild_emojis_update(self, guild, before, after):
         try:
-            c = guild.get_channel(self.notif_cache[guild.id]["emoji_channel_id"])
+            c = guild.get_channel(self.notif_cache[guild.id]["emojis_channel_id"])
         except (KeyError, AttributeError):
             return
         
@@ -286,11 +286,15 @@ class Notifications(commands.Cog):
         if not new_emoji:
             try:
                 removed_emoji = [i for i in before if i not in after][0]
-                await c.send(f"The '{removed_emoji.name}' emoji was removed")
+                await c.send(f"The '{removed_emoji}' emoji was removed")
             except IndexError:
                 await c.send("An emoji was removed.")
         else:
-            await c.send(f"The {new_emoji[0]} emoji was created by {new_emoji[0].user.mention}")
+            notif = f"The {new_emoji[0]} emoji was created"
+            if guild.me.permissions_in(c).manage_emojis:
+                emoji = await guild.fetch_emoji(new_emoji[0].id)
+                notif += " by " + emoji.user.mention
+            await c.send(notif)
 
     @commands.Cog.listener()
     async def on_member_unban(self, guild, user):
