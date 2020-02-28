@@ -1,5 +1,3 @@
-# TODO: Find somewhere to get goal clips from.
-
 import asyncio
 import datetime
 import typing
@@ -26,8 +24,9 @@ from importlib import reload
 # max_concurrency equivalent
 sl_lock = asyncio.Semaphore()
 
-# TODO: Finish Refactor into ext.utils.football Classes
 
+# TODO: Finish Refactor into ext.utils.football Classes
+# TODO: Find somewhere to get goal clips from.
 
 # TODO: Kill this.
 async def build_embeds(ctx, base_embed, description_rows=None, embed_fields=None):
@@ -79,7 +78,7 @@ class Fixtures(commands.Cog):
                 result = await self._fetch_default(ctx, mode)
                 if result is not None:
                     if mode == "team":
-                        sr = football.Tean(override=result, title=f"{ctx.guild.name} default")
+                        sr = football.Team(override=result, title=f"{ctx.guild.name} default")
                     else:
                         sr = football.Competition(override=result, title=f"{ctx.guild.name} default")
                     return sr
@@ -331,7 +330,6 @@ class Fixtures(commands.Cog):
                 embeds = await players.scorers_to_embeds
             await embed_utils.paginate(ctx, embeds)
     
-    # TODO: -> FSSearchResult
     @commands.command(usage="scores <league- to search for>")
     async def scores(self, ctx, *, search_query: commands.clean_content = ""):
         """ Fetch current scores for a specified league """
@@ -344,7 +342,7 @@ class Fixtures(commands.Cog):
             e.set_author(name="Live Scores for all known competitions")
         e.timestamp = datetime.datetime.now()
         dtn = datetime.datetime.now().strftime("%H:%M")
-        matches = {k: v for k, v in self.bot.live_games.items() if search_query.lower() in k.lower()}
+        matches = {i for i in self.bot.games.items() if search_query.lower()   }
         page = 1
         if not matches:
             e.description = "No results found!"
@@ -383,64 +381,19 @@ class Fixtures(commands.Cog):
     
         await ctx.send(embed=await stadiums[index].to_embed)
 
-    # TODO: Re-write this once LiveScores is converted to football.Fixture
-    async def pick_game(self, ctx, qry):
-        matches = []
-        key = 0
-        url = ""
-        if qry is None:
-            fsr = await self._search(ctx, qry, mode="team")
-            url = fsr.link
-            url = "" if url is None else url
-    
-        for league in self.bot.live_games:
-            for game_id in self.bot.live_games[league]:
-                # Ignore our output strings.
-                if game_id in ("raw", 'raw_with_link'):
-                    continue
-            
-                home = self.bot.live_games[league][game_id]["home_team"]
-                away = self.bot.live_games[league][game_id]["away_team"]
-            
-                if game_id in url or qry in home.lower() or qry in away.lower():
-                    game = f"{home} vs {away} ({league})"
-                    matches.append((str(key), game, league, game_id))
-                    key += 1
-    
+    async def pick_game(self, ctx, qry) -> typing.Union[football.Fixture, None]:
+        matches = [i for i in self.bot.games if qry.lower() in (i.home.lower(), i.away.lower(),
+                                                                i.league.lower(), i.country.lower())]
         if not matches:
-            return None, None
-    
-        if len(matches) == 1:
-            # return league and game of only result.
-            return matches[0][2], matches[0][3]
-    
-        selector = "Please Type Matching ID```"
-        for i in matches:
-            selector += f"{i[0]}: {i[1]}\n"
-        selector += "```"
-    
+            return
+        
+        pickers = [i.to_embed_row for i in matches]
+        index = await embed_utils.page_selector(ctx, pickers)
+        
         try:
-            m = await ctx.send(selector, delete_after=30)
-        except discord.HTTPException:
-            # TODO: Paginate.
-            return await ctx.send(content=f"Too many matches to display, please be more specific.")
-    
-        def check(message):
-            if message.author.id == ctx.author.id and message.content.isdigit():
-                if int(message.content) < len(matches):
-                    return True
-    
-        try:
-            match = await self.bot.wait_for("message", check=check, timeout=30)
-            match = match.content
-        except asyncio.TimeoutError:
-            return None, None
-        else:
-            try:
-                await m.delete()
-            except discord.NotFound:
-                pass
-            return matches[int(match)][2], matches[int(match)][3]
+            return matches[index]
+        except TypeError:
+            return None
 
     # TODO: Kill this.
     def get_html(self, url, xpath, **kwargs):
@@ -520,59 +473,6 @@ class Fixtures(commands.Cog):
             df = discord.File(output, filename="img.png")
             return df, e, self.driver.page_source
         return e, self.driver.page_source
-
-    # TODO: Kill this.
-    def parse_live(self, league, game, mode):
-        game_uri = game.split('_')[-1]
-        url = f"https://www.flashscore.com/match/{game_uri}/"
-        if mode == "stats":
-            url += "#match-statistics;0"
-            xp = ".//div[@class='statBox']"
-        elif mode == "formation":
-            url += "#lineups;1"
-            xp = './/div[@id="lineups-content"]'
-        elif mode == "summary":
-            xp = ".//div[@id='summary-content']"
-        else:
-            print(f"Can't parse stats for invalid mode: {mode}")
-            return
-    
-        image, e, inner_html = self.get_html(url, xpath=xp, image_fetch=True)
-    
-        home = self.bot.live_games[league][game]["home_team"]
-        away = self.bot.live_games[league][game]["away_team"]
-        score = self.bot.live_games[league][game]["score"]
-        time = self.bot.live_games[league][game]["time"]
-    
-        e.set_author(name=f"≡ {home} {score} {away} ({time})")
-        e.title = league
-        e.timestamp = datetime.datetime.now()
-        if image is None:
-            e.description = f"⛔ Sorry, no {mode} found for this match."
-        if "PP" in time:
-            e.colour = 0xDB4437  # Red
-            e.description = "This match has been postponed."
-        elif "HT" in time:
-            e.colour = 0xF4B400  # Amber
-        elif "FT" in time:
-            e.colour = 0x4285F4  # Blue
-        elif "+" in time:
-            e.colour = 0x9932CC  # Purple
-        elif "'" in time:
-            e.colour = 0x0F9D58  # Green
-        else:
-            try:
-                h, m = time.split(':')
-                now = datetime.datetime.now()
-                when = datetime.datetime.now().replace(hour=int(h), minute=int(m))
-                x = when - now
-                e.set_footer(text=f"Kickoff in {x}")
-                e.timestamp = when
-            except (IndexError, ValueError):
-                e.description = "Live data not available for this match."
-        
-            e.colour = 0xB3B3B3  # Gray
-        return e, image
 
     # TODO : -> FSPlayerLISt (Comes from league, not team.)
     def parse_scorers(self, url, team=None):
