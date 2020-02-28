@@ -24,6 +24,99 @@ class Fixture:
         self.away = away
         self.__dict__.update(kwargs)
     
+    def stats_markdown(self, driver):
+        delete = [(By.XPATH, './/div[@id="lsid-window-mask"]')]
+        xp = ".//div[@class='statBox']"
+        src = selenium_driver.get_html(driver, self.url + "#match-statistics;0", xp, delete=delete)
+        return
+    
+    def stats_image(self, driver):
+        delete = [(By.XPATH, './/div[@id="lsid-window-mask"]')]
+        xp = ".//div[@class='statBox']"
+        image = selenium_driver.get_image(driver, self.url + "#match-statistics;0", xp, delete=delete,
+                                          failure_message="Unable to find live stats for this match.")
+        return image
+    
+    def formation(self, driver):
+        delete = [(By.XPATH, './/div[@id="lsid-window-mask"]')]
+        xp = './/div[@id="lineups-content"]'
+        image = selenium_driver.get_image(driver, self.url + "#lineups;1", xp, delete=delete,
+                                          failure_message="Unable to find formations for this match")
+        return image
+    
+    def summary(self, driver):
+        delete = [(By.XPATH, './/div[@id="lsid-window-mask"]')]
+        xp = ".//div[@id='summary-content']"
+        image = selenium_driver.get_image(driver, self.url + "#lineups;1", xp, delete=delete,
+                                          failure_message="Unable to find summary for this match")
+        return image
+    
+    @property
+    def formatted_score(self):
+        try:
+            return self.score if self.score is not None else " vs "
+        except AttributeError:
+            return " vs "
+    
+    @property
+    def emoji_time(self):
+        emoji_dict = {"After Pens": "🟢", "FT": "🟢", "AET": "🟢", "HT": "🟡️", "PP": "🚫"}
+        try:
+            return f"{self.time} {emoji_dict[self.time]}"
+        except KeyError:
+            if ":" in self.time:
+                return f"🔵 {self.time}"
+            elif "'" in self.time:
+                return f"⚽ {self.time}"
+            else:
+                return self.time
+    
+    @property
+    def colour_time(self):
+        if "PP" in self.time:
+            return 0xDB4437  # Red
+        elif "HT" in self.time:
+            return 0xF4B400  # Amber
+        elif "FT" in self.time:
+            return 0x4285F4  # Blue
+        elif "+" in self.time:
+            return 0x9932CC  # Purple
+        elif "'" in self.time:
+            return 0x0F9D58  # Green
+        else:
+            return 0xB3B3B3  # Gray
+    
+    @property
+    def live_score_text(self):
+        return f"`{self.emoji_time}` {self.home} {self.formatted_score} {self.away}\n"
+    
+    @property
+    def live_score_embed_row(self):
+        return f"`{self.emoji_time}` [{self.home} {self.formatted_score} {self.away}]({self.url})\n"
+    
+    @property
+    def base_embed(self):
+        e = discord.Embed()
+        e.set_author(name=f"≡ {self.home} {self.formatted_score} {self.away} ({self.emoji_time})")
+        e.title = f"**{self.country}**: {self.league}"
+        e.timestamp = datetime.datetime.now()
+        
+        if "PP" in self.time:
+            e.description = "This match has been postponed."
+        
+        clr = self.colour_time
+        if clr == 0xB3B3B3:
+            try:
+                h, m = self.time.split(':')
+                now = datetime.datetime.now()
+                when = datetime.datetime.now().replace(hour=int(h), minute=int(m))
+                x = when - now
+                e.set_footer(text=f"Kickoff in {x}")
+                e.timestamp = when
+            except (IndexError, ValueError):
+                e.description = "Live data not available for this match."
+        return e
+    
     @property
     async def to_embed_row(self):
         if isinstance(self.time, datetime.datetime):
@@ -71,22 +164,22 @@ class FlashScorePlayerList:
         self.fs_page_title = None
         self.fs_page_image = None
         self.players = self.get_players()
-        
+    
     def get_players(self) -> typing.List[Player]:
         delete = [(By.XPATH, './/div[@id="lsid-window-mask"]')]
         clicks = [(By.ID, 'overall-all')]
         xp = './/div[contains(@class,"playerTable")]'
         
-        src = selenium_driver.get_html(self.driver, self.url, xp,  delete=delete, clicks=clicks)
+        src = selenium_driver.get_html(self.driver, self.url, xp, delete=delete, clicks=clicks)
         tree = html.fromstring(src)
         rows = tree.xpath('.//div[contains(@id,"overall-all-table")]//div[contains(@class,"profileTable__row")]')[1:]
-
+        
         logo = self.driver.find_element_by_xpath('.//div[contains(@class,"logo")]')
         if logo != "none":
             logo = logo.value_of_css_property('background-image')
             self.fs_page_image = logo.strip("url(").strip(")").strip('"')
         self.fs_page_title = "".join(tree.xpath('.//div[@class="teamHeader__name"]/text()')).strip()
-            
+        
         players = []
         position = ""
         for i in rows:
@@ -97,9 +190,9 @@ class FlashScorePlayerList:
                 except IndexError:
                     position = pos
                 continue  # There will not be additional data.
-    
+            
             name = "".join(i.xpath('.//div[contains(@class,"")]/a/text()'))
-            try:   # Name comes in reverse order.
+            try:  # Name comes in reverse order.
                 player_split = name.split(' ', 1)
                 name = f"{player_split[1]} {player_split[0]}"
             except IndexError:
@@ -117,7 +210,7 @@ class FlashScorePlayerList:
             injury = "".join(i.xpath('.//span[contains(@class,"absence injury")]/@title'))
             if injury:
                 injury = f"<:injury:682714608972464187> " + injury  # I really shouldn't hard code emojis.
-    
+            
             link = "".join(i.xpath('.//div[contains(@class,"")]/a/@href'))
             link = f"http://www.flashscore.com{link}" if link else ""
             
@@ -149,7 +242,7 @@ class FlashScorePlayerList:
             e.url = self.url
         embeds = embed_utils.rows_to_embeds(e, players)
         return embeds
-        
+    
     @property
     async def injuries_to_embeds(self):
         pl = [i for i in self.players if i.injury]
@@ -180,6 +273,9 @@ class FlashScoreFixtureList:
         self.fs_page_title = None
         self.fs_page_image = None
         self.items = self.get_fixtures()
+        
+    def __getitem__(self, value):
+        return self.items[value]
     
     def get_fixtures(self) -> typing.List[Fixture]:
         src = selenium_driver.get_html(self.driver, self.url, './/div[@class="sportName soccer"]')
@@ -265,13 +361,14 @@ async def get_fs_results(query) -> typing.List[FlashScoreSearchResult]:
     # Un-fuck FS JSON reply.
     res = res.lstrip('cjs.search.jsonpCallback(').rstrip(");")
     res = json.loads(res)
-    return [Team(**i) if i['participant_type_id'] == 0 else Competition (**i) for i in res['results']]
-    
+    filtered = filter(lambda i: i['participant_type_id'] in (0, 1), res)  # discard players.
+    return [Team(**i) if i['participant_type_id'] == 0 else Competition(**i) for i in filtered]
+
 
 class Competition(FlashScoreSearchResult):
-    def __init__(self,  **kwargs):
+    def __init__(self, **kwargs):
         super().__init__(**kwargs)
-
+    
     def table(self, driver) -> BytesIO:
         xp = './/div[@class="table__wrapper"]'
         clicks = [(By.XPATH, ".//span[@class='button cookie-law-accept']")]
@@ -285,7 +382,7 @@ class Competition(FlashScoreSearchResult):
 
 
 class Team(FlashScoreSearchResult):
-    def __init__(self,  **kwargs):
+    def __init__(self, **kwargs):
         super().__init__(**kwargs)
     
     @property
@@ -298,7 +395,16 @@ class Team(FlashScoreSearchResult):
     def players(self, driver) -> FlashScorePlayerList:
         return FlashScorePlayerList(str(self.link) + "/squad", driver)
     
-    # TODO: Table. Get all leagues team is in, give selector menu, edit css property to highlight row
+    def competitions(self):
+        raise AssertionError('Getting all competitions of a team has not yet been implemented.')
+    
+    def most_recent_game(self, driver) -> Fixture:
+        results = FlashScoreFixtureList(self.link, driver)
+        return results[0]
+    
+    def table(self):
+        # TODO: Table. Get all leagues team is in, give selector menu, edit css property to highlight row
+        raise AssertionError('Fetching a table via a team has not yet been implemented.')
     
 
 class Stadium:
@@ -317,7 +423,7 @@ class Stadium:
         # Teams
         old = tree.xpath('.//tr/th[contains(text(), "Former home")]/following-sibling::td')
         home = tree.xpath('.//tr/th[contains(text(), "home to")]/following-sibling::td')
-
+        
         for s in home:
             team_list = []
             links = s.xpath('.//a/@href')
@@ -326,7 +432,7 @@ class Stadium:
                 if "/team/" in y:
                     team_list.append(f"[{x}]({y})")
             this['home'] = team_list
-
+        
         for s in old:
             team_list = []
             links = s.xpath('.//a/@href')
@@ -335,13 +441,14 @@ class Stadium:
                 if "/team/" in y:
                     team_list.append(f"[{x}]({y})")
             this['old'] = team_list
-            
+        
         this['map_link'] = "".join(tree.xpath('.//figure/img/@src'))
         this['address'] = "".join(tree.xpath('.//tr/th[contains(text(), "Address")]/following-sibling::td//text()'))
         this['capacity'] = "".join(tree.xpath('.//tr/th[contains(text(), "Capacity")]/following-sibling::td//text()'))
         this['cost'] = "".join(tree.xpath('.//tr/th[contains(text(), "Cost")]/following-sibling::td//text()'))
         this['website'] = "".join(tree.xpath('.//tr/th[contains(text(), "Website")]/following-sibling::td//text()'))
-        this['att'] = "".join(tree.xpath('.//tr/th[contains(text(), "Record attendance")]/following-sibling::td//text()'))
+        this['att'] = "".join(
+            tree.xpath('.//tr/th[contains(text(), "Record attendance")]/following-sibling::td//text()'))
         return this
     
     @property
@@ -354,7 +461,7 @@ class Stadium:
         e.set_author(name="FootballGroundMap.com", url="http://www.footballgroundmap.com")
         e.title = self.name
         e.url = self.url
-
+        
         data = await self.fetch_more()
         try:  # Check not ""
             e.colour = await embed_utils.get_colour(self.team_badge)
@@ -366,10 +473,10 @@ class Stadium:
         
         if data['home']:
             e.add_field(name="Home to", value=", ".join(data['home']), inline=False)
-
+        
         if data['old']:
             e.add_field(name="Former home to", value=", ".join(data['old']), inline=False)
-
+        
         # Location
         address = "Link to map" if not data['address'] else data['address']
         
