@@ -188,7 +188,7 @@ class Fixtures(commands.Cog):
             async with sl_lock:
                 p = await self.bot.loop.run_in_executor(None, fsr.table, self.driver)
             
-            p = discord.File(fp=p, filename=f"Table {fsr.title} {datetime.datetime.now().date}.png")
+            p = discord.File(fp=p, filename=f"Table-{fsr.title}-{datetime.datetime.now().date}.png")
             await ctx.send(file=p)
     
     @commands.command(aliases=['fx'], usage="fixtures <team or league to search for>")
@@ -572,7 +572,6 @@ class Fixtures(commands.Cog):
                 e.description = "Live data not available for this match."
         
             e.colour = 0xB3B3B3  # Gray
-    
         return e, image
 
     # TODO : -> FSPlayerLISt (Comes from league, not team.)
