@@ -78,7 +78,10 @@ class Fixtures(commands.Cog):
             if ctx.guild is not None:
                 result = await self._fetch_default(ctx, mode)
                 if result is not None:
-                    sr = football.FlashScoreSearchResult(override=result, title=f"{ctx.guild.name} default")
+                    if mode == "team":
+                        sr = football.Tean(override=result, title=f"{ctx.guild.name} default")
+                    else:
+                        sr = football.Competition(override=result, title=f"{ctx.guild.name} default")
                     return sr
             else:
                 err += f"\nA default team or league can be set by moderators using {ctx.prefix}default)"
@@ -97,7 +100,81 @@ class Fixtures(commands.Cog):
             return  # Timeout or abort.
 
         return search_results[index]
+
+    # TODO: Cache these.
+    async def _fetch_default(self, ctx, mode=None):
+        connection = await self.bot.db.acquire()
+        r = await connection.fetchrow("""
+             SELecT * FROM scores_settings WHERE (guild_id) = $1
+             AND (default_league is NOT NULL OR default_team IS NOT NULL) """, ctx.guild.id)
+        await self.bot.db.release(connection)
+        if r:
+            team = r["default_team"]
+            league = r["default_league"]
+            # Decide if found, yell if not.
+            if any([league, team]):
+                if mode == "team":
+                    return team if team else league
+                return league if league else team
+        return None
+
+    # TODO: Cache.
+    @commands.has_permissions(manage_guild=True)
+    @commands.command(usage="default <'team' or 'league'> <(Your Search Query) or ('None' to unset default.)")
+    async def default(self, ctx, mode, *, qry: commands.clean_content = None):
+        """ Set a default team or league for your server's lookup commands """
+        # Validate
+        mode = mode.lower()
+        if mode not in ["league", "team"]:
+            return await ctx.send(':no_entry_sign: Invalid default type specified, valid types are "league" or "team"')
+        mode = "default_team" if mode == "team" else "default_league"
     
+        if qry is None:
+            connection = await self.bot.db.acquire()
+            record = await connection.fetchrow("""
+                SELecT * FROM scores_settings
+                WHERE (guild_id) = $1
+                AND (default_league is NOT NULL OR default_team IS NOT NULL)
+            """, ctx.guild.id)
+            await self.bot.db.release(connection)
+            if not record:
+                return await ctx.send(f"{ctx.guild.name} does not currently have a default team or league set.")
+            league = record["default_league"] if record["default_league"] is not None else "not set."
+            output = f"Your default league is: {league}"
+            team = record["default_team"] if record["default_team"] is not None else "not set."
+            output += "\n" + team
+        
+            return await ctx.send(output)
+    
+        if qry.lower() == "none":  # Intentionally set Null for DB entry
+            url = None
+        else:  # Find
+            await ctx.send(f'Searching for {qry}...', delete_after=5)
+            fsr = await self._search(ctx, qry, mode=mode)
+        
+            if fsr is None:
+                return await ctx.send(f"Couldn't find matching {mode} for {qry}, try searching for something else.")
+        
+            url = fsr.link
+    
+        connection = await self.bot.db.acquire()
+    
+        async with connection.transaction():
+            await connection.execute(
+                f"""INSERT INTO scores_settings (guild_id,{mode})
+                VALUES ($1,$2)
+
+                ON CONFLICT (guild_id) DO UPDATE SET
+                    {mode} = $2
+                WHERE excluded.guild_id = $1
+            """, ctx.guild.id, url)
+    
+        await self.bot.db.release(connection)
+    
+        if qry is not None:
+            return await ctx.send(f'Your commands will now use <{url}> as a default {mode}')
+        else:
+            return await ctx.send(f'Your commands will no longer use a default {mode}')
     
     @commands.command(usage="table <league to search for>>")
     async def table(self, ctx, *, qry: commands.clean_content = None):
@@ -177,6 +254,7 @@ class Fixtures(commands.Cog):
             e.set_image(url="attachment://img.png")
             await ctx.send(file=file, embed=e)
     
+    # TODO: Migrate
     @commands.command()
     async def summary(self, ctx, *, qry: commands.clean_content):
         """ Get a summary for one of today's games. """
@@ -239,7 +317,6 @@ class Fixtures(commands.Cog):
             e, rows = await self.bot.loop.run_in_executor(None, self.parse_scorers, url, team)
         await build_embeds(ctx, e, description_rows=rows)
     
-    # TODO: -> FSSearchResult -> FSPlayerList
     @scorers.command()
     async def team(self, ctx, *, qry: commands.clean_content = None):
         """ Get a team's top scorers across all competitions """
@@ -253,81 +330,6 @@ class Fixtures(commands.Cog):
                 players = await self.bot.loop.run_in_executor(None, fsr.squad_as_embed, self.driver)
                 embeds = await players.scorers_to_embeds
             await embed_utils.paginate(ctx, embeds)
-
-    # TODO: Cache these.
-    async def _fetch_default(self, ctx, mode=None):
-        connection = await self.bot.db.acquire()
-        r = await connection.fetchrow("""
-             SELecT * FROM scores_settings WHERE (guild_id) = $1
-             AND (default_league is NOT NULL OR default_team IS NOT NULL) """, ctx.guild.id)
-        await self.bot.db.release(connection)
-        if r:
-            team = r["default_team"]
-            league = r["default_league"]
-            # Decide if found, yell if not.
-            if any([league, team]):
-                if mode == "team":
-                    return team if team else league
-                return league if league else team
-        return None
-    
-    # TODO: Cache.
-    @commands.has_permissions(manage_guild=True)
-    @commands.command(usage="default <'team' or 'league'> <(Your Search Query) or ('None' to unset default.)")
-    async def default(self, ctx, mode, *, qry: commands.clean_content = None):
-        """ Set a default team or league for your server's lookup commands """
-        # Validate
-        mode = mode.lower()
-        if mode not in ["league", "team"]:
-            return await ctx.send(':no_entry_sign: Invalid default type specified, valid types are "league" or "team"')
-        mode = "default_team" if mode == "team" else "default_league"
-        
-        if qry is None:
-            connection = await self.bot.db.acquire()
-            record = await connection.fetchrow("""
-                SELecT * FROM scores_settings
-                WHERE (guild_id) = $1
-                AND (default_league is NOT NULL OR default_team IS NOT NULL)
-            """, ctx.guild.id)
-            await self.bot.db.release(connection)
-            if not record:
-                return await ctx.send(f"{ctx.guild.name} does not currently have a default team or league set.")
-            league = record["default_league"] if record["default_league"] is not None else "not set."
-            output = f"Your default league is: {league}"
-            team = record["default_team"] if record["default_team"] is not None else "not set."
-            output += "\n" + team
-            
-            return await ctx.send(output)
-        
-        if qry.lower() == "none":  # Intentionally set Null for DB entry
-            url = None
-        else:  # Find
-            await ctx.send(f'Searching for {qry}...', delete_after=5)
-            fsr = await self._search(ctx, qry, mode=mode)
-            
-            if fsr is None:
-                return await ctx.send(f"Couldn't find matching {mode} for {qry}, try searching for something else.")
-            
-            url = fsr.link
-            
-        connection = await self.bot.db.acquire()
-        
-        async with connection.transaction():
-            await connection.execute(
-                f"""INSERT INTO scores_settings (guild_id,{mode})
-                VALUES ($1,$2)
-                
-                ON CONFLICT (guild_id) DO UPDATE SET 
-                    {mode} = $2
-                WHERE excluded.guild_id = $1
-            """, ctx.guild.id, url)
-        
-        await self.bot.db.release(connection)
-        
-        if qry is not None:
-            return await ctx.send(f'Your commands will now use <{url}> as a default {mode}')
-        else:
-            return await ctx.send(f'Your commands will no longer use a default {mode}')
     
     # TODO: -> FSSearchResult
     @commands.command(usage="scores <league- to search for>")

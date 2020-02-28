@@ -269,7 +269,7 @@ class FlashScoreSearchResult:
         return FlashScoreFixtureList(str(self.link) + "/results", driver)
 
 
-class FlashScoreCompetition(FlashScoreSearchResult):
+class Competition(FlashScoreSearchResult):
     def __init__(self,  **kwargs):
         super().__init__(**kwargs)
 
@@ -285,7 +285,7 @@ class FlashScoreCompetition(FlashScoreSearchResult):
         return image
 
 
-class FlashScoreTeam(FlashScoreSearchResult):
+class Team(FlashScoreSearchResult):
     def __init__(self,  **kwargs):
         super().__init__(**kwargs)
     
@@ -293,9 +293,8 @@ class FlashScoreTeam(FlashScoreSearchResult):
     def link(self):
         if hasattr(self, 'override'):
             return self.override
-        else:
-            # Example Team URL: https://www.flashscore.com/team/thailand-stars/jLsL0hAF/
-            return f"https://www.flashscore.com/team/{self.url}/{self.id}"
+        # Example Team URL: https://www.flashscore.com/team/thailand-stars/jLsL0hAF/
+        return f"https://www.flashscore.com/team/{self.url}/{self.id}"
     
     def players(self, driver) -> FlashScorePlayerList:
         return FlashScorePlayerList(str(self.link) + "/squad", driver)
@@ -312,32 +311,14 @@ class Stadium:
         self.country = country
         self.__dict__.update(kwargs)
     
-    @property
-    def to_picker_row(self) -> str:
-        return f"**{self.name}** ({self.country}: {self.team})"
-    
-    @property
-    async def to_embed(self) -> discord.Embed:
+    async def fetch_more(self):
+        this = dict()
         tree = html.fromstring(await get_html_async(self.url))
-        e = discord.Embed()
-        e.set_author(name="FootballGroundMap.com", url="http://www.footballgroundmap.com")
-        e.title = self.name
-        e.url = self.url
-        
-        image = "".join(tree.xpath('.//div[@class="page-img"]/img/@src'))
-        
-        try:  # Check not ""
-            e.colour = await embed_utils.get_colour(self.team_badge)
-        except AttributeError:
-            pass
-        
-        if image:
-            e.set_image(url=image.replace(' ', '%20'))
-        
+        this['image'] = "".join(tree.xpath('.//div[@class="page-img"]/img/@src'))
         # Teams
         old = tree.xpath('.//tr/th[contains(text(), "Former home")]/following-sibling::td')
         home = tree.xpath('.//tr/th[contains(text(), "home to")]/following-sibling::td')
-        
+
         for s in home:
             team_list = []
             links = s.xpath('.//a/@href')
@@ -345,9 +326,8 @@ class Stadium:
             for x, y in list(zip(teams, links)):
                 if "/team/" in y:
                     team_list.append(f"[{x}]({y})")
-            if team_list:
-                e.add_field(name="Home to", value=", ".join(team_list), inline=False)
-        
+            this['home'] = team_list
+
         for s in old:
             team_list = []
             links = s.xpath('.//a/@href')
@@ -355,33 +335,60 @@ class Stadium:
             for x, y in list(zip(teams, links)):
                 if "/team/" in y:
                     team_list.append(f"[{x}]({y})")
-            if team_list:
-                e.add_field(name="Former home to", value=", ".join(team_list), inline=False)
+            this['old'] = team_list
+            
+        this['map_link'] = "".join(tree.xpath('.//figure/img/@src'))
+        this['address'] = "".join(tree.xpath('.//tr/th[contains(text(), "Address")]/following-sibling::td//text()'))
+        this['capacity'] = "".join(tree.xpath('.//tr/th[contains(text(), "Capacity")]/following-sibling::td//text()'))
+        this['cost'] = "".join(tree.xpath('.//tr/th[contains(text(), "Cost")]/following-sibling::td//text()'))
+        this['website'] = "".join(tree.xpath('.//tr/th[contains(text(), "Website")]/following-sibling::td//text()'))
+        this['att'] = "".join(tree.xpath('.//tr/th[contains(text(), "Record attendance")]/following-sibling::td//text()'))
+        return this
+    
+    @property
+    def to_picker_row(self) -> str:
+        return f"**{self.name}** ({self.country}: {self.team})"
+    
+    @property
+    async def to_embed(self) -> discord.Embed:
+        e = discord.Embed()
+        e.set_author(name="FootballGroundMap.com", url="http://www.footballgroundmap.com")
+        e.title = self.name
+        e.url = self.url
+
+        data = await self.fetch_more()
+        try:  # Check not ""
+            e.colour = await embed_utils.get_colour(self.team_badge)
+        except AttributeError:
+            pass
         
+        if data['image']:
+            e.set_image(url=data['image'].replace(' ', '%20'))
+        
+        if data['home']:
+            e.add_field(name="Home to", value=", ".join(data['home']), inline=False)
+
+        if data['old']:
+            e.add_field(name="Former home to", value=", ".join(data['old']), inline=False)
+
         # Location
-        map_link = "".join(tree.xpath('.//figure/img/@src'))
-        address = "".join(tree.xpath('.//tr/th[contains(text(), "Address")]/following-sibling::td//text()'))
-        address = "Link to map" if not address else address
+        address = "Link to map" if not data['address'] else data['address']
         
-        if map_link:
-            e.add_field(name="Location", value=f"[{address}]({map_link})")
-        elif address:
+        if data['map_link']:
+            e.add_field(name="Location", value=f"[{address}]({data['map_link']})")
+        elif data['address']:
             e.add_field(name="Location", value=address, inline=False)
         
         # Misc Data.
         e.description = ""
-        capacity = "".join(tree.xpath('.//tr/th[contains(text(), "Capacity")]/following-sibling::td//text()'))
-        cost = "".join(tree.xpath('.//tr/th[contains(text(), "Cost")]/following-sibling::td//text()'))
-        website = "".join(tree.xpath('.//tr/th[contains(text(), "Website")]/following-sibling::td//text()'))
-        att = "".join(tree.xpath('.//tr/th[contains(text(), "Record attendance")]/following-sibling::td//text()'))
-        if capacity:
-            e.description += f"Capacity: {capacity}\n"
-        if att:
-            e.description += f"Record Attendance: {att}\n"
-        if cost:
-            e.description += f"Cost: {cost}\n"
-        if website:
-            e.description += f"Website: {cost}\n"
+        if data['capacity']:
+            e.description += f"Capacity: {data['capacity']}\n"
+        if data['att']:
+            e.description += f"Record Attendance: {data['att']}\n"
+        if data['cost']:
+            e.description += f"Cost: {data['cost']}\n"
+        if data['website']:
+            e.description += f"Website: {data['website']}\n"
         
         return e
 
@@ -411,9 +418,9 @@ async def get_fs_results(query) -> typing.List[FlashScoreSearchResult]:
             continue
             
         if i['participant_type_id'] == 0:
-            fsr = FlashScoreCompetition(**i)
+            fsr = Competition(**i)
         elif i['participant_type_id'] == 1:
-            fsr = FlashScoreTeam(**i)
+            fsr = Team(**i)
         else:
             fsr = None
         results.append(fsr)
