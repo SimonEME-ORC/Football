@@ -7,16 +7,14 @@ from discord.ext import commands, tasks
 
 # Web Scraping
 from lxml import html
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as ec
 
 # Data manipulation
 import datetime
-import json
 
+# Utils
+from ext.utils import football, embed_utils
 from ext.utils.embed_utils import paginate
-from ext.utils.selenium_driver import spawn_driver
+from ext.utils.selenium_driver import spawn_driver, get_html
 
 default_leagues = [
     "WORLD: Friendly international",
@@ -39,9 +37,19 @@ default_leagues = [
     "USA: MLS"
 ]
 
-
-# TODO: Migrate to FlashScoreFixture
+# TODO: https://www.scorebat.com/video-api/
 # TODO: re-code vidi-printer
+
+
+async def _search(ctx, qry) -> str or None:
+    search_results = await football.get_fs_results(qry)
+    item_list = [i.title for i in search_results if i.participant_type_id == 0]  # Check for specifics.
+    index = await embed_utils.page_selector(ctx, item_list)
+
+    if index is None:
+        return  # Timeout or abort.
+    return search_results[index]
+
 
 class Scores(commands.Cog):
     """ Live Scores channel module """
@@ -81,15 +89,14 @@ class Scores(commands.Cog):
     async def score_loop(self):
         """ Score Checker Loop """
         try:
-            games = await self.bot.loop.run_in_executor(None, self.fetch_data)
+            self.bot.games = await self.bot.loop.run_in_executor(None, self.fetch_games)
         except Exception as e:
             print("Exception in score_loop.")
             print(type(e).__name__)
             print(e.args)
         else:
-            await self.write_raw(games)
             # Iterate: Check vs each server's individual config settings
-            await self.localise_data()
+            await self.build_messages()
             
             # Send message to server.
             try:
@@ -102,32 +109,29 @@ class Scores(commands.Cog):
         await self.bot.wait_until_ready()
         await self.update_cache()
         self.driver = await self.bot.loop.run_in_executor(None, spawn_driver)
-        self.driver.get("http://www.flashscore.com/")
-        xp = ".//div[@class='sportName soccer']"
-        WebDriverWait(self.driver, 10).until(ec.visibility_of_element_located((By.XPATH, xp)))
     
     @score_loop.after_loop
     async def after_score_loop(self):
         self.driver.quit()
     
-    def fetch_data(self):
+    def fetch_games(self):
         xp = ".//div[@class='sportName soccer']"
-        element = self.driver.find_element_by_xpath(xp)
+        src = get_html(self.driver, "http://www.flashscore.com", xp)
+        tree = html.fromstring(src)
+        fixture_list = tree.xpath(f"{xp}/div")
         
-        fixture_list = element.get_attribute('innerHTML')
-        fixture_list = html.fromstring(fixture_list)
-        fixture_list = fixture_list.xpath("./div")
-        games = {}
-        lg = "Unknown League"
+        games = []
+        country = None
+        league = None
         for i in fixture_list:
             # Header rows do not have IDs
             if not i.xpath('.//@id'):
-                lg = ": ".join(i.xpath('.//span//text()')).split(" - ")[0]
-                games[lg] = {}
+                country, league = i.xpath('.//span//text()')
+                league = league.split(" - ")[0]
                 continue
 
             game_id = ''.join(i.xpath('.//@id'))
-            games[lg][game_id] = {}
+            url = "http://www.flashscore.com/match/" + game_id
             
             # Time
             time = i.xpath('.//div[contains(@class,"event__stage--block")]//text()')
@@ -135,6 +139,7 @@ class Scores(commands.Cog):
                 time = i.xpath('.//div[contains(@class,"event__time")]//text()')
             
             time = "".join(time).replace('FRO', "").strip("\xa0").strip()
+            
             if "Finished" in time:
                 time = "FT"
             elif "Extra Time" in time:
@@ -151,45 +156,24 @@ class Scores(commands.Cog):
                 time = "After Pens"
             elif ":" not in time:
                 time += "'"
-            games[lg][game_id]["time"] = time
-            games[lg][game_id]["home_team"] = "".join(i.xpath('.//div[contains(@class,"home")]//text()')).strip()
-            games[lg][game_id]["home_team"] = games[lg][game_id]["home_team"].replace('GOAL', " **GOAL** ")
-            games[lg][game_id]["away_team"] = "".join(i.xpath('.//div[contains(@class,"away")]//text()')).strip()
-            games[lg][game_id]["away_team"] = games[lg][game_id]["away_team"].replace('GOAL', " **GOAL** ")
-            # games[lg][game_id]["aggregate"] = "".join(i.xpath('.//div[@class="event__part"]//text()')).strip()
+            
+            home = "".join(i.xpath('.//div[contains(@class,"home")]/text()')).strip().replace('GOAL', "")
+            away = "".join(i.xpath('.//div[contains(@class,"away")]/text()')).strip().replace('GOAL', "")
+            
+            fx = football.Fixture(time=time, home=home, away=away)
+            fx.country = country
+            fx.league = league
+            ht_score = "".join(i.xpath('.//div[@class="event__part"]//text()')).strip()
             score = "".join(i.xpath('.//div[contains(@class,"event__scores")]//text()')).strip()
-            score = "vs" if not score else score.replace("(", " (")
-            games[lg][game_id]["score"] = score
+            score = None if not score else score.replace("(", " (")
+            fx.score = score
+            fx.ht_score = ht_score
+            fx.url = url
+
+            games.append(fx)
         return games
     
-    async def write_raw(self, games):
-        for league, data in games.items():
-            raw = f"**{league}**\n"  # used by live-score channels
-            raw_with_link = f"**{league}**\n"  # used by scores command
-            for k, v in data.items():  # k is a game_id.
-                time = f"{data[k]['time']}"
-                
-                time = "🟢 After Pens" if time == "After Pens" else time
-                time = "🟢 FT" if time == "FT" else time
-                time = "🟢 AET" if time == "AET" else time
-                time = "🟡️ HT" if time == "HT" else time
-                time = "🚫 PP" if time == "PP" else time
-                time = f"🔵 {time}" if ":" in time else time
-                time = f"⚽ {time}" if "'" in time else time
-                
-                home = data[k]["home_team"]
-                away = data[k]["away_team"]
-                score = data[k]["score"]
-                url = "http://www.flashscore.com/match/" + k.split('_')[-1]
-                
-                raw += f"`{time}` {home} {score} {away}\n"
-                raw_with_link += f"`{time}` [{home} {score} {away}]({url})\n"
-            
-            games[league]["raw"] = raw
-            games[league]["raw_with_link"] = raw_with_link
-        self.bot.live_games = games
-    
-    async def localise_data(self):
+    async def build_messages(self):
         for (guild_id, channel_id), whitelist in self.cache.items():
             if channel_id not in self.msg_dict:
                 self.msg_dict[channel_id] = {}
@@ -197,20 +181,33 @@ class Scores(commands.Cog):
             
             self.msg_dict[channel_id]["raw_data"] = []
             
-            today = datetime.datetime.now().strftime(
-                "Live Scores for **%a %d %b %Y** (last updated at **%H:%M:%S**)\n\n")
-            output = today
-            for league in whitelist:
-                if league not in self.bot.live_games:
+            t = datetime.datetime.now().strftime("Live Scores for **%a %d %b %Y** (last updated at **%H:%M:%S**)\n")
+            output = t
+            
+            for cl in whitelist:
+                ctr, lg = cl.split(':')
+                ctr = lg.strip()
+                lg = lg.strip()
+                
+                games = [i.live_score_text for i in self.bot.live_games if (i.country, i.league) == (ctr, lg)]
+                if not games:
                     continue
 
-                if len(output) + len(self.bot.live_games[league]["raw"]) < 1999:
-                    output += self.bot.live_games[league]["raw"] + "\n"
+                header = f"\n**{cl}**"
+                if len(output + header) < 1999:
+                    output += header + "\n"
                 else:
                     self.msg_dict[channel_id]["raw_data"] += [output]
-                    output = self.bot.live_games[league]["raw"] + "\n"
+                    output = header + "\n"
+                    
+                for i in games:
+                    if len(output + i) < 1999:
+                        output += i + "\n"
+                    else:
+                        self.msg_dict[channel_id]["raw_data"] += [output]
+                        output = i + "\n"
             
-            if output == today:
+            if output == t:
                 output += "No games found for your tracked leagues today!" \
                           "\n\nYou can add more leagues with `.tb ls add league_name`, or reset to the default leagues"\
                           "with `.tb ls default`.\nTo find out which leagues currently have games, use `.tb scores`"
@@ -251,76 +248,20 @@ class Scores(commands.Cog):
                 tuples = list(zip(self.msg_dict[channel_id]["msg_list"], self.msg_dict[channel_id]["raw_data"]))
                 for x, y in tuples:
                     try:
+                        # Save API calls by only editing when a change occurs.
                         if x is not None:
                             if x.content != y:
                                 await x.edit(content=y)
+                    # Discard invalid messages, these will be re-populated next loop.
                     except (discord.NotFound, discord.Forbidden):
                         self.msg_dict[channel_id]['msg_list'] = [i if i != x else None for
                                                                  i in self.msg_dict[channel_id]['msg_list']]
                         pass
 
-    async def _search(self, ctx, m, qry):
-        # aiohttp lookup for json.
-        qry = qry.replace("'", "")
-    
-        qryurl = f"https://s.flashscore.com/search/?q={qry}&l=1&s=1&f=1%3B1&pid=2&sid=1"
-        async with self.bot.session.get(qryurl) as resp:
-            res = await resp.text()
-            res = res.lstrip('cjs.search.jsonpCallback(').rstrip(");")
-            res = json.loads(res)
-    
-        res_dict = {}
-        key = 0
-        # Remove irrelevant.
-        for i in res["results"]:
-            # Format for LEAGUE
-            if i["participant_type_id"] == 0:
-                # Sample League URL: https://www.flashscore.com/soccer/england/premier-league/
-                res_dict[str(key)] = {"Match": i['title']}
-                key += 1
-    
-        if not res_dict:
-            return await m.edit(content=f"No results for query: {qry}")
-    
-        if len(res_dict) == 1:
-            try:
-                await m.delete()
-            except discord.Forbidden:
-                pass
-            return res_dict["0"]["Match"]
-    
-        id_strings = ""
-        for i in res_dict:
-            id_strings += f"{i}: {res_dict[i]['Match']}\n"
-    
-        try:
-            await m.edit(content=f"Please type matching id: ```{id_strings}```")
-        except discord.HTTPException:
-            # TODO: Paginate.
-            return await m.edit(content=f"Too many matches to display, please be more specific.")
-    
-        def check(message):
-            if message.author.id == ctx.author.id and message.content in res_dict:
-                return True
-    
-        try:
-            match = await self.bot.wait_for("message", check=check, timeout=30)
-        except asyncio.TimeoutError:
-            return await m.delete()
-    
-        match_content = match.content
-        try:
-            await m.delete()
-            await match.delete()
-        except (discord.Forbidden, discord.NotFound):
-            pass
-        return res_dict[match_content]["Match"]
-
     # Delete from Db on delete..
     @commands.Cog.listener()
     async def on_guild_channel_delete(self, channel):
         if (channel.guild.id, channel.id) in self.cache:
-            print(f"A live scores channel (Guild: {channel.guild.id}, Channel: {channel.id} was deleted.")
             connection = await self.bot.db.acquire()
             await connection.execute(""" DELETE FROM scores_channels WHERE channel_id = $1 """, channel.id)
             await self.bot.db.release(connection)
@@ -436,8 +377,8 @@ class Scores(commands.Cog):
         if qry is None:
             return await ctx.send("Specify a competition name to search for.")
         
-        m = await ctx.send(f"Searching for {qry}...")
-        res = await self._search(ctx, m, qry)
+        await ctx.send(f"Searching for {qry}...", delete_after=5)
+        res = await _search(ctx, qry)
         
         if not res:
             return await ctx.send("Didn't find any leagues. Your channels were not modified.")
