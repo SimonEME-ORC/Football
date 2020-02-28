@@ -23,7 +23,7 @@ def spawn_driver():
 
 
 def fetch(driver, url, xpath, **kwargs):
-    # Fetch the page
+    # Only fetch if a new page is requested, kills off overhead and also stops annoying "stop refreshing" popups.
     if driver.current_url != url:
         driver.get(url)
     
@@ -55,7 +55,7 @@ def fetch(driver, url, xpath, **kwargs):
 
 
 def get_html(driver, url, xpath, **kwargs) -> str:
-    element = fetch(driver, url, xpath, **kwargs)
+    fetch(driver, url, xpath, **kwargs)
     return driver.page_source
 
 
