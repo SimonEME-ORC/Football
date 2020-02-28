@@ -250,24 +250,23 @@ class FlashScoreSearchResult:
     def __init__(self, **kwargs):
         self.__dict__.update(**kwargs)
     
-    @property
-    def link(self):
-        if hasattr(self, 'override'):
-            return self.override
-        if self.participant_type_id == 1:
-            # Example Team URL: https://www.flashscore.com/team/thailand-stars/jLsL0hAF/
-            return f"https://www.flashscore.com/team/{self.url}/{self.id}"
-        elif self.participant_type_id == 0:
-            # Example League URL: https://www.flashscore.com/soccer/england/premier-league/
-            ctry = self.country_name.lower().replace(' ', '-')
-            return f"https://www.flashscore.com/soccer/{ctry}/{self.url}"
-    
     def fixtures(self, driver) -> FlashScoreFixtureList:
         return FlashScoreFixtureList(str(self.link) + "/fixtures", driver)
     
     def results(self, driver) -> FlashScoreFixtureList:
         return FlashScoreFixtureList(str(self.link) + "/results", driver)
 
+
+async def get_fs_results(query) -> typing.List[FlashScoreSearchResult]:
+    query = query.replace("'", "")  # For some reason, ' completely breaks FS search, and people keep doing it?
+    query = urllib.parse.quote(query)
+    res = await get_html_async(f"https://s.flashscore.com/search/?q={query}&l=1&s=1&f=1%3B1&pid=2&sid=1")
+    
+    # Un-fuck FS JSON reply.
+    res = res.lstrip('cjs.search.jsonpCallback(').rstrip(");")
+    res = json.loads(res)
+    return [Team(**i) if i['participant_type_id'] == 0 else Competition (**i) for i in res['results']]
+    
 
 class Competition(FlashScoreSearchResult):
     def __init__(self,  **kwargs):
@@ -397,35 +396,6 @@ async def get_html_async(url):
     async with aiohttp.ClientSession() as cs:
         async with cs.get(url) as resp:
             return await resp.text()
-
-
-async def get_fs_results(query) -> typing.List[FlashScoreSearchResult]:
-    query = query.replace("'", "")  # For some reason, ' completely breaks FS search, and people keep doing it?
-    query = urllib.parse.quote(query)
-    res = await get_html_async(f"https://s.flashscore.com/search/?q={query}&l=1&s=1&f=1%3B1&pid=2&sid=1")
-    
-    # Un-fuck FS JSON reply.
-    res = res.lstrip('cjs.search.jsonpCallback(').rstrip(");")
-    res = json.loads(res)
-    
-    results = []
-    
-    for i in res['results']:
-        try:
-            assert i['participant_type_id'] in (0, 1), f"Unrecognised participant-type_id for {i}"
-        except AssertionError as e:
-            print(e)
-            continue
-            
-        if i['participant_type_id'] == 0:
-            fsr = Competition(**i)
-        elif i['participant_type_id'] == 1:
-            fsr = Team(**i)
-        else:
-            fsr = None
-        results.append(fsr)
-    
-    return results
 
 
 async def get_stadiums(query) -> typing.List[Stadium]:
