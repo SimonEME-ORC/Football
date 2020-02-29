@@ -60,7 +60,7 @@ class Fixture:
     
     @property
     def emoji_time(self):
-        emoji_dict = {"After Pens": "🟢", "FT": "🟢", "AET": "🟢", "HT": "🟡️", "PP": "🚫"}
+        emoji_dict = {"After Pens": "🟢", "FT": "🟢", "AET": "🟢", "HT": "🟡️"}
         try:
             return f"{self.time} {emoji_dict[self.time]}"
         except KeyError:
@@ -68,6 +68,8 @@ class Fixture:
                 return f"🔵 {self.time}"
             elif "'" in self.time:
                 return f"⚽ {self.time}"
+            elif "PP" in self.time:
+                return f"🚫 PP"
             else:
                 return self.time
     
@@ -88,11 +90,11 @@ class Fixture:
     
     @property
     def live_score_text(self):
-        return f"`{self.emoji_time}` {self.home} {self.formatted_score} {self.away}\n"
+        return f"`{self.emoji_time}` {self.home} {self.formatted_score} {self.away}"
     
     @property
     def live_score_embed_row(self):
-        return f"`{self.emoji_time}` [{self.home} {self.formatted_score} {self.away}]({self.url})\n"
+        return f"`{self.emoji_time}` [{self.home} {self.formatted_score} {self.away}]({self.url})"
     
     @property
     def base_embed(self):
