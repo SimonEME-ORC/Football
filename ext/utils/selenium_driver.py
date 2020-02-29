@@ -98,7 +98,6 @@ def get_image(driver, url, xpath, failure_message, **kwargs) -> typing.Union[Byt
             im = Image.open(BytesIO(element.screenshot_as_png))
         
         output = BytesIO()
-        im.save('Rewritetest.png', 'PNG')
         im.save(output, 'PNG')
         output.seek(0)
         return output

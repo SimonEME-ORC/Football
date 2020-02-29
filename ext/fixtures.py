@@ -552,7 +552,6 @@ class Fixtures(commands.Cog):
         output = BytesIO()
         canvas.save(output, "PNG")
         output.seek(0)
-        canvas.save('canvas.png', "png")
         file = discord.File(fp=output, filename="img.png")
         return file, e
 
