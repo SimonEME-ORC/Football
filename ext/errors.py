@@ -84,7 +84,12 @@ class Errors(commands.Cog):
                   f"({ctx.author} ({ctx.author.id}) in {location} caused the following error\n"
                   f"{error}\n"
                   f"Context: {ctx.message.content}\n")
-        await ctx.send(embed=e)
-
+        try:
+            await ctx.send(embed=e)
+        except discord.HTTPException:
+            print(e.description)
+            e.description = "An error occurred, error too long to output in embed."
+            await ctx.send(embed=e)
+            
 def setup(bot):
     bot.add_cog(Errors(bot))
