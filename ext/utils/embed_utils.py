@@ -14,6 +14,13 @@ from discord import Embed
 PAGINATION_FOOTER_ICON = "http://pix.iemoji.com/twit33/0056.png"
 
 
+async def embed_image(ctx, base_embed, image, filename="img.png"):
+    file = discord.File(fp=image, filename=filename)
+    base_embed.set_image(url=f"attachment://{filename}")
+    await ctx.send(file=file, embed=base_embed)
+    await ctx.send(f"Debug: Filename is '{filename}'")
+
+
 async def get_colour(url=None):
     if url is None or url == Embed.Empty:
         return discord.Colour.blurple()
