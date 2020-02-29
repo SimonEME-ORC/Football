@@ -92,11 +92,24 @@ class Scores(commands.Cog):
         """ Score Checker Loop """
         try:
             games = await self.bot.loop.run_in_executor(None, self.fetch_games)
-            if len(self.bot.games) > len(games) and datetime.datetime.now().minute not in (0, 1, 2):
-                # Assume games are killed every hour
+            
+            # If we have an item with new data, force a full cache clear. This is expected behaviour at midnight.
+            for x in games:
+                print("New games found.")
+                if x.url not in [i.url for i in self.bot.games]:
+                    self.bot.games = []
+                    break # We can stop iterating.
+            
+            # If we onlt have a partial match returned, for whatever reason, dump a screenshot.
+            if len(self.bot.games) > len(games):
                 print("This iteration only found", len(games), "games")
-                return  # Something went wrong, skip this iter.
-            self.bot.games = games
+                await self.bot.loop.run_in_executor(None, self.driver.set_window_size(1920, 10000))
+                await self.bot.loop.run_in_executor(None, self.driver.save_screenshot("Loop_check.png"))
+                print("A screenshot has been saved.")
+            
+            # And then work with our partial data.
+            self.bot.games = [i for i in self.bot.games if i.url not in [x.url for x in games]] + [x for x in games]
+            
         except Exception as e:
             print("Exception in score_loop.")
             print(type(e).__name__)
