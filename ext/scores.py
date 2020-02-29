@@ -92,7 +92,8 @@ class Scores(commands.Cog):
         """ Score Checker Loop """
         try:
             games = await self.bot.loop.run_in_executor(None, self.fetch_games)
-            if len(self.bot.games) > len(games) and datetime.datetime.now().hour != 0:
+            if len(self.bot.games) > len(games) and datetime.datetime.now().minute not in (0, 1, 2):
+                # Assume games are killed every hour
                 print("This iteration only found", len(games), "games")
                 return  # Something went wrong, skip this iter.
             self.bot.games = games
