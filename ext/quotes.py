@@ -211,7 +211,7 @@ class QuoteDB(commands.Cog):
         res = res[0]
 
         if res.emoji.startswith("👎"):
-            await ctx.send("Quote {id} was not deleted", delete_after=5)
+            await ctx.send(f"Quote {quote_id} was not deleted", delete_after=5)
 
         elif res.emoji.startswith("👍"):
             await connection.execute("DELETE FROM quotes WHERE quote_id = $1", quote_id)
