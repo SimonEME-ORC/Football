@@ -1,3 +1,4 @@
+import asyncio
 from collections import defaultdict
 from urllib.parse import unquote
 from copy import deepcopy
@@ -85,6 +86,33 @@ class Mod(commands.Cog):
             except KeyError:
                 self.bot.disabled_cache.update({r["guild_id"]: [r["command"]]})
     
+    @commands.command()
+    @commands.has_permissions(kick_members=True)
+    async def leave(self, ctx):
+        """ Politely ask me to leave the server. """
+        m = await ctx.send('Are you sure you want me to go? All of your settings will be wiped.')
+        await m.add_reaction('✅')
+        await m.add_reaction('🚫')
+        
+        def check(reaction, user):
+            if reaction.message.id == m.id and user == ctx.author:
+                emoji = str(reaction.emoji)
+                return emoji.startswith(('✅', '🚫'))
+            
+        try:
+            res = await self.bot.wait_for("reaction_add", check=check, timeout=30)
+        except asyncio.TimeoutError:
+            return await ctx.send("Response timed out after 30 seconds, I'm staying.", delete_after=15)
+        res = res[0]
+
+        if res.emoji.startswith('✅'):
+            await ctx.send('Farewell!')
+            await ctx.guild.leave()
+        else:
+            await ctx.send("Okay, I'll stick around a bit longer then.")
+            await m.remove_reaction('✅', ctx.me)
+
+        
     @commands.command(aliases=['nick'])
     @commands.has_permissions(manage_nicknames=True)
     async def name(self, ctx, *, new_name: str):
