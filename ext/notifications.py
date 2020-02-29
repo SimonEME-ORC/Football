@@ -175,7 +175,7 @@ class Notifications(commands.Cog):
     # Listeners
     @commands.Cog.listener()
     async def on_guild_create(self, guild):
-        await asyncio.sleep(5)
+        await asyncio.sleep(10)  # Give time to fetch.
         await self.update_cache()
         
     @commands.Cog.listener()
@@ -207,8 +207,11 @@ class Notifications(commands.Cog):
         muted_role = discord.utils.find(lambda r: r.name.lower() == 'muted', before.guild.roles)
         if muted_role is None:
             return
+        try:
+            notif_channel = self.bot.get_channel(self.notif_cache[before.guild.id]['mutes_channel_id'])
+        except KeyError:
+            return  # Not set
         
-        notif_channel = self.bot.get_channel(self.notif_cache[before.guild.id]['mutes_channel_id'])
         if notif_channel is None:
             return
         
@@ -278,8 +281,14 @@ class Notifications(commands.Cog):
     async def on_guild_emojis_update(self, guild, before, after):
         try:
             c = guild.get_channel(self.notif_cache[guild.id]["emojis_channel_id"])
-        except (KeyError, AttributeError):
+        except KeyError:
+            return  # No channel set.
+        
+        if not c:
             return
+            
+        if c is None:
+            print(self.notif_cache[guild.id]["emojis_channel_id"], "Dead channel?", "emoji update.")
         
         # Find if it was addition or removal.
         new_emoji = [i for i in after if i not in before]
@@ -300,7 +309,7 @@ class Notifications(commands.Cog):
     async def on_member_unban(self, guild, user):
         try:
             c = guild.get_channel(self.notif_cache[guild.id]["unbans_channel_id"])
-        except (KeyError, AttributeError):
+        except KeyError:
             return
         await c.send(f"🆗 {user} (ID: {user.id}) was unbanned.")
         
