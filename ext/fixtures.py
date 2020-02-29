@@ -1,6 +1,8 @@
 import asyncio
 import datetime
 import typing
+from collections import defaultdict
+
 import discord
 from discord.ext import commands
 
@@ -224,49 +226,50 @@ class Fixtures(commands.Cog):
             e.title = f"≡ Results for {e.title}"
         return await embed_utils.paginate(ctx, embeds)
     
-    # TODO: Migrate.
     @commands.command()
     async def stats(self, ctx, *, qry: commands.clean_content):
         """ Look up the stats for one of today's games """
         async with ctx.typing():
             await ctx.send('Searching...', delete_after=5)
-            league, game = await self.pick_game(ctx, qry.lower())
+            game = await self.pick_game(ctx, qry)
             if game is None:
                 return await ctx.send(f"Unable to find a match for {qry}")
-            async with sl_lock:
-                e, file = await self.bot.loop.run_in_executor(None, self.parse_live, league, game, "stats")
-            e.set_image(url="attachment://img.png")
-            await ctx.send(file=file, embed=e)
 
-    # TODO: Migrate.
+            async with sl_lock:
+                file = await self.bot.loop.run_in_executor(None, game.stats_image, self.driver)
+                e = game.base_embed
+            fn = f"Stats-{game.filename}.png"
+            await embed_utils.embed_image(ctx, e, file, fn)
+
     @commands.command(usage="formation <team to search for>", aliases=["formations", "lineup", "lineups"])
     async def formation(self, ctx, *, qry: commands.clean_content):
         """ Get the formations for the teams in one of today's games """
         async with ctx.typing():
             await ctx.send('Searching...', delete_after=5)
-            league, game = await self.pick_game(ctx, qry.lower())
+            game = await self.pick_game(ctx, qry)
             if game is None:
                 return await ctx.send(f"Unable to find a match for {qry}")
-            
+
             async with sl_lock:
-                e, file = await self.bot.loop.run_in_executor(None, self.parse_live, league, game, "formation")
-            e.set_image(url="attachment://img.png")
-            await ctx.send(file=file, embed=e)
+                file = await self.bot.loop.run_in_executor(None, game.formation, self.driver)
+                e = game.base_embed
+            fn = f"Formation-{game.filename}.png"
+            await embed_utils.embed_image(ctx, e, file, fn)
     
-    # TODO: Migrate
     @commands.command()
     async def summary(self, ctx, *, qry: commands.clean_content):
         """ Get a summary for one of today's games. """
         async with ctx.typing():
             await ctx.send('Searching...', delete_after=5)
-            league, game = await self.pick_game(ctx, qry.lower())
+            game = await self.pick_game(ctx, qry)
             if game is None:
                 return await ctx.send(f"Unable to find a match for {qry}")
-            
+
             async with sl_lock:
-                e, file = await  self.bot.loop.run_in_executor(None, self.parse_live, league, game, "summary")
-            e.set_image(url="attachment://img.png")
-            await ctx.send(file=file, embed=e)
+                file = await self.bot.loop.run_in_executor(None, game.summary, self.driver)
+                e = game.base_embed
+            fn = f"Summary-{game.filename}.png"
+            await embed_utils.embed_image(ctx, e, file, fn)
 
     @commands.command(aliases=["suspensions"])
     async def injuries(self, ctx, *, qry: commands.clean_content = None):
@@ -340,32 +343,36 @@ class Fixtures(commands.Cog):
             e.set_author(name=f'Live Scores matching "{search_query}"')
         else:
             e.set_author(name="Live Scores for all known competitions")
+            
         e.timestamp = datetime.datetime.now()
         dtn = datetime.datetime.now().strftime("%H:%M")
-        matches = {i for i in self.bot.games.items() if search_query.lower()   }
-        page = 1
+        q = search_query.lower()
+
+        matches = [i for i in self.bot.games if q in (i.home + i.away + i.league + i.country).lower()]
+        
         if not matches:
             e.description = "No results found!"
             return await embed_utils.paginate(ctx, [e])
-        for league in matches:
-            if len(matches[league]['raw_with_link']) < 1966:
-                e.description = matches[league]['raw_with_link']
-            elif len(matches[league]['raw']) < 1966:
-                e.description = matches[league]['raw']
-            else:
-                e.description = ""
-                discarded = 0
-                for row in matches[league]['raw'].split('\n'):
-                    if len(e.description + row) > 1946:
-                        e.description += row
-                    else:
-                        discarded += 1
-                if discarded:
-                    e.description += f"*and {discarded} more...*"
-            e.description += f"\n*Local time: {dtn}\nPlease note this menu will NOT auto-update. It is a snapshot.*"
-            e.set_footer(text=f"{ctx.author}: Page {page} of {len(matches)}")
+
+        game_dict = defaultdict(list)
+        for i in matches:
+            game_dict[f"{i.country.upper()}: {i.league}"].append(i.live_score_text)
+
+        for league in game_dict:
+            games = game_dict[league]
+            if not games:
+                continue
+            output = f"**{league}**\n"
+            discarded = 0
+            for i in games:
+                if len(output + i) < 1944:
+                    output += i + "\n"
+                else:
+                    discarded += 1
+                    
+            e.description = output + f"*and {discarded} more...*" if discarded else output
+            e.description += f"\n*Time now: {dtn}\nPlease note this menu will NOT auto-update. It is a snapshot.*"
             embeds.append(deepcopy(e))
-            page += 1
         await embed_utils.paginate(ctx, embeds)
 
     @commands.command(usage="Stadium <team or stadium to search for.>")
@@ -382,18 +389,17 @@ class Fixtures(commands.Cog):
         await ctx.send(embed=await stadiums[index].to_embed)
 
     async def pick_game(self, ctx, qry) -> typing.Union[football.Fixture, None]:
-        matches = [i for i in self.bot.games if qry.lower() in (i.home.lower(), i.away.lower(),
-                                                                i.league.lower(), i.country.lower())]
+        q = qry.lower()
+        matches = [i for i in self.bot.games if q in (i.home + i.away + i.league + i.country).lower()]
         if not matches:
             return
         
         pickers = [i.to_embed_row for i in matches]
         index = await embed_utils.page_selector(ctx, pickers)
+        if index is None:
+            return  # timeout or abort.
         
-        try:
-            return matches[index]
-        except TypeError:
-            return None
+        return matches[index]
 
     # TODO: Kill this.
     def get_html(self, url, xpath, **kwargs):

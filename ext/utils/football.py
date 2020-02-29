@@ -27,7 +27,8 @@ class Fixture:
     def stats_markdown(self, driver):
         delete = [(By.XPATH, './/div[@id="lsid-window-mask"]')]
         xp = ".//div[@class='statBox']"
-        src = selenium_driver.get_html(driver, self.url + "#match-statistics;0", xp, delete=delete)
+        element = selenium_driver.get_element(driver, self.url + "#match-statistics;0", xp, delete=delete)
+        src = element.inner_html
         return
     
     def stats_image(self, driver):
@@ -47,29 +48,29 @@ class Fixture:
     def summary(self, driver):
         delete = [(By.XPATH, './/div[@id="lsid-window-mask"]')]
         xp = ".//div[@id='summary-content']"
-        image = selenium_driver.get_image(driver, self.url + "#lineups;1", xp, delete=delete,
+        image = selenium_driver.get_image(driver, self.url + "#match-summary", xp, delete=delete,
                                           failure_message="Unable to find summary for this match")
         return image
     
     @property
     def formatted_score(self):
-        try:
-            return self.score if self.score is not None else " vs "
-        except AttributeError:
+        if self.score_home is not None:
+            return f" {self.score_home} - {self.score_away} "
+        else:
             return " vs "
     
     @property
     def emoji_time(self):
         emoji_dict = {"After Pens": "🟢", "FT": "🟢", "AET": "🟢", "HT": "🟡️"}
         try:
-            return f"{self.time} {emoji_dict[self.time]}"
+            return f"{emoji_dict[self.time]} {self.time} "
         except KeyError:
             if ":" in self.time:
                 return f"🔵 {self.time}"
             elif "'" in self.time:
                 return f"⚽ {self.time}"
             elif "PP" in self.time:
-                return f"🚫 PP"
+                return f"🚫 Postp"
             else:
                 return self.time
     
@@ -97,9 +98,15 @@ class Fixture:
         return f"`{self.emoji_time}` [{self.home} {self.formatted_score} {self.away}]({self.url})"
     
     @property
+    def filename(self):
+        t = self.time.replace("'", "mins")
+        return f"{t}-{self.home}-{self.formatted_score}-{self.away}".replace(' ', '-')
+    
+    @property
     def base_embed(self):
         e = discord.Embed()
         e.set_author(name=f"≡ {self.home} {self.formatted_score} {self.away} ({self.emoji_time})")
+        e.url = self.url
         e.title = f"**{self.country}**: {self.league}"
         e.timestamp = datetime.datetime.now()
         
@@ -120,7 +127,7 @@ class Fixture:
         return e
     
     @property
-    async def to_embed_row(self):
+    def to_embed_row(self):
         if isinstance(self.time, datetime.datetime):
             if self.time < datetime.datetime.now():  # in the past -> result
                 d = self.time.strftime('%a %d %b')
@@ -129,17 +136,12 @@ class Fixture:
         else:
             d = self.time
         
-        sc, tv = "vs", ""
-        if hasattr(self, "score") and self.score:
-            sc = self.score
-        if hasattr(self, "is_televised") and self.is_televised:
-            tv = '📺'
+        tv = '📺' if hasattr(self, "is_televised") and self.is_televised else ""
         
         if hasattr(self, "url"):
-            output = f"`{d}:` [{self.home} {sc} {self.away} {tv}]({self.url})"
+            return f"`{d}:` [{self.home} {self.formatted_score} {self.away} {tv}]({self.url})"
         else:
-            output = f"`{d}:` {self.home} {sc} {self.away} {tv}"
-        return output
+            return f"`{d}:` {self.home} {self.formatted_score} {self.away} {tv}"
 
 
 class Player:
@@ -315,9 +317,14 @@ class FlashScoreFixtureList:
             is_televised = True if i.xpath(".//div[contains(@class,'tv')]") else False
             
             # score
-            sc = " - ".join(i.xpath('.//div[contains(@class,"event__scores")]/span/text()'))
+            try:
+                score_home, score_away = i.xpath('.//div[contains(@class,"event__scores")]/span/text()')
+            except ValueError:
+                score_home, score_away = None, None
+            
             home, away = i.xpath('.//div[contains(@class,"event__participant")]/text()')
-            fixture = Fixture(time, home.strip(), away.strip(), score=sc, is_televised=is_televised,
+            fixture = Fixture(time, home.strip(), away.strip(), score_home=score_home, score_away=score_away,
+                              is_televised=is_televised,
                               country=country, league=league, url=url)
             fixtures.append(fixture)
         return fixtures
@@ -339,7 +346,7 @@ class FlashScoreFixtureList:
             embeds.append(e)
         
         for page in pages:
-            e.description = "\n".join([await i.to_embed_row for i in page])
+            e.description = "\n".join([i.to_embed_row for i in page])
             embeds.append(deepcopy(e))
         return embeds
 
@@ -363,18 +370,27 @@ async def get_fs_results(query) -> typing.List[FlashScoreSearchResult]:
     # Un-fuck FS JSON reply.
     res = res.lstrip('cjs.search.jsonpCallback(').rstrip(");")
     res = json.loads(res)
-    filtered = filter(lambda i: i['participant_type_id'] in (0, 1), res)  # discard players.
-    return [Team(**i) if i['participant_type_id'] == 0 else Competition(**i) for i in filtered]
+    filtered = filter(lambda i: i['participant_type_id'] in (0, 1), res['results'])  # discard players.
+    return [Team(**i) if i['participant_type_id'] == 1 else Competition(**i) for i in filtered]
 
 
 class Competition(FlashScoreSearchResult):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        
+    @property
+    def link(self):
+        if hasattr(self, 'override'):
+            return self.override
+        # Example league URL: https://www.flashscore.com/football/england/premier-league/
+        ctry = self.country_name.lower().replace(' ', '-')
+        return f"https://www.flashscore.com/soccer/{ctry}/{self.url}"
     
     def table(self, driver) -> BytesIO:
         xp = './/div[@class="table__wrapper"]'
         clicks = [(By.XPATH, ".//span[@class='button cookie-law-accept']")]
-        delete = [(By.XPATH, './/div[@class="seoAdWrapper"]'), (By.XPATH, './/div[@class="banner--sticky"]')]
+        delete = [(By.XPATH, './/div[@class="seoAdWrapper"]'), (By.XPATH, './/div[@class="banner--sticky"]'),
+                  (By.XPATH, './/div[@class="box_over_content"]')]
         if hasattr(self, "override"):
             err = f"No table found on {self.override}"
         else:
@@ -404,7 +420,7 @@ class Team(FlashScoreSearchResult):
         results = FlashScoreFixtureList(self.link, driver)
         return results[0]
     
-    def table(self):
+    def table(self, driver):
         # TODO: Table. Get all leagues team is in, give selector menu, edit css property to highlight row
         raise AssertionError('Fetching a table via a team has not yet been implemented.')
     

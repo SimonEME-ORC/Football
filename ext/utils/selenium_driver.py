@@ -33,8 +33,8 @@ def fetch(driver, url, xpath, **kwargs):
         element = None  # Rip
     
     # Delete floating ad banners or other shit that gets in the way
-    if "delete_elements" in kwargs:
-        for z in kwargs['delete_elements']:
+    if "delete" in kwargs:
+        for z in kwargs['delete']:
             try:
                 x = WebDriverWait(driver, 3).until(ec.presence_of_element_located(z))
             except TimeoutException:
@@ -59,13 +59,17 @@ def get_html(driver, url, xpath, **kwargs) -> str:
     return driver.page_source
 
 
+def get_element(driver, url, xpath, **kwargs):
+    element = fetch(driver, url, xpath, **kwargs)
+    return element
+
+
 def get_image(driver, url, xpath, failure_message, **kwargs) -> typing.Union[BytesIO, typing.List[BytesIO], None]:
     element = fetch(driver, url, xpath, **kwargs)
     
     if "multi_capture" in kwargs:
         max_iter = 10
-        captures = []
-        captures.append(Image.open(BytesIO(element.screenshot_as_png)))
+        captures = [Image.open(BytesIO(element.screenshot_as_png))]
         while max_iter > 0:
             locator = kwargs['multi_capture'][0]
             try:
@@ -85,9 +89,14 @@ def get_image(driver, url, xpath, failure_message, **kwargs) -> typing.Union[Byt
         return captures
     else:
         assert element is not None, failure_message
-        driver.execute_script("arguments[0].scrollIntoView();", element)
+        try:
+            driver.execute_script("arguments[0].scrollIntoView();", element)
+            im = Image.open(BytesIO(element.screenshot_as_png))
+        except StaleElementReferenceException:
+            element = WebDriverWait(driver, 3).until(ec.visibility_of_element_located((By.XPATH, xpath)))
+            driver.execute_script("arguments[0].scrollIntoView();", element)
+            im = Image.open(BytesIO(element.screenshot_as_png))
         
-        im = Image.open(BytesIO(element.screenshot_as_png))
         output = BytesIO()
         im.save('Rewritetest.png', 'PNG')
         im.save(output, 'PNG')

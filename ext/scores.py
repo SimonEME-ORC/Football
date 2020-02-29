@@ -62,11 +62,11 @@ class Scores(commands.Cog):
         self.msg_dict = {}
         self.bot.loop.create_task(self.update_cache())
         self.bot.scores = self.score_loop.start()
-        reload(football)
         self.driver = None
+        self.last_len = 0
    
     def cog_unload(self):
-        self.bot.scores.cancel()
+        self.score_loop.cancel()
     
     async def update_cache(self):
         # Grab most recent data.
@@ -91,7 +91,11 @@ class Scores(commands.Cog):
     async def score_loop(self):
         """ Score Checker Loop """
         try:
-            self.bot.games = await self.bot.loop.run_in_executor(None, self.fetch_games)
+            games = await self.bot.loop.run_in_executor(None, self.fetch_games)
+            if len(self.bot.games) > len(games) and datetime.datetime.now().hour != 0:
+                print("This iteration only found", len(games), "games")
+                return  # Something went wrong, skip this iter.
+            self.bot.games = games
         except Exception as e:
             print("Exception in score_loop.")
             print(type(e).__name__)
@@ -100,8 +104,8 @@ class Scores(commands.Cog):
             # Iterate: Check vs each server's individual config settings
             await self.build_messages()
             
-            # Send message to server.
             try:
+                # Send message to server.
                 await self.spool_messages()
             except discord.ConnectionClosed:
                 pass
@@ -132,7 +136,7 @@ class Scores(commands.Cog):
                 league = league.split(" - ")[0]
                 continue
 
-            game_id = ''.join(i.xpath('.//@id'))
+            game_id = ''.join(i.xpath('.//@id')).split('_')[-1]
             url = "http://www.flashscore.com/match/" + game_id
             
             # Time
@@ -166,9 +170,13 @@ class Scores(commands.Cog):
             fx.country = country
             fx.league = league
             ht_score = "".join(i.xpath('.//div[@class="event__part"]//text()')).strip()
-            score = "".join(i.xpath('.//div[contains(@class,"event__scores")]//text()')).strip()
-            score = None if not score else score.replace("(", " (")
-            fx.score = score
+            try:
+                score_home, score_away = i.xpath('.//div[contains(@class,"event__scores")]//span/text()')
+            except ValueError:
+                score_home, score_away = None, None
+
+            fx.score_home = score_home
+            fx.score_away = score_away
             fx.ht_score = ht_score
             fx.url = url
 
@@ -176,20 +184,20 @@ class Scores(commands.Cog):
         return games
     
     async def build_messages(self):
+        # Group by country/league
+        game_dict = defaultdict(list)
+        for i in self.bot.games:
+            game_dict[f"{i.country.upper()}: {i.league}"].append(i.live_score_text)
+            
         for (guild_id, channel_id), whitelist in self.cache.items():
             if channel_id not in self.msg_dict:
                 self.msg_dict[channel_id] = {}
-                self.msg_dict[channel_id]["msg_list"] = []
+                self.msg_dict[channel_id]["msgs"] = []
             
-            self.msg_dict[channel_id]["raw_data"] = []
+            self.msg_dict[channel_id]["strings"] = []
             
             t = datetime.datetime.now().strftime("Live Scores for **%a %d %b %Y** (last updated at **%H:%M:%S**)\n")
             output = t
-            
-            # Group by country/league
-            game_dict = defaultdict(list)
-            for i in self.bot.games:
-                game_dict[f"{i.country.upper()}: {i.league}"].append(i.live_score_text)
             
             for cl in whitelist:
                 games = game_dict[cl]
@@ -197,45 +205,48 @@ class Scores(commands.Cog):
                     continue
                     
                 header = f"\n**{cl}**"
-                if len(output + header) < 1999:
-                    output += header + "\n"
-                else:
-                    self.msg_dict[channel_id]["raw_data"] += [output]
-                    output = header + "\n"
+                if len(output + header) > 1999:
+                    self.msg_dict[channel_id]["strings"] += [output]
+                    output = ""
+                
+                output += header + "\n"
                     
                 for i in games:
-                    if len(output + i) < 1999:
-                        output += i + "\n"
-                    else:
-                        self.msg_dict[channel_id]["raw_data"] += [output]
-                        output = i + "\n"
+                    if len(output + i) > 1999:
+                        self.msg_dict[channel_id]["strings"] += [output]
+                        output = ""
+                    output += i + "\n"
             
             if output == t:
                 output += "No games found for your tracked leagues today!" \
                           "\n\nYou can add more leagues with `.tb ls add league_name`, or reset to the default leagues"\
                           "with `.tb ls default`.\nTo find out which leagues currently have games, use `.tb scores`"
-            self.msg_dict[channel_id]["raw_data"] += [output]
+            self.msg_dict[channel_id]["strings"] += [output]
     
     async def spool_messages(self):
         for channel_id in self.msg_dict:
             # Create messages if none exist.
             # Or if a different number of messages is required.
-            if not self.msg_dict[channel_id]["msg_list"] or \
-                    len(self.msg_dict[channel_id]["msg_list"]) != len(self.msg_dict[channel_id]["raw_data"]):
+            if not self.msg_dict[channel_id]["msgs"] or \
+                    len(self.msg_dict[channel_id]["msgs"]) != len(self.msg_dict[channel_id]["strings"]):
+                
+                print(channel_id, "Raw data length:", len(self.msg_dict[channel_id]["strings"]),
+                      "msg_list length:", len(self.msg_dict[channel_id]["msgs"]))
                 channel = self.bot.get_channel(channel_id)
                 try:
                     await channel.purge()
+                    self.msg_dict[channel_id]["msgs"] = []
                 except discord.Forbidden:
                     await channel.send(
                         "Unable to clean previous messages, please make sure I have manage_messages permissions.")
                 except AttributeError:
                     print(f'Live Scores Loop: Invalid channel: {channel_id}')
                     continue
-                for d in self.msg_dict[channel_id]["raw_data"]:
+                for d in self.msg_dict[channel_id]["strings"]:
                     # Append message ID to our list
                     try:
                         m = await channel.send(d)
-                        self.msg_dict[channel_id]["msg_list"].append(m)
+                        self.msg_dict[channel_id]["msgs"].append(m)
                     except discord.Forbidden:
                         continue  # This is your problem, not mine.
                     except discord.NotFound:
@@ -245,10 +256,9 @@ class Scores(commands.Cog):
                         print("-- error sending message to scores channel --")
                         print(channel.id)
                         print(e)
-                    
             else:
                 # Edit message pairs if pre-existing.
-                tuples = list(zip(self.msg_dict[channel_id]["msg_list"], self.msg_dict[channel_id]["raw_data"]))
+                tuples = list(zip(self.msg_dict[channel_id]["msgs"], self.msg_dict[channel_id]["strings"]))
                 for x, y in tuples:
                     try:
                         # Save API calls by only editing when a change occurs.
@@ -257,8 +267,6 @@ class Scores(commands.Cog):
                                 await x.edit(content=y)
                     # Discard invalid messages, these will be re-populated next loop.
                     except (discord.NotFound, discord.Forbidden):
-                        self.msg_dict[channel_id]['msg_list'] = [i if i != x else None for
-                                                                 i in self.msg_dict[channel_id]['msg_list']]
                         pass
 
     # Delete from Db on delete..
@@ -388,6 +396,7 @@ class Scores(commands.Cog):
         
         connection = await self.bot.db.acquire()
         replies = []
+        res = f"{res.title}"
         async with connection.transaction():
             for c in channels:
                 if (ctx.guild.id, c.id) not in self.cache:
@@ -449,6 +458,7 @@ class Scores(commands.Cog):
                     await connection.execute("""
                         DELETE FROM scores_leagues WHERE (league,channel_id) = ($1,$2)
                     """, target, c.id)
+                leagues.pop(target)
                 leagues = ", ".join(leagues)
                 replies.append(f"✅ **{target}** was deleted from the tracked leagues for {c.mention},"
                                f" the new tracked leagues list is: ```yaml\n{leagues}```\n")
