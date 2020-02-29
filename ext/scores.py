@@ -4,6 +4,7 @@ from copy import deepcopy
 
 import discord
 from discord.ext import commands, tasks
+from importlib import reload
 
 # Web Scraping
 from lxml import html
@@ -57,10 +58,11 @@ class Scores(commands.Cog):
     def __init__(self, bot):
         self.cache = defaultdict(list)
         self.bot = bot
-        self.bot.live_games = {}
+        self.bot.games = {}
         self.msg_dict = {}
         self.bot.loop.create_task(self.update_cache())
         self.bot.scores = self.score_loop.start()
+        reload(football)
         self.driver = None
    
     def cog_unload(self):
@@ -184,15 +186,16 @@ class Scores(commands.Cog):
             t = datetime.datetime.now().strftime("Live Scores for **%a %d %b %Y** (last updated at **%H:%M:%S**)\n")
             output = t
             
+            # Group by country/league
+            game_dict = defaultdict(list)
+            for i in self.bot.games:
+                game_dict[f"{i.country.upper()}: {i.league}"].append(i.live_score_text)
+            
             for cl in whitelist:
-                ctr, lg = cl.split(':')
-                ctr = lg.strip()
-                lg = lg.strip()
-                
-                games = [i.live_score_text for i in self.bot.live_games if (i.country, i.league) == (ctr, lg)]
+                games = game_dict[cl]
                 if not games:
                     continue
-
+                    
                 header = f"\n**{cl}**"
                 if len(output + header) < 1999:
                     output += header + "\n"
