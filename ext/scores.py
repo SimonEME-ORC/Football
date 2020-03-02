@@ -4,10 +4,9 @@ from copy import deepcopy
 
 import discord
 from discord.ext import commands, tasks
-from importlib import reload
 
 # Web Scraping
-from lxml import html
+from lxml import html, etree
 
 # Data manipulation
 import datetime
@@ -15,7 +14,6 @@ import datetime
 # Utils
 from ext.utils import football, embed_utils
 from ext.utils.embed_utils import paginate
-from ext.utils.selenium_driver import spawn_driver, get_html
 
 default_leagues = [
     "WORLD: Friendly international",
@@ -62,11 +60,9 @@ class Scores(commands.Cog):
         self.msg_dict = {}
         self.bot.loop.create_task(self.update_cache())
         self.bot.scores = self.score_loop.start()
-        self.driver = None
-        self.last_len = 0
    
     def cog_unload(self):
-        self.score_loop.cancel()
+        self.bot.scores.cancel()
     
     async def update_cache(self):
         # Grab most recent data.
@@ -84,6 +80,8 @@ class Scores(commands.Cog):
         
         # Repopulate.
         for r in channels:
+            if self.bot.get_channel(r['channel_id']) is None:
+                continue
             self.cache[(r["guild_id"], r["channel_id"])].append(r["league"])
     
     # Core Loop
@@ -91,110 +89,109 @@ class Scores(commands.Cog):
     async def score_loop(self):
         """ Score Checker Loop """
         try:
-            games = await self.bot.loop.run_in_executor(None, self.fetch_games)
-            
-            # If we have an item with new data, force a full cache clear. This is expected behaviour at midnight.
-            for x in games:
-                print("New games found.")
-                if x.url not in [i.url for i in self.bot.games]:
-                    self.bot.games = []
-                    break # We can stop iterating.
-            
-            # If we onlt have a partial match returned, for whatever reason, dump a screenshot.
-            if len(self.bot.games) > len(games):
-                print("This iteration only found", len(games), "games")
-                await self.bot.loop.run_in_executor(None, self.driver.set_window_size(1920, 10000))
-                await self.bot.loop.run_in_executor(None, self.driver.save_screenshot("Loop_check.png"))
-                print("A screenshot has been saved.")
-            
-            # And then work with our partial data.
-            self.bot.games = [i for i in self.bot.games if i.url not in [x.url for x in games]] + [x for x in games]
-            
+            games = await self.fetch_games()
         except Exception as e:
             print("Exception in score_loop.")
             print(type(e).__name__)
             print(e.args)
-        else:
-            # Iterate: Check vs each server's individual config settings
-            await self.build_messages()
+            return
             
-            try:
-                # Send message to server.
-                await self.spool_messages()
-            except discord.ConnectionClosed:
-                pass
-    
+        # If we have an item with new data, force a full cache clear. This is expected behaviour at midnight.
+        if self.bot.games:
+            for x in games:
+                if x.url not in [i.url for i in self.bot.games]:
+                    self.bot.games = []
+                    break  # We can stop iterating.
+        
+        # If we only have a partial match returned, for whatever reason
+        self.bot.games = [i for i in self.bot.games if i.url not in [x.url for x in games]] + [x for x in games]
+
+        # Iterate: Check vs each server's individual config settings
+        await self.build_messages()
+        
+        try:
+            # Send message to server.
+            await self.spool_messages()
+        except discord.ConnectionClosed:
+            pass
+
     @score_loop.before_loop
     async def before_score_loop(self):
         await self.bot.wait_until_ready()
         await self.update_cache()
-        self.driver = await self.bot.loop.run_in_executor(None, spawn_driver)
+
+    async def fetch_games(self):
+        async with self.bot.session.get("http://www.flashscore.mobi/") as resp:
+            src = await resp.text()
+            xml = bytes(bytearray(src, encoding='utf-8'))
+        tree = html.fromstring(xml)
+        elements = tree.xpath('.//div[@id="score-data"]/* | .//div[@id="score-data"]/text()')
     
-    @score_loop.after_loop
-    async def after_score_loop(self):
-        self.driver.quit()
-    
-    def fetch_games(self):
-        xp = ".//div[@class='sportName soccer']"
-        src = get_html(self.driver, "http://www.flashscore.com", xp)
-        tree = html.fromstring(src)
-        fixture_list = tree.xpath(f"{xp}/div")
-        
-        games = []
         country = None
         league = None
-        for i in fixture_list:
-            # Header rows do not have IDs
-            if not i.xpath('.//@id'):
-                country, league = i.xpath('.//span//text()')
-                league = league.split(" - ")[0]
+        home_attrs = None
+        away_attrs = None
+        home_goals = None
+        away_goals = None
+        url = None
+        time = None
+        state = None
+        capture_group = []
+        games = []
+        for i in elements:
+            if isinstance(i, etree._ElementUnicodeResult):
+                capture_group.append(i)
                 continue
-
-            game_id = ''.join(i.xpath('.//@id')).split('_')[-1]
-            url = "http://www.flashscore.com/match/" + game_id
+        
+            if i.tag == "br":
+                # End of match row.
+                try:
+                    home, away = "".join(capture_group).split(" - ")
+                except ValueError:
+                    print("Value error", capture_group)
+                    continue
+                capture_group = []
             
-            # Time
-            time = i.xpath('.//div[contains(@class,"event__stage--block")]//text()')
-            if not time:
-                time = i.xpath('.//div[contains(@class,"event__time")]//text()')
+                games.append(football.Fixture(time=time, home=home, away=away, url=url, country=country,
+                                              league=league, score_home=home_goals, score_away=away_goals,
+                                              home_attrs=home_attrs, away_attrs=away_attrs, state=state))
             
-            time = "".join(time).replace('FRO', "").strip("\xa0").strip()
-            
-            if "Finished" in time:
-                time = "FT"
-            elif "Extra Time" in time:
-                time = time.replace('Extra Time', "ET ") + "'"
-            elif "Break Time" in time:
-                time = time.replace('Break Time', "FT, ET Soon") + "'"
-            elif "After ET" in time:
-                time = "AET"
-            elif "Half Time" in time:
-                time = "HT"
-            elif "Postponed" in time:
-                time = "PP"
-            elif "After Pen" in time:
-                time = "After Pens"
-            elif ":" not in time:
-                time += "'"
-            
-            home = "".join(i.xpath('.//div[contains(@class,"home")]/text()')).strip().replace('GOAL', "")
-            away = "".join(i.xpath('.//div[contains(@class,"away")]/text()')).strip().replace('GOAL', "")
-            
-            fx = football.Fixture(time=time, home=home, away=away)
-            fx.country = country
-            fx.league = league
-            ht_score = "".join(i.xpath('.//div[@class="event__part"]//text()')).strip()
-            try:
-                score_home, score_away = i.xpath('.//div[contains(@class,"event__scores")]//span/text()')
-            except ValueError:
-                score_home, score_away = None, None
-
-            fx.score_home = score_home
-            fx.score_away = score_away
-            fx.ht_score = ht_score
-            fx.url = url
-
-            games.append(fx)
+                # Clear attributes
+                home_attrs = None
+                away_attrs = None
+        
+            elif i.tag == "h4":
+                country, league = i.text.split(': ')
+                league = league.split(' - ')[0]
+            elif i.tag == "span":
+                # Sub-span containing post-poned data.
+                time = i.find('span').text if i.find('span') is not None else i.text
+                try:
+                    state = i.attrib['state']
+                except KeyError:
+                    state = "upcoming"
+        
+            elif i.tag == "a":
+                url = i.attrib['href']
+                url = "http://www.flashscore.com" + url
+                home_goals, away_goals = i.text.split(':')
+            elif i.tag == "img":
+                if len(capture_group) == 1:
+                    if i.attrib['class'] == "rcard-1":
+                        home_attrs = "🟥"
+                    elif i.attrib['class'] == "rcard-2":
+                        home_attrs = "🟥🟥"
+                    else:
+                        print("Unhandled class", i.attrib['class'])
+                elif len(capture_group) == 1:
+                    if i.attrib['class'] == "rcard-1":
+                        away_attrs = "🟥"
+                    elif i.attrib['class'] == "rcard-2":
+                        away_attrs = "🟥🟥"
+                    else:
+                        print("Unhandled class", i.attrib['class'])
+            else:
+                print(f"Unhandled tag: {i.tag}")
         return games
     
     async def build_messages(self):
@@ -239,22 +236,16 @@ class Scores(commands.Cog):
     
     async def spool_messages(self):
         for channel_id in self.msg_dict:
-            # Create messages if none exist.
-            # Or if a different number of messages is required.
-            if not self.msg_dict[channel_id]["msgs"] or \
-                    len(self.msg_dict[channel_id]["msgs"]) != len(self.msg_dict[channel_id]["strings"]):
-                
-                print(channel_id, "Raw data length:", len(self.msg_dict[channel_id]["strings"]),
-                      "msg_list length:", len(self.msg_dict[channel_id]["msgs"]))
+            # Create messages  if a different number of messages is required (or none exist).
+            if len(self.msg_dict[channel_id]["msgs"]) != len(self.msg_dict[channel_id]["strings"]):
                 channel = self.bot.get_channel(channel_id)
                 try:
-                    await channel.purge()
                     self.msg_dict[channel_id]["msgs"] = []
+                    await channel.purge()
                 except discord.Forbidden:
                     await channel.send(
                         "Unable to clean previous messages, please make sure I have manage_messages permissions.")
                 except AttributeError:
-                    print(f'Live Scores Loop: Invalid channel: {channel_id}')
                     continue
                 for d in self.msg_dict[channel_id]["strings"]:
                     # Append message ID to our list
