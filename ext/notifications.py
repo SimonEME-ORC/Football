@@ -1,4 +1,5 @@
 import asyncio
+from collections import defaultdict
 
 from discord.ext import commands
 import discord
@@ -12,7 +13,7 @@ class Notifications(commands.Cog):
     
     def __init__(self, bot):
         self.bot = bot
-        self.notif_cache = {}
+        self.notif_cache = defaultdict(dict)
         self.bot.loop.create_task(self.update_cache())
     
     # TODO: On Channel Delete - Cascades!
@@ -22,7 +23,7 @@ class Notifications(commands.Cog):
     
     async def update_cache(self):
         # TODO: Default dict.
-        self.notif_cache = {}
+        self.notif_cache.clear()
         connection = await self.bot.db.acquire()
         async with connection.transaction():
             records = await connection.fetch("""SELECT * FROM guild_settings""")
@@ -30,7 +31,6 @@ class Notifications(commands.Cog):
         
         for r in records:
             guild_id = r["guild_id"]
-            self.notif_cache.update({guild_id: {}})
             for k, v in r.items():
                 if k == "guild_id":
                     continue
