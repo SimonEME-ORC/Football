@@ -1,3 +1,4 @@
+from PIL import Image
 from selenium.webdriver.common.by import By
 from ext.utils import embed_utils
 from io import BytesIO
@@ -28,6 +29,7 @@ class Fixture:
         xp = ".//div[@class='statBox']"
         element = selenium_driver.get_element(driver, self.url + "#match-statistics;0", xp, delete=delete)
         src = element.inner_html
+        # TODO: Finish.
         return
     
     def stats_image(self, driver):
@@ -161,22 +163,37 @@ class Player:
 
 class FlashScoreSearchResult:
     def __init__(self, **kwargs):
+        self.logo_url = None
         self.__dict__.update(**kwargs)
-
+        
     @property
     async def base_embed(self):
         e = discord.Embed()
-        e.title = self.title
-        if hasattr(self, 'logo_url'):
-            logo = "http://www.flashscore.com/res/image/data" + self.logo_url
+        
+        if isinstance(self, Team):
+            e.title = self.title.split('(')[0]
+        else:
+            ctry, league = self.title.split(': ')
+            e.title = f"{league} ({ctry.title()})"
+            
+        if self.logo_url is not None:
+            logo = "http://www.flashscore.com/res/image/data/" + self.logo_url
             e.colour = await embed_utils.get_colour(logo)
             e.set_thumbnail(url=logo)
+        e.url = self.link
         e.timestamp = datetime.datetime.now()
         return e
     
     def fetch_fixtures(self, driver, subpage) -> typing.List[Fixture]:
         link = self.link + subpage
         src = selenium_driver.get_html(driver, link, './/div[@class="sportName soccer"]')
+        
+        # Ugly, but, whatever.
+        logo = driver.find_element_by_xpath('.//div[contains(@class,"logo")]')
+        if logo != "none":
+            logo = logo.value_of_css_property('background-image')
+            self.logo_url = logo.strip("url(").strip(")").strip('"')
+        
         tree = html.fromstring(src)
         fixture_rows = tree.xpath('.//div[contains(@class,"sportName soccer")]/div')
         
@@ -245,13 +262,14 @@ class Competition(FlashScoreSearchResult):
     def bracket(self, driver) -> BytesIO:
         url = self.link + "/draw/"
         xp = './/div[@id="box-table-type--1"]'
-        multi = (By.LINK_TEXT, 'scroll right »')
+        multi = (By.PARTIAL_LINK_TEXT, 'scroll right »')
         clicks = [(By.XPATH, ".//span[@class='button cookie-law-accept']")]
         delete = [(By.XPATH, './/div[@class="seoAdWrapper"]'), (By.XPATH, './/div[@class="banner--sticky"]')]
         script = "document.getElementsByClassName('playoff-scroll-button')[0].style.display = 'none';" \
                  "document.getElementsByClassName('playoff-scroll-button')[1].style.display = 'none';"
         captures, e, src = selenium_driver.get_image(driver, url, xpath=xp, clicks=clicks, multi_capture=multi,
-                                                     multi_capture_script=script, delete_elements=delete)
+                                                     multi_capture_script=script, delete_elements=delete,
+                                                     failure_message="Unable to find a bracket for that competition")
     
         e.title = "Bracket"
         e.description = "Please click on picture -> open original to enlarge"
@@ -266,12 +284,17 @@ class Competition(FlashScoreSearchResult):
             canvas.paste(i, (x, 0))
             x += int(i.width / 3)
         output = BytesIO()
-        return image
+        return output
     
     def scorers(self, driver) -> typing.List[Player]:
         xp = ".//div[@class='tabs__group']"
         clicks = [(By.ID, "tabitem-top_scorers")]
-        src = selenium_driver.get_html(driver, self.url + "/standings", xp, clicks=clicks)
+        src = selenium_driver.get_html(driver, self.link + "/standings", xp, clicks=clicks)
+        
+        logo = driver.find_element_by_xpath('.//div[contains(@class,"logo")]')
+        if logo != "none":
+            logo = logo.value_of_css_property('background-image')
+            self.logo_url = logo.strip("url(").strip(")").strip('"')
         
         tree = html.fromstring(src)
         rows = tree.xpath('.//div[@id="table-type-10"]//div[contains(@class,"table__row")]')
@@ -296,7 +319,7 @@ class Competition(FlashScoreSearchResult):
             country = "".join(i.xpath('.//span[contains(@class,"flag")]/@title')).strip()
             flag = transfer_tools.get_flag(country)
             players.append(Player(rank=rank, flag=flag, name=name, link=p_url, team=tm, team_link=tm_url,
-                                  goals=goals, assists=assists))
+                                  goals=int(goals), assists=assists))
         return players
         
 
@@ -304,14 +327,14 @@ class Team(FlashScoreSearchResult):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
     
-    def players(self, driver) -> typing.List[Player]:
+    def players(self, driver, tab=0) -> typing.List[Player]:
         delete = [(By.XPATH, './/div[@id="lsid-window-mask"]')]
-        clicks = [(By.ID, 'overall-all')]
         xp = './/div[contains(@class,"playerTable")]'
-    
-        src = selenium_driver.get_html(driver, self.url + "/squad", xp, delete=delete, clicks=clicks)
+        
+        src = selenium_driver.get_html(driver, self.link + "/squad", xp, delete=delete)
         tree = html.fromstring(src)
-        rows = tree.xpath('.//div[contains(@id,"overall-all-table")]//div[contains(@class,"profileTable__row")]')[1:]
+        tab += 1  # tab is Indexed at 0 but xpath indexes from [1]
+        rows = tree.xpath(f'.//div[contains(@class, "playerTable")][{tab}]//div[contains(@class,"profileTable__row")]')
     
         players = []
         position = ""
@@ -353,7 +376,7 @@ class Team(FlashScoreSearchResult):
                 number = 00
         
             pl = Player(name=name, number=number, country=country, link=link, position=position,
-                        age=age, apps=apps, goals=g, yellows=y, reds=r, injury=injury, flag=flag)
+                        age=age, apps=apps, goals=int(g), yellows=y, reds=r, injury=injury, flag=flag)
             players.append(pl)
         return players
 
@@ -364,8 +387,13 @@ class Team(FlashScoreSearchResult):
         # Example Team URL: https://www.flashscore.com/team/thailand-stars/jLsL0hAF/
         return f"https://www.flashscore.com/team/{self.url}/{self.id}"
     
-    def competitions(self):
-        raise NotImplementedError('Getting all competitions of a team has not yet been implemented.')
+    def player_competitions(self, driver):
+        xp = './/div[contains(@class, "subTabs")]'
+        src = selenium_driver.get_html(driver, self.link + '/squad', xp)
+        tree = html.fromstring(src)
+        options = tree.xpath(xp + "/div/text()")
+        options = [i.strip() for i in options]
+        return options
     
     def most_recent_game(self, driver) -> Fixture:
         raise NotImplementedError("Not coded yet.")  # TODO
