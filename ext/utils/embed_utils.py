@@ -62,8 +62,8 @@ async def page_selector(ctx, item_list, base_embed=None) -> int:
         page_text = "\n".join([f"`[{num}]` {value}" for num, value in page])
         base_embed.description = "Please type matching ID#:\n\n" + page_text
         embeds.append(deepcopy(base_embed))
-    x = await paginate(ctx, embeds, items=item_list)
-    return x
+    index = await paginate(ctx, embeds, items=item_list)
+    return index
 
 
 async def paginate(ctx, embeds, preserve_footer=False, items=None, wait_length: int = 60) -> int or None:
