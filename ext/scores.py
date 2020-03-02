@@ -12,6 +12,7 @@ from lxml import html, etree
 import datetime
 
 # Utils
+from importlib import reload
 from ext.utils import football, embed_utils
 from ext.utils.embed_utils import paginate
 
@@ -54,15 +55,23 @@ class Scores(commands.Cog):
     """ Live Scores channel module """
     
     def __init__(self, bot):
-        self.cache = defaultdict(list)
         self.bot = bot
+        
+        # Reload utils
+        for i in [football, embed_utils]:
+            reload(i)
+        
+        # Data
         self.bot.games = {}
         self.msg_dict = {}
+        self.cache = defaultdict(list)
         self.bot.loop.create_task(self.update_cache())
+        
+        # Core loop.
         self.bot.scores = self.score_loop.start()
    
     def cog_unload(self):
-        self.bot.scores.cancel()
+        self.score_loop.cancel()
     
     async def update_cache(self):
         # Grab most recent data.
@@ -164,17 +173,14 @@ class Scores(commands.Cog):
                 country, league = i.text.split(': ')
                 league = league.split(' - ')[0]
             elif i.tag == "span":
-                # Sub-span containing post-poned data.
+                # Sub-span containing postponed data.
                 time = i.find('span').text if i.find('span') is not None else i.text
-                try:
-                    state = i.attrib['state']
-                except KeyError:
-                    state = "upcoming"
-        
+
             elif i.tag == "a":
                 url = i.attrib['href']
                 url = "http://www.flashscore.com" + url
                 home_goals, away_goals = i.text.split(':')
+                state = i.attrib['class']
             elif i.tag == "img":
                 if len(capture_group) == 1:
                     if i.attrib['class'] == "rcard-1":
