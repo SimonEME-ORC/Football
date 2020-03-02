@@ -149,7 +149,8 @@ async def paginate(ctx, embeds, preserve_footer=False, items=None, wait_length: 
                 try:
                     await m.clear_reactions()
                 except discord.Forbidden:
-                    pass
+                    for i in m.reactions:
+                        await m.remove_reaction(m, ctx.me)
             return None
         
         # Kill other.
@@ -185,7 +186,7 @@ async def paginate(ctx, embeds, preserve_footer=False, items=None, wait_length: 
                     page += 1
                     
             elif result[0].emoji == "⏭":  # last
-                page = embeds[-1]
+                page = len(embeds) - 1
                 
             elif result[0].emoji == "🚫":  # Delete:
                 
