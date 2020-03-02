@@ -36,7 +36,7 @@ async def get_colour(url=None):
                 return discord.Colour.blurple()
 
 
-def rows_to_embeds(base_embed, rows, per_row = 10) -> typing.List[discord.Embed]:
+def rows_to_embeds(base_embed, rows, per_row=10) -> typing.List[discord.Embed]:
     pages = [rows[i:i + per_row] for i in range(0, len(rows), per_row)]
     embeds = []
     for page_items in pages:

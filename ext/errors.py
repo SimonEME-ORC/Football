@@ -31,7 +31,7 @@ class Errors(commands.Cog):
         e.add_field(name="Command Usage Examplee", value=useline)
 
         location = "a DM" if ctx.guild is None else f"{ctx.guild.name} ({ctx.guild.id})"
-        
+        context = f"({ctx.author}({ctx.author.id}) in {location}"
         if isinstance(error, (commands.NoPrivateMessage, commands.BotMissingPermissions)):
             if ctx.guild is None:
                 e.title = 'NoPrivateMessage'  # Ugly override.
@@ -66,7 +66,8 @@ class Errors(commands.Cog):
         
         elif isinstance(error, commands.CommandInvokeError):
             cie = error.original
-            if isinstance(cie, AssertionError):
+            if isinstance(cie, (NotImplementedError, AssertionError)):
+                e.title = "Sorry."
                 e.description = "".join(cie.args)
                 return await ctx.send(embed=e)
                 
@@ -81,7 +82,7 @@ class Errors(commands.Cog):
             e.add_field(name="Oops!", value="Painezor probably fucked this up. He has been notified.")
         else:
             print(f"Unhandled Error Type: {error.__class__.__name__}\n"
-                  f"({ctx.author} ({ctx.author.id}) in {location} caused the following error\n"
+                  f"{context} caused the following error\n"
                   f"{error}\n"
                   f"Context: {ctx.message.content}\n")
         try:
