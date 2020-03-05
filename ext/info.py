@@ -136,7 +136,10 @@ class Info(commands.Cog):
         e.set_author(name=str(member), icon_url=member.avatar_url or member.default_avatar_url)
         
         if member.bot:
-            e.description = "**🤖 This user is a bot**"
+            e.description += "\n**🤖 This user is a bot**"
+            
+        if member.is_on_mobile():
+            e.description += "\n📱 Using mobile app."
         
         if member.avatar:
             e.set_thumbnail(url=member.avatar_url)
