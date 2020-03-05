@@ -155,26 +155,26 @@ def draw_tard(image, quote):
     def get_first_size(quote_text):
         font_size = 72
         ttf = 'Whitney-Medium.ttf'
-        font = ImageFont.truetype(ttf, font_size)
+        ftsz = ImageFont.truetype(ttf, font_size)
         width = 300
         quote_text = textwrap.fill(quote_text, width=width)
         while font_size > 0:
             # Make lines thinner if too wide.
             while width > 1:
-                if font.getsize(quote_text)[0] < 237 and f.getsize(quote)[1] < 89:
-                    return width, font
+                if ftsz.getsize(quote_text)[0] < 237 and ftsz.getsize(quote)[1] < 89:
+                    return width, ftsz
                 width -= 1
                 quote_text = textwrap.fill(quote, width=width)
-                font = ImageFont.truetype(ttf, font_size)
+                ftsz = ImageFont.truetype(ttf, font_size)
             font_size -= 1
-            font = ImageFont.truetype(ttf, font_size)
+            ftsz = ImageFont.truetype(ttf, font_size)
             width = 40
 
-    wid, f = get_first_size(quote)
+    wid, font = get_first_size(quote)
     quote = textwrap.fill(quote, width=wid)
     # Write lines.
-    moveup = f.getsize(quote)[1]
-    d.text((245, (80 - moveup)), quote, font=f, fill="#000000")
+    moveup = font.getsize(quote)[1]
+    d.text((245, (80 - moveup)), quote, font=font, fill="#000000")
     
     # Prepare for sending
     output = BytesIO()
@@ -206,7 +206,7 @@ async def get_faces(ctx, target):
         for i in ctx.message.attachments:
             if i.height is None:  # Not an image.
                 continue
-            target =  i.url
+            target = i.url
             break
         else:
             await ctx.send('🚫 To use this command either upload an image, tag a user, or specify a url.')
@@ -252,21 +252,6 @@ class ImageManip(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
     
-    async def embedify(self, ctx, image: BytesIO, colour: int(16)=None, source=None, caption=None, icon=None):
-        e = discord.Embed()
-        e.set_author(name=ctx.command.name.title(), icon_url=icon)
-        if colour:
-            e.colour = colour
-        else:
-            e.colour = discord.Colour.blurple()
-        if caption is not None:
-            e.description = caption
-        if source is not None:
-            e.add_field(name="Source Image", value=source)
-        df = discord.File(image, filename=f"{ctx.command.name}.png")
-        e.set_image(url=f"attachment://{ctx.command.name}.png")
-        await ctx.send(file=df, embed=e)
-    
     @commands.command()
     @commands.cooldown(2, 90, BucketType.user)
     async def tinder(self, ctx):
@@ -293,7 +278,12 @@ class ImageManip(commands.Cog):
             else:
                 caption = f"{ctx.author.mention} matched with {match.mention}"
             icon = "https://cdn0.iconfinder.com/data/icons/social-flat-rounded-rects/512/tinder-512.png"
-            await self.embedify(ctx, output, colour=0xFD297B, caption=caption, icon=icon)
+            base_embed = discord.Embed()
+            base_embed.description = caption
+            base_embed.colour = 0xFD297B
+            base_embed.set_author(name=ctx.invoked_with, icon_url=icon)
+            base_embed.description = caption
+            await embed_utils.embed_image(ctx, base_embed, output, filename="Tinder.png")
 
     @commands.command(aliases=["bob", "ross"], usage= 'bobross <@user, link to image, or upload a file>')
     async def bobross(self, ctx, *, target: typing.Union[discord.Member, str] = None):
@@ -307,8 +297,12 @@ class ImageManip(commands.Cog):
             image = await self.bot.loop.run_in_executor(None, draw_bob, image, response)
             icon = "https://cdn4.vectorstock.com/i/thumb-large/79/33/painting-icon-image-vector-14647933.jpg"
             
-            # titanium h-white
-            await self.embedify(ctx, image, colour=0xb4b2a7, source=target, icon=icon, caption=ctx.author.mention)
+            base_embed = discord.Embed()
+            base_embed.colour = 0xb4b2a7  # titanium h-white
+            base_embed.set_author(name=ctx.invoked_with, icon_url=icon)
+            base_embed.description = ctx.author.mention
+            base_embed.add_field(name="Source", value=target)
+            await embed_utils.embed_image(ctx, base_embed, image, filename="bobross.png")
             
             # Clean up
             try:
@@ -318,6 +312,7 @@ class ImageManip(commands.Cog):
 
     @commands.is_nsfw()
     @commands.command(usage='knob <@user, link to image, or upload a file>')
+    # TODO: Open mouth.
     async def knob(self, ctx, *, target: typing.Union[discord.Member, str] = None):
         """ Draw knobs in mouth on an image. Mention a user to use their avatar. Only works for human faces."""
         async with ctx.typing():
@@ -329,7 +324,13 @@ class ImageManip(commands.Cog):
             image = await self.bot.loop.run_in_executor(None, draw_knob, image, response)
             icon = "https://upload.wikimedia.org/wikipedia/commons/thumb/8/86/" \
                    "18_icon_TV_%28Hungary%29.svg/48px-18_icon_TV_%28Hungary%29.svg.png"
-            await self.embedify(ctx, image, colour=0xff66cc, source=target, icon=icon, caption=ctx.author.mention)
+            
+            base_embed = discord.Embed()
+            base_embed.colour = 0xff66cc
+            base_embed.set_author(name=ctx.invoked_with, icon_url=icon)
+            base_embed.description = ctx.author.mention
+            base_embed.add_field(name="Source", value=target)
+            await embed_utils.embed_image(ctx, base_embed, image, filename="Knob.png")
            
             # Clean up
             try:
@@ -345,8 +346,15 @@ class ImageManip(commands.Cog):
             if response is None:
                 return await ctx.send("No faces were detected in your image.")
             
+            image = await self.bot.loop.run_in_executor(None, draw_eyes, image, response)
             icon = "https://emojipedia-us.s3.dualstack.us-west-1.amazonaws.com/thumbs/120/microsoft/209/eyes_1f440.png"
-            await self.embedify(ctx, image, colour=0xFFFFFF, source=target, icon=icon, caption=ctx.author.mention)
+            
+            base_embed = discord.Embed()
+            base_embed.colour = 0xFFFFFF
+            base_embed.set_author(name=ctx.invoked_with, icon_url=icon)
+            base_embed.description = ctx.author.mention
+            base_embed.add_field(name="Source", value=target)
+            await embed_utils.embed_image(ctx, base_embed, image, filename="eyes.png")
             
             # Clean up
             try:
@@ -366,6 +374,8 @@ class ImageManip(commands.Cog):
                     return await ctx.send(f"Error retrieving avatar for target {target} {resp.status}")
                 image = await resp.content.read()
             df = await self.bot.loop.run_in_executor(None, draw_tard, image, quote)
+            # TODO: Embedify
+            
             await ctx.send(file=df)
     
     @tard.error
