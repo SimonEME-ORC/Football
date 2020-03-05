@@ -181,6 +181,13 @@ class Scores(commands.Cog):
                 url = "http://www.flashscore.com" + url
                 home_goals, away_goals = i.text.split(':')
                 state = i.attrib['class']
+                if away_goals.ends_with('aet'):
+                    away_goals = away_goals.strip('aet')
+                    time = "AET"
+                elif away_goals.ends_with('pen'):
+                    away_goals = away_goals.strip('pen')
+                    time = "After Pens"
+                    
             elif i.tag == "img":
                 if len(capture_group) == 1:
                     if i.attrib['class'] == "rcard-1":
@@ -204,7 +211,7 @@ class Scores(commands.Cog):
         # Group by country/league
         game_dict = defaultdict(list)
         for i in self.bot.games:
-            game_dict[f"{i.country.upper()}: {i.league}"].append(i.live_score_text)
+            game_dict[i.full_league].append(i.live_score_text)
             
         for (guild_id, channel_id), whitelist in self.cache.items():
             if channel_id not in self.msg_dict:
@@ -435,7 +442,6 @@ class Scores(commands.Cog):
                                f" the new tracked leagues list is: ```yaml\n{leagues}```")
         await self.bot.db.release(connection)
         await self.update_cache()
-        
         await ctx.send("\n".join(replies))
     
     @ls.group(name="remove", aliases=["del", "delete"],
