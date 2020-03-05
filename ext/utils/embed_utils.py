@@ -7,21 +7,24 @@ import discord
 import typing
 from PIL import UnidentifiedImageError
 from colorthief import ColorThief
-
+import datetime
 # Constant, used for footers.
-from discord import Embed
+
 
 PAGINATION_FOOTER_ICON = "http://pix.iemoji.com/twit33/0056.png"
 
 
-async def embed_image(ctx, base_embed, image, filename="img.png"):
+async def embed_image(ctx, base_embed, image, filename=None):
+    if filename is None:
+        filename = f"{ctx.message.content}{datetime.datetime.now().ctime()}.png"
+    filename = filename.replace('_', '').replace(' ', '').replace(':', '')
     file = discord.File(fp=image, filename=filename)
     base_embed.set_image(url=f"attachment://{filename}")
     await ctx.send(file=file, embed=base_embed)
 
-
+    
 async def get_colour(url=None):
-    if url is None or url == Embed.Empty:
+    if url is None or url == discord.Embed.Empty:
         return discord.Colour.blurple()
     async with aiohttp.ClientSession() as cs:
         async with cs.get(url) as resp:
@@ -68,6 +71,7 @@ async def page_selector(ctx, item_list, base_embed=None) -> int:
 
 async def paginate(ctx, embeds, preserve_footer=False, items=None, wait_length: int = 60) -> int or None:
     assert len(embeds) > 0, "No results found."
+    page = 0
     if len(embeds) > 1:
         for x, y in enumerate(embeds, 1):
             page_line = f"{ctx.author}: Page {x} of {len(embeds)}"
@@ -75,10 +79,6 @@ async def paginate(ctx, embeds, preserve_footer=False, items=None, wait_length: 
                 y.add_field(name="Page", value=page_line)
             else:
                 y.set_footer(icon_url=PAGINATION_FOOTER_ICON, text=page_line)
-    
-    # Paginator
-    page = 0
-    try:
         if ctx.me.permissions_in(ctx.channel).add_reactions:
             if not ctx.me.permissions_in(ctx.channel).manage_messages:
                 if ctx.guild is None:
@@ -95,9 +95,8 @@ async def paginate(ctx, embeds, preserve_footer=False, items=None, wait_length: 
                 await ctx.send(warn, embed=embeds[page])
                 if not items:
                     return None
-    except IndexError:
-        await ctx.send("No results found.")
-        return None
+    else:
+        m = await ctx.send(embed=embeds[page])
     
     # Add reaction, we only need "First" and "Last" if there are more than 2 pages.
     reacts = []
@@ -150,7 +149,8 @@ async def paginate(ctx, embeds, preserve_footer=False, items=None, wait_length: 
                     await m.clear_reactions()
                 except discord.Forbidden:
                     for i in m.reactions:
-                        await m.remove_reaction(m, ctx.me)
+                        if i.author == ctx.me:
+                            await m.remove_reaction(i, ctx.me)
             return None
         
         # Kill other.
