@@ -87,10 +87,13 @@ class Errors(commands.Cog):
                   f"Context: {ctx.message.content}\n")
         try:
             await ctx.send(embed=e)
+        except discord.Forbidden:
+            await ctx.send('An error occurred, I need embed_links permissions to send embeds.')
         except discord.HTTPException:
             print(e.description)
             e.description = "An error occurred, error too long to output in embed."
             await ctx.send(embed=e)
+
             
 def setup(bot):
     bot.add_cog(Errors(bot))
