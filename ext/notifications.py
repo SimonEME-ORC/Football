@@ -22,7 +22,6 @@ class Notifications(commands.Cog):
     # TODO: Custom Reactions.
     
     async def update_cache(self):
-        # TODO: Default dict.
         self.notif_cache.clear()
         connection = await self.bot.db.acquire()
         async with connection.transaction():
@@ -34,7 +33,6 @@ class Notifications(commands.Cog):
             for k, v in r.items():
                 if k == "guild_id":
                     continue
-
                 self.notif_cache[guild_id].update({k: v})
     
     # Master info command.
@@ -174,8 +172,8 @@ class Notifications(commands.Cog):
 
     # Listeners
     @commands.Cog.listener()
-    async def on_guild_create(self, guild):
-        await asyncio.sleep(10)  # Give time to fetch.
+    async def on_guild_join(self, guild):
+        await asyncio.sleep(10)  # Time for other cogs to do their shit.
         await self.update_cache()
         
     @commands.Cog.listener()
