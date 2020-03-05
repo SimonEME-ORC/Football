@@ -64,7 +64,7 @@ def get_element(driver, url, xpath, **kwargs):
     return element
 
 
-def get_image(driver, url, xpath, failure_message, **kwargs) -> typing.Union[BytesIO, typing.List[BytesIO], None]:
+def get_image(driver, url, xpath, failure_message, **kwargs) -> typing.Union[BytesIO, typing.List[Image.Image], None]:
     element = fetch(driver, url, xpath, **kwargs)
     
     if "multi_capture" in kwargs:
@@ -76,15 +76,15 @@ def get_image(driver, url, xpath, failure_message, **kwargs) -> typing.Union[Byt
                 z = WebDriverWait(driver, 3).until(ec.visibility_of_element_located(locator))
                 z.click()
             except TimeoutException:
+                print("Timed out.")
                 break
             except ElementNotInteractableException as err:
                 print(err)
                 print(err.__traceback__)
-            else:
-                if "multi_capture_script" in kwargs:
-                    driver.execute_script(kwargs['multi_capture_script'][1])
-                    trg = driver.find_element_by_xpath(xpath)
-                    captures.append(Image.open(BytesIO(trg.screenshot_as_png)))
+
+            driver.execute_script(kwargs['multi_capture'][1])
+            trg = driver.find_element_by_xpath(xpath)
+            captures.append(Image.open(BytesIO(trg.screenshot_as_png)))
             max_iter -= 1
         return captures
     else:
