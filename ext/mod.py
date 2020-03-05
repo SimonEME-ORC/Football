@@ -40,6 +40,13 @@ class Mod(commands.Cog):
     
     # Listeners
     @commands.Cog.listener()
+    async def on_message(self, message):
+        ctx = await self.bot.get_context(message)
+        if ctx.message.content == ctx.me.mention:
+            await ctx.send(f"Forgot your prefixes? They're ```css"
+                           f"\n{', '.join(self.bot.prefix_cache[message.guild.id])}```")
+    
+    @commands.Cog.listener()
     async def on_guild_join(self, guild):
         connection = await self.bot.db.acquire()
         await connection.execute("""
