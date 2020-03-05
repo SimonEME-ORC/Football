@@ -93,12 +93,11 @@ class AutoMod(commands.Cog):
                 pos = message.guild.me.top_role.position - 1
                 await muted_role.edit(position=pos)
                 ow = discord.PermissionOverwrite(add_reactions=False,send_messages=False)
-                for i in ctx.guild.text_channels:
+                for i in message.guild.text_channels:
                     await i.set_permissions(muted_role, overwrite=ow)
 
                 await message.author.add_roles(*[muted_role])
                 await message.channel.send(f"{message.author.mention} was muted for mention spam.")
-                await mutechan.send(f"{message.author.mention} was muted for mention spam.")
 
 
 def setup(bot):
