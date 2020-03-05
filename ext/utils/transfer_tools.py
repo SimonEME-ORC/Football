@@ -315,7 +315,10 @@ async def search(self, ctx, qry, category, special=False, whitelist_fetch=False)
                 page = total_pages
             elif reaction.emoji == "🚫":  # eject
                 return await m.delete()
-            await m.remove_reaction(reaction.emoji, ctx.message.author)
+            try:
+                await m.remove_reaction(reaction.emoji, ctx.message.author)
+            except discord.Forbidden:
+                pass
 
         # Fetch the next page of results.
         e, tree, total_pages = await fetch_page(self, ctx, category, qry, page)
