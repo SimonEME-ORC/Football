@@ -87,10 +87,6 @@ class Admin(commands.Cog):
         env = {
             'bot': self.bot,
             'ctx': ctx,
-            'message': ctx.message,
-            'guild': ctx.message.guild,
-            'channel': ctx.message.channel,
-            'author': ctx.message.author
         }
         env.update(globals())
         try:
