@@ -1,8 +1,10 @@
-from ext.utils.embed_utils import paginate
+from ext.utils import embed_utils
 from discord.ext import commands
 import discord
 import asyncio
 import typing
+
+from importlib import reload
 
 
 class QuoteDB(commands.Cog):
@@ -10,6 +12,7 @@ class QuoteDB(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
+        reload(embed_utils)
         
     async def embed_quotes(self, records: list):
         embeds = []
@@ -107,7 +110,7 @@ class QuoteDB(commands.Cog):
         
         embeds = await self.embed_quotes(r)
         await ctx.send(success)
-        await paginate(ctx, embeds, preserve_footer=True)
+        await embed_utils.paginate(ctx, embeds, preserve_footer=True)
 
     @commands.group(invoke_without_command=True, aliases=["quotes"],
                     usage="quote <Optional: quote id or a @user to search quotes from them> ")
