@@ -18,6 +18,7 @@ sl_lock = asyncio.Semaphore()
 
 # TODO: Find somewhere to get goal clips from.
 
+
 class Fixtures(commands.Cog):
     """ Lookups for Past, Present and Future football matches. """
     
@@ -155,16 +156,49 @@ class Fixtures(commands.Cog):
         """ Get table for a league """
         async with ctx.typing():
             await ctx.send("Searching...", delete_after=5)
-            fsr = await self._search(ctx, qry, mode="league")  # TODO: Team table.
+            fsr = await self._search(ctx, qry)
             if fsr is None:
                 return  # rip.
             
-            async with sl_lock:
-                p = await self.bot.loop.run_in_executor(None, fsr.table, self.driver)
+            dtn = datetime.datetime.now().ctime()
             
-            p = discord.File(fp=p, filename=f"Table-{fsr.title}-{datetime.datetime.now().date}.png")
-            await ctx.send(file=p)
-    
+            if isinstance(fsr, football.Competition):
+                async with sl_lock:
+                    image = await self.bot.loop.run_in_executor(None, fsr.table, self.driver)
+
+                embed = await fsr.base_embed
+                embed.title = fsr.title
+                embed.description = f"```yaml\n[{dtn}]```"
+            elif isinstance(fsr, football.Team):
+                async with sl_lock:
+                    choices = await self.bot.loop.run_in_executor(None, fsr.next_fixture, self.driver)
+                for_picking = [i.full_league for i in choices]
+                embed = await fsr.base_embed
+                index = await embed_utils.page_selector(ctx, for_picking, deepcopy(embed))
+                if index is None:
+                    return  # rip
+                embed.title = for_picking[index]
+                embed.description = f"{choices[index].to_embed_row}"
+                image = await self.bot.loop.run_in_executor(None, choices[index].table, self.driver)
+            fn = f"Table-{qry}-{dtn}.png".strip()
+            await embed_utils.embed_image(ctx, embed, image, filename=fn)
+
+    # TODO: Finish Refactor into ext.utils.football Classes
+    # TODO: Re-write
+    @commands.command(aliases=['draw'])
+    async def bracket(self, ctx, *, qry: commands.clean_content = None):
+        """ Get bracket for a tournament """
+        async with ctx.typing():
+            await ctx.send("Searching...", delete_after=5)
+            fsr = await self._search(ctx, qry, mode="league")
+            if fsr is None:
+                return  # rip.
+        
+            async with sl_lock:
+                image = await self.bot.loop.run_in_executor(None, fsr.bracket, self.driver)
+                base_embed = await fsr.base_embed
+            await embed_utils.embed_image(ctx, base_embed, image)
+
     @commands.command(aliases=['fx'], usage="fixtures <team or league to search for>")
     async def fixtures(self, ctx, *, qry: commands.clean_content = None):
         """ Fetch upcoming fixtures for a team or league.
@@ -210,9 +244,9 @@ class Fixtures(commands.Cog):
 
             async with sl_lock:
                 file = await self.bot.loop.run_in_executor(None, game.stats_image, self.driver)
-            e = game.base_embed
-            fn = f"Stats-{game.filename}.png"
-            await embed_utils.embed_image(ctx, e, file, fn)
+            embed = game.base_embed
+            filename = f"Stats-{game.filename}.png"
+            await embed_utils.embed_image(ctx, embed, file, filename)
 
     @commands.command(usage="formation <team to search for>", aliases=["formations", "lineup", "lineups"])
     async def formation(self, ctx, *, qry: commands.clean_content):
@@ -225,9 +259,9 @@ class Fixtures(commands.Cog):
 
             async with sl_lock:
                 file = await self.bot.loop.run_in_executor(None, game.formation, self.driver)
-            e = game.base_embed
-            fn = f"Formation-{game.filename}.png"
-            await embed_utils.embed_image(ctx, e, file, fn)
+            embed = game.base_embed
+            filename = f"Formation-{game.filename}.png"
+            await embed_utils.embed_image(ctx, embed, file, filename)
     
     @commands.command()
     async def summary(self, ctx, *, qry: commands.clean_content):
@@ -240,9 +274,9 @@ class Fixtures(commands.Cog):
 
             async with sl_lock:
                 file = await self.bot.loop.run_in_executor(None, game.summary, self.driver)
-            e = game.base_embed
-            fn = f"Summary-{game.filename}.png"
-            await embed_utils.embed_image(ctx, e, file, fn)
+            embed = game.base_embed
+            filename = f"Summary-{game.filename}.png"
+            await embed_utils.embed_image(ctx, embed, file, filename)
 
     @commands.command(aliases=["suspensions"])
     async def injuries(self, ctx, *, qry: commands.clean_content = None):
@@ -334,7 +368,7 @@ class Fixtures(commands.Cog):
 
         game_dict = defaultdict(list)
         for i in matches:
-            game_dict[f"{i.country.upper()}: {i.league}"].append(i.live_score_text)
+            game_dict[i.full_league].append(i.live_score_text)
 
         for league in game_dict:
             games = game_dict[league]
@@ -365,25 +399,6 @@ class Fixtures(commands.Cog):
             return  # Timeout or abort.
     
         await ctx.send(embed=await stadiums[index].to_embed)
-
-    # TODO: Finish Refactor into ext.utils.football Classes
-
-    # TODO: Re-write
-    @commands.command(aliases=['draw'])
-    async def bracket(self, ctx, *, qry: commands.clean_content = None):
-        """ Get btacket for a tournament """
-        async with ctx.typing():
-            await ctx.send("Searching...", delete_after=5)
-            fsr = await self._search(ctx, qry, mode="league")
-            if fsr is None:
-                return  # rip.
-        
-            async with sl_lock:
-                p = await self.bot.loop.run_in_executor(None, fsr.bracket)
-            
-            p = discord.File(fp=p, filename=f"Bracket-{fsr.title}-{datetime.datetime.now().date}.png")
-            await ctx.send(file=p)
-
 
 def setup(bot):
     bot.add_cog(Fixtures(bot))
