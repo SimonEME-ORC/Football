@@ -1,5 +1,3 @@
-from collections import defaultdict
-
 from selenium.webdriver.support import expected_conditions as ec
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.common.by import By
@@ -13,10 +11,6 @@ import discord
 import math
 import praw
 import re
-
-
-# TODO: Tasks extension.
-# TODO: Use Selenium EC
 
 
 def build_sidebar(sb, table, fixtures, res, last_result, match_threads):
@@ -69,8 +63,8 @@ class Sidebar(commands.Cog):
         self.bot = bot
         self.bot.reddit = praw.Reddit(**bot.credentials["Reddit"])
         self.driver = None
-        self.bot.teams = defaultdict()
-        self.sidebar_loop.start()
+        self.bot.teams = None
+        self.bot.sidebar = self.sidebar_loop.start()
         
     def cog_unload(self):
         self.sidebar_loop.cancel()
@@ -92,18 +86,15 @@ class Sidebar(commands.Cog):
     async def fetch_team_data(self):
         await self.bot.wait_until_ready()
         connection = await self.bot.db.acquire()
-        records = await connection.fetch(""" SELECT * FROM team_data""")
-        for r in records:
-            for k, v in r:
-                if k == "team":
-                    continue
-                self.bot.teams.update({r['team']: {k: v}})
+        print("Fetching teams...")
+        self.bot.teams = await connection.fetch("""SELECT * FROM team_data""")
         await self.bot.db.release(connection)
-    
+        print("Fetched!")
+
     @commands.command(invoke_without_command=True)
     @commands.has_permissions(manage_messages=True)
     async def sidebar(self, ctx, *, caption=None):
-        """ Show the status of the sidebar updater, or use sidebar manual """
+        """ Force a sidebar update, or use sidebar manual """
         async with ctx.typing():
             # Check if message has an attachment, for the new sidebar image.
             if caption is not None:
@@ -203,11 +194,14 @@ class Sidebar(commands.Cog):
             elif "down" in movement:
                 movement = '🔻'
             else:
-                print(f'Error in sidebar, movement = {movement}')
                 movement = "?"
             team = p[2]
-            if team in self.bot.teams:
-                team = f"[{team}]({self.bot.teams[team]['subreddit']})"  # Insert subreddit file from Json
+            try:
+                # Insert subreddit link from db
+                team = [i for i in self.bot.teams if i['name'] == team][0]
+                team = f"[{team['name']}]({team['subreddit']})"
+            except IndexError:
+                print(team, "Not found in", [i['name'] for i in self.bot.teams])
             played = p[3]
             won = p[4]
             drew = p[5]
@@ -262,8 +256,9 @@ class Sidebar(commands.Cog):
             op = h if "Newcastle" in a else a
             
             try:
-                op = f"{self.bot.teams[op]['icon']}{self.bot.teams[op]['shortname']}"
-            except KeyError:
+                op = [i for i in self.bot.teams if i['name'] == op][0]
+                op = f"{op['icon']}{op['short_name']}"
+            except IndexError:
                 print(f"Sidebar - fixtures - No db entry for: {op}")
             fixblock.append(f"[{d}]({lnk})|{ic}|{op}\n")
         
@@ -329,41 +324,40 @@ class Sidebar(commands.Cog):
                 
                 # last op is for the last game at the top.
                 last_opponent = at if "Newcastle" in ht else ht
-                if at in self.bot.teams:
-                    lasta = (f"[{self.bot.teams[at]['shortname']}]"
-                             f"({self.bot.teams[at]['subreddit']})")
-                else:
+                
+                try:
+                    away = [i for i in self.bot.teams if i['name'] == at][0]
+                    last_away = f"[{away['short_name']}]({away['subreddit']})"
+                except IndexError:
                     get_badge(lnk, "away")
-                    lasta = f"[{at}](#temp/)"
-                if ht in self.bot.teams:
-                    lasth = (f"[{self.bot.teams[ht]['shortname']}]"
-                             f"({self.bot.teams[ht]['subreddit']}/)")
-                else:
+                    last_away = f"[{at}](#temp/)"
+                    
+                try:
+                    home = [i for i in self.bot.teams if i['name'] == ht][0]
+                    last_home = f"[{home['short_name']}]({home['subreddit']})"
+                except IndexError:
                     get_badge(lnk, "home")
-                    lasth = F"[{ht}](#temp)"
-                last_result = f"> {lasth.replace(' (Eng)', '')} {sc} {lasta.replace(' (Eng)', '')}"
+                    last_home = f"[{ht}](#temp/)"
+                    
+                last_result = f"> {last_home.replace(' (Eng)', '')} {sc} {last_away.replace(' (Eng)', '')}"
+
+            try:
+                home = [i for i in self.bot.teams if i['name'] == ht][0]
+                home = f"{home['icon']}{home['short_name']})"
+            except IndexError:
+                home = ht
+                
+            try:
+                away = [i for i in self.bot.teams if i['name'] == at][0]
+                away = f"{away['icon']}{away['short_name']})"
+            except IndexError:
+                away = at
             
-            if ht in self.bot.teams:
-                ht = (f"{self.bot.teams[ht]['icon']}"
-                      f"{self.bot.teams[ht]['shortname']}")
-            if at in self.bot.teams:
-                at = (f"{self.bot.teams[at]['shortname']}"
-                      f"{self.bot.teams[at]['icon']}")
+            icon = "[D](#icon-draw)"
+            icon = "[W](#icon-win)" if ("Newcastle" in home and h > a) or ("Newcastle" in away and a > h) else icon
+            icon = "[W](#icon-loss)" if ("Newcastle" in away and h > a) or ("Newcastle" in home and a > h) else icon
+            resultlist.append(f"{icon}|{home}|{sc}|{away}\n")
             
-            if "Newcastle" in ht:
-                if h > a:
-                    resultlist.append(f"[W](#icon-win)|{ht}|{sc}|{at}\n")
-                elif h == a:
-                    resultlist.append(f"[D](#icon-draw)|{ht}|{sc}|{at}\n")
-                else:
-                    resultlist.append(f"[L](#icon-loss)|{ht}|{sc}|{at}\n")
-            else:
-                if h > a:
-                    resultlist.append(f"[L](#icon-loss)|{ht}|{sc}|{at}\n")
-                elif h == a:
-                    resultlist.append(f"[D](#icon-draw)|{ht}|{sc}|{at}\n")
-                else:
-                    resultlist.append(f"[W](#icon-win)|{ht}|{sc}|{at}\n")
         return resultlist, last_result, last_opponent
     
     async def fetch_badge(self, src):
