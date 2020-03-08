@@ -183,21 +183,37 @@ class Fixtures(commands.Cog):
             fn = f"Table-{qry}-{dtn}.png".strip()
             await embed_utils.embed_image(ctx, embed, image, filename=fn)
 
-    # TODO: Finish Refactor into ext.utils.football Classes
-    # TODO: Re-write
     @commands.command(aliases=['draw'])
     async def bracket(self, ctx, *, qry: commands.clean_content = None):
         """ Get bracket for a tournament """
         async with ctx.typing():
             await ctx.send("Searching...", delete_after=5)
-            fsr = await self._search(ctx, qry, mode="league")
+            fsr = await self._search(ctx, qry)
             if fsr is None:
                 return  # rip.
-        
-            async with sl_lock:
-                image = await self.bot.loop.run_in_executor(None, fsr.bracket, self.driver)
-                base_embed = await fsr.base_embed
-            await embed_utils.embed_image(ctx, base_embed, image)
+            
+            dtn = datetime.datetime.now().ctime()
+
+            if isinstance(fsr, football.Competition):
+                async with sl_lock:
+                    image = await self.bot.loop.run_in_executor(None, fsr.bracket, self.driver)
+    
+                embed = await fsr.base_embed
+                embed.title = fsr.title
+                embed.description = f"```yaml\n[{dtn}]```"
+            elif isinstance(fsr, football.Team):
+                async with sl_lock:
+                    choices = await self.bot.loop.run_in_executor(None, fsr.next_fixture, self.driver)
+                for_picking = [i.full_league for i in choices]
+                embed = await fsr.base_embed
+                index = await embed_utils.page_selector(ctx, for_picking, deepcopy(embed))
+                if index is None:
+                    return  # rip
+                embed.title = for_picking[index]
+                embed.description = f"{choices[index].to_embed_row}"
+                image = await self.bot.loop.run_in_executor(None, choices[index].bracket, self.driver)
+            fn = f"Bracket-{qry}-{dtn}.png".strip()
+            await embed_utils.embed_image(ctx, embed, image, filename=fn)
 
     @commands.command(aliases=['fx'], usage="fixtures <team or league to search for>")
     async def fixtures(self, ctx, *, qry: commands.clean_content = None):
@@ -368,7 +384,7 @@ class Fixtures(commands.Cog):
 
         game_dict = defaultdict(list)
         for i in matches:
-            game_dict[i.full_league].append(i.live_score_text)
+            game_dict[i.full_league].append(i.live_score_embed_row)
 
         for league in game_dict:
             games = game_dict[league]

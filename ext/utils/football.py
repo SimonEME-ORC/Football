@@ -13,11 +13,12 @@ import discord
 import typing
 import json
 
-from ext.utils import selenium_driver, transfer_tools
+from ext.utils import selenium_driver, transfer_tools, image_utils
 from importlib import reload
 
 reload(selenium_driver)
 reload(transfer_tools)
+reload(image_utils)
 
 
 class Fixture:
@@ -28,11 +29,17 @@ class Fixture:
         self.__dict__.update(kwargs)
     
     def bracket(self, driver):
-        url = self.url + "/#standings;table;overall"
-        xp = ".//li[@id='li-match-draw']"
-        src = selenium_driver.get_html(driver, url, xp)
-        tree = html.fromstring(src)
-        print(tree.xpath(xp + "/@onclick"))
+        xp = './/div[@class="overview"]'
+        clicks = [(By.XPATH, ".//span[@class='button cookie-law-accept']")]
+        delete = [(By.XPATH, './/div[@class="seoAdWrapper"]'), (By.XPATH, './/div[@class="banner--sticky"]'),
+        (By.XPATH, './/div[@class="adsenvelope"]'), (By.XPATH, './/div[contains(@class, "rollbar")]')]
+        script = "var element = document.getElementsByClassName('overview')[0];" \
+                 "element.style.position = 'fixed';element.style.backgroundColor = '#ddd';" \
+                 "element.style.zIndex = '999';"
+        image = selenium_driver.get_image(driver, self.url + "#draw", xpath=xp, clicks=clicks, delete=delete,
+                                             script=script,
+                                             failure_message="Unable to find a bracket for that competition")
+        return image
         
     def table(self, driver):
         delete = [(By.XPATH, './/div[@class="seoAdWrapper"]'), (By.XPATH, './/div[@class="banner--sticky"]'),
@@ -117,7 +124,9 @@ class Fixture:
 
     @property
     def live_score_embed_row(self) -> str:
-        return f"{self.emoji_time} [{self.home} {self.formatted_score} {self.away}]({self.url})"
+        home_cards = f" `{self.home_attrs}` " if self.home_attrs is not None else " "
+        away_cards = f" `{self.away_attrs}` " if self.away_attrs is not None else " "
+        return f"{self.emoji_time} [{self.home}{home_cards} {self.formatted_score} {away_cards}{self.away}]({self.url})"
     
     @property
     def filename(self) -> str:
@@ -299,7 +308,7 @@ class Competition(FlashScoreSearchResult):
         clicks = [(By.XPATH, ".//span[@class='button cookie-law-accept']")]
         delete = [(By.XPATH, './/div[@class="seoAdWrapper"]'), (By.XPATH, './/div[@class="banner--sticky"]'),
                   (By.XPATH, './/div[@class="box_over_content"]')]
-        err = f"No table found on {self.url}"
+        err = f"No table found on {self.link}"
         image = selenium_driver.get_image(driver, self.link + "/standings/", xp, err, clicks=clicks, delete=delete)
         self.fetch_logo(driver)
         return image
@@ -315,21 +324,9 @@ class Competition(FlashScoreSearchResult):
         captures = selenium_driver.get_image(driver, url, xpath=xp, clicks=clicks, delete=delete,
                                              multi_capture=(multi, script),
                                              failure_message="Unable to find a bracket for that competition")
-
-        # Captures is a list of opened PIL images.
-        w = int(captures[0].width / 3 * 2 + sum(i.width / 3 for i in captures))
-        h = captures[0].height
-        canvas = Image.new('RGB', (w, h))
-        x = 0
-        print("DEBUG:", len(captures), "Captures found.")
-        for i in captures:
-            canvas.paste(i, (x, 0))
-            x += int(i.width / 3)
-        output = BytesIO()
-        canvas.save(output, 'PNG')
-        self.fetch_logo(driver)
-        output.seek(0)
-        return output
+        self.fetch_logo(driver)  # For base_embed.
+        
+        return image_utils.stitch(captures)
     
     def scorers(self, driver) -> typing.List[Player]:
         xp = ".//div[@class='tabs__group']"
