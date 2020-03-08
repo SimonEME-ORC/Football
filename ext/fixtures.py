@@ -24,14 +24,14 @@ class Fixtures(commands.Cog):
     
     def __init__(self, bot):
         self.bot = bot
-        self.driver = spawn_driver()
+        try:
+            self.driver = self.bot.fixture_driver
+        except AttributeError:
+            self.bot.fixture_driver = spawn_driver()
+            self.driver = self.bot.fixture_driver
         for package in [transfer_tools, football, embed_utils]:
             reload(package)
 
-    def cog_unload(self):
-        if self.driver is not None:
-            self.driver.quit()
-    
     # Master picker.
     async def _search(self, ctx, qry, mode=None) -> str or None:
         if qry is None:
