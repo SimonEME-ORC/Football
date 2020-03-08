@@ -1,6 +1,4 @@
 import asyncio
-from collections import defaultdict
-
 from discord.ext import commands
 import discord
 import typing
@@ -13,7 +11,7 @@ class Notifications(commands.Cog):
     
     def __init__(self, bot):
         self.bot = bot
-        self.notif_cache = defaultdict(dict)
+        self.records = []
         self.bot.loop.create_task(self.update_cache())
     
     # TODO: On Channel Delete - Cascades!
@@ -22,18 +20,10 @@ class Notifications(commands.Cog):
     # TODO: Custom Reactions.
     
     async def update_cache(self):
-        self.notif_cache.clear()
         connection = await self.bot.db.acquire()
         async with connection.transaction():
-            records = await connection.fetch("""SELECT * FROM guild_settings""")
+            self.records = await connection.fetch("""SELECT * FROM guild_settings""")
         await self.bot.db.release(connection)
-        
-        for r in records:
-            guild_id = r["guild_id"]
-            for k, v in r.items():
-                if k == "guild_id":
-                    continue
-                self.notif_cache[guild_id].update({k: v})
     
     # Master info command.
     @commands.has_permissions(manage_guild=True)
@@ -45,8 +35,12 @@ class Notifications(commands.Cog):
         e.description = ""
         e.title = f"Config settings for {ctx.guild.name}"
         
-        for key, value in self.notif_cache[ctx.guild.id].items():
-            e.description += f"{key}: {value} \n"
+        guild = [r for r in self.records if r["guild_id"] == ctx.guild.id]
+        if guild:
+            for key, value in guild[0]:
+                e.description += f"{key}: {value} \n"
+        else:
+            e.description = "No configuration set."
         
         e.set_thumbnail(url=ctx.guild.icon_url)
         await ctx.send(embed=e)
@@ -56,7 +50,8 @@ class Notifications(commands.Cog):
     async def joins(self, ctx, channel: typing.Optional[discord.TextChannel]):
         """ Send member information to a channel on join. """
         if channel is None:  # Give current info
-            ch = self.bot.get_channel(self.notif_cache[ctx.guild.id]["joins_channel_id"])
+            joins = [r['joins_channel_id'] for r in self.records if r["guild_id"] == ctx.guild.id][0]
+            ch = self.bot.get_channel(joins)
             if ch is None:
                 return await ctx.send(f'Join information is not currently being output.')
             else:
@@ -85,7 +80,8 @@ class Notifications(commands.Cog):
     async def leaves(self, ctx, channel: typing.Optional[discord.TextChannel] = None):
         """ Set a channel to show information about new member joins """
         if channel is None:  # Show current info
-            ch = self.bot.get_channel(self.notif_cache[ctx.guild.id]["leaves_channel_id"])
+            leaves = [r['leaves_channel_id'] for r in self.records if r["guild_id"] == ctx.guild.id][0]
+            ch = self.bot.get_channel(leaves)
             if ch is None:
                 return await ctx.send(f'Member leaves are not currently being output.')
             else:
@@ -116,7 +112,8 @@ class Notifications(commands.Cog):
     async def mutes(self, ctx, channel: typing.Optional[discord.TextChannel] = None):
         """ Set a channel to show messages about user mutings """
         if channel is None:  # Show current info
-            ch = self.bot.get_channel(self.notif_cache[ctx.guild.id]["mutes_channel_id"])
+            mutes = [r['mutes_channel_id'] for r in self.records if r["guild_id"] == ctx.guild.id][0]
+            ch = self.bot.get_channel(mutes)
             if ch is None:
                 return await ctx.send(f'Mute notifications are not currently being output.')
             else:
@@ -145,7 +142,8 @@ class Notifications(commands.Cog):
     async def emojis(self, ctx, channel: typing.Optional[discord.TextChannel] = None):
         """ Set a channel to show when emojis are changed. """
         if channel is None:
-            ch = self.bot.get_channel(self.notif_cache[ctx.guild.id]["emojis_channel_id"])
+            emojis = [r['emojis_channel_id'] for r in self.records if r["guild_id"] == ctx.guild.id][0]
+            ch = self.bot.get_channel(emojis)
             if ch is None:
                 return await ctx.send(f'Emoji change notifications are not currently being output.')
             else:
@@ -173,6 +171,7 @@ class Notifications(commands.Cog):
     # Listeners
     @commands.Cog.listener()
     async def on_guild_join(self, guild):
+        print('Joined a new guild', guild.id, guild.name)
         await asyncio.sleep(10)  # Time for other cogs to do their shit.
         await self.update_cache()
         
@@ -181,18 +180,6 @@ class Notifications(commands.Cog):
         connection = await self.bot.db.acquire()
         await connection.execute("""DELETE FROM guild_settings WHERE guild_id = $1""", guild.id)
         await self.bot.db.release(connection)
-    
-    @commands.Cog.listener()
-    async def on_guild_channel_delete(self, channel):
-        matches = [k for k, v in self.notif_cache.items() if v == channel.id]
-        if not matches:
-            return
-        
-        connection = await self.bot.db.acquire()
-        async with connection.transaction:
-            for i in matches:
-                await connection.execute("""UPDATE guild_settings SET ($1 = NULL) WHERE $1 = $2""", i, channel.id)
-        await connection.release()
 
     # TODO: Blocked
     @commands.Cog.listener()
@@ -203,35 +190,31 @@ class Notifications(commands.Cog):
     async def on_member_update(self, before, after):
         # Notify about member mute/un-mute.
         muted_role = discord.utils.find(lambda r: r.name.lower() == 'muted', before.guild.roles)
-        if muted_role is None:
-            return
-        try:
-            notif_channel = self.bot.get_channel(self.notif_cache[before.guild.id]['mutes_channel_id'])
-        except KeyError:
-            return  # Not set
-        
-        if notif_channel is None:
-            return
-        
         if muted_role in before.roles and muted_role not in after.roles:
             content = f"🙊 {before.mention} was unmuted"
         elif muted_role not in before.roles and muted_role in after.roles:
             content = f"🙊 {before.mention} was muted"
         else:
-            return  # No muting occurred.
+            return
+
+        mutes = [r['mutes_channel_id'] for r in self.records if r["guild_id"] == before.guild.id][0]
+        ch = self.bot.get_channel(mutes)
+        
+        if ch is None:
+            return
         
         try:
             async for entry in before.guild.audit_logs(action=discord.AuditLogAction.member_role_update, limit=1):
                 content += f" by {entry.user} for {entry.reason}"
         except discord.Forbidden:
             pass  # Missing permissions to get reason.
-        
-        await notif_channel.send(content)
+        await ch.send(content)
             
     @commands.Cog.listener()
     async def on_member_join(self, new_member):
-        j = new_member.guild.get_channel(self.notif_cache[new_member.guild.id]["joins_channel_id"])
-        if j is None:
+        joins = [r['joins_channel_id'] for r in self.records if r["guild_id"] == new_member.guild.id][0]
+        ch = self.bot.get_channel(joins)
+        if ch is None:
             return
         
         # Extended member join information.
@@ -249,7 +232,7 @@ class Notifications(commands.Cog):
         
         e.add_field(name="Account Created", value=coloured_time)
         e.set_thumbnail(url=new_member.avatar_url)
-        await j.send(embed=e)
+        await ch.send(embed=e)
 
     @commands.Cog.listener()
     async def on_member_remove(self, member):
@@ -259,57 +242,55 @@ class Notifications(commands.Cog):
                 if str(x.target) == str(member):
                     try:
                         if x.action == discord.AuditLogAction.kick:
-                            kc = member.guild.get_channel(self.notif_cache[member.guild.id]["kicks_channel_id"])
-                            return await kc.send(f"👢 {member.mention} was kicked by {x.user} for {x.reason}.")
+                            kicks = [r['kicks_channel_id'] for r in self.records if r["guild_id"] == member.guild.id][0]
+                            ch = self.bot.get_channel(kicks)
+                            if ch is not None:
+                                return await ch.send(f"👢 {member.mention} was kicked by {x.user} for {x.reason}.")
                         elif x.action == discord.AuditLogAction.ban:
-                            bc = member.guild.get_channel(self.notif_cache[member.guild.id]["bans_channel_id"])
-                            return await bc.send(f"☠ {member.mention} was banned by {x.user} for {x.reason}.")
+                            bans = [r['bans_channel_id'] for r in self.records if r["guild_id"] == member.guild.id][0]
+                            ch = self.bot.get_channel(bans)
+                            if ch is not None:
+                                return await ch.send(f"☠ {member.mention} was banned by {x.user} for {x.reason}.")
                     except (AttributeError, TypeError):
                         pass  # No kick/ban channel set, default to leaves.
         except discord.Forbidden:
             pass  # We cannot see audit logs.
         
         try:
-            lc = member.guild.get_channel(self.notif_cache[member.guild.id]["leaves_channel_id"])
-            await lc.send(f"⬅ {member.mention} left the server.")
+            ch = [r['leaves_channel_id'] for r in self.records if r["guild_id"] == member.guild.id][0]
+            await ch.send(f"⬅ {member.mention} left the server.")
         except (AttributeError, TypeError):
             pass
         
     @commands.Cog.listener()
     async def on_guild_emojis_update(self, guild, before, after):
-        try:
-            c = guild.get_channel(self.notif_cache[guild.id]["emojis_channel_id"])
-        except KeyError:
-            return  # No channel set.
+        emojis = [r['emojis_channel_id'] for r in self.records if r["guild_id"] == guild.id][0]
+        ch = guild.get_channel(emojis)
         
-        if not c:
+        if ch is None:
             return
-            
-        if c is None:
-            print(self.notif_cache[guild.id]["emojis_channel_id"], "Dead channel?", "emoji update.")
         
         # Find if it was addition or removal.
         new_emoji = [i for i in after if i not in before]
         if not new_emoji:
             try:
                 removed_emoji = [i for i in before if i not in after][0]
-                await c.send(f"The '{removed_emoji}' emoji was removed")
+                await ch.send(f"The '{removed_emoji}' emoji was removed")
             except IndexError:
-                await c.send("An emoji was removed.")
+                await ch.send("An emoji was removed.")
         else:
             notif = f"The {new_emoji[0]} emoji was created"
-            if guild.me.permissions_in(c).manage_emojis:
+            if guild.me.permissions_in(ch).manage_emojis:
                 emoji = await guild.fetch_emoji(new_emoji[0].id)
                 notif += " by " + emoji.user.mention
-            await c.send(notif)
+            await ch.send(notif)
 
     @commands.Cog.listener()
     async def on_member_unban(self, guild, user):
-        try:
-            c = guild.get_channel(self.notif_cache[guild.id]["unbans_channel_id"])
-        except KeyError:
-            return
-        await c.send(f"🆗 {user} (ID: {user.id}) was unbanned.")
+        unbans = [r['unban_channel_id'] for r in self.records if r["guild_id"] == guild.id][0]
+        ch = self.bot.get_channel(unbans)
+        if ch is not None:
+            await ch.send(f"🆗 {user} (ID: {user.id}) was unbanned.")
         
         
 def setup(bot):
