@@ -89,7 +89,6 @@ class Fun(commands.Cog):
     @commands.command(aliases=["rather"])
     async def wyr(self, ctx):
         """ Would you rather... """
-        
         async def fetch():
             async with self.bot.session.get("http://www.rrrather.com/botapi") as response:
                 response = await response.json()
@@ -135,14 +134,16 @@ class Fun(commands.Cog):
             try:
                 rea = await self.bot.wait_for("reaction_add", check=check, timeout=120)
             except asyncio.TimeoutError:
-                await m.remove_reaction('🎲', ctx.message.author)
+                await m.remove_reaction('🎲', ctx.me)
                 break
             rea = rea[0]
             if rea.emoji == '🎲':
                 resp = await fetch()
-                await m.clear_reactions()
+                try:
+                    await m.clear_reactions()
+                except discord.Forbidden:
+                    pass
                 await m.edit(content=await write(resp))
-                await react(m)
     
     @commands.command()
     @commands.is_owner()
