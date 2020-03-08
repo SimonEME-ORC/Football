@@ -39,6 +39,7 @@ default_leagues = [
 
 # TODO: https://www.scorebat.com/video-api/
 # TODO: re-code vidi-printer
+# TODO: Allow re-ordering of leagues, set an "index" value in db and do a .sort?
 
 
 async def _search(ctx, qry) -> str or None:
@@ -97,13 +98,7 @@ class Scores(commands.Cog):
     @tasks.loop(minutes=1)
     async def score_loop(self):
         """ Score Checker Loop """
-        try:
-            games = await self.fetch_games()
-        except Exception as e:
-            print("Exception in score_loop.")
-            print(type(e).__name__)
-            print(e.args)
-            return
+        games = await self.fetch_games()
             
         # If we have an item with new data, force a full cache clear. This is expected behaviour at midnight.
         if self.bot.games:
@@ -155,9 +150,10 @@ class Scores(commands.Cog):
             if i.tag == "br":
                 # End of match row.
                 try:
-                    home, away = "".join(capture_group).split(" - ")
+                    home, away = "".join(capture_group).split('-', 1)  # Olympia HK can suck my fucking cock
                 except ValueError:
                     print("Value error", capture_group)
+                    capture_group = []
                     continue
                 capture_group = []
             
@@ -181,10 +177,10 @@ class Scores(commands.Cog):
                 url = "http://www.flashscore.com" + url
                 home_goals, away_goals = i.text.split(':')
                 state = i.attrib['class']
-                if away_goals.ends_with('aet'):
+                if away_goals.endswith('aet'):
                     away_goals = away_goals.strip('aet')
                     time = "AET"
-                elif away_goals.ends_with('pen'):
+                elif away_goals.endswith('pen'):
                     away_goals = away_goals.strip('pen')
                     time = "After Pens"
                     
@@ -220,7 +216,7 @@ class Scores(commands.Cog):
             
             self.msg_dict[channel_id]["strings"] = []
             
-            t = datetime.datetime.now().strftime("Live Scores for **%a %d %b %Y** (last updated at **%H:%M:%S**)\n")
+            t = datetime.datetime.now().strftime("Live Scores for **%a %d %b %Y** (Local Time **%H:%M**)\n")
             output = t
             
             for cl in whitelist:
@@ -303,7 +299,7 @@ class Scores(commands.Cog):
             await self.update_cache()
     
     async def _pick_channels(self, ctx, channels):
-        # Assure guild has transfer channel.
+        # Assure guild has score channel.
         if ctx.guild.id not in [i[0] for i in self.cache]:
             await ctx.send(f'{ctx.guild.name} does not have any live scores channels set.')
             channels = []
@@ -317,7 +313,7 @@ class Scores(commands.Cog):
             if not channels:
                 channels = guild_channels
             if ctx.channel in guild_channels:
-                channels = [ctx.channel]
+                return [ctx.channel]
             elif len(channels) != 1:
                 async with ctx.typing():
                     mention_list = " ".join([i.mention for i in channels])
@@ -342,7 +338,7 @@ class Scores(commands.Cog):
         e = discord.Embed(color=0x2ecc71)
         e.set_thumbnail(url=ctx.me.avatar_url)
         e.title = f"{ctx.guild.name} Live Scores channels"
-    
+        
         score_channels = [self.bot.get_channel(i[1]) for i in self.cache if ctx.guild.id in i]
         if not score_channels:
             return await ctx.send(f"{ctx.guild.name} has no live-scores channel set.")
@@ -445,98 +441,83 @@ class Scores(commands.Cog):
         await ctx.send("\n".join(replies))
     
     @ls.group(name="remove", aliases=["del", "delete"],
-              usage="ls remove <(Optional: #channel #channel2)> <Country: League Name>",
+              usage="ls remove <Optional: #channel> <Country: League Name>",
               invoke_without_command=True)
     @commands.has_permissions(manage_channels=True)
-    async def _remove(self, ctx, channels: commands.Greedy[discord.TextChannel], *, target: commands.clean_content):
-        """ Remove a competition from your live-scores channels """
-        channels = await self._pick_channels(ctx, channels)
+    async def _remove(self, ctx, channel: discord.TextChannel = None, *, target: commands.clean_content):
+        """ Remove a competition from a live-scores channel
         
-        if not channels:
-            return  # rip
+        Either perform ls remove <league name> in the channel you wish to delete it from, or use
+        ls remove #channel <league name> to delete it from another channel."""
+        # Verify we have a valid livescores channel target.
+        channel = ctx.channel if channel is None else channel
+        if channel.id not in {i[1] for i in self.cache}:
+            return await ctx.send(f'{channel.mention} is not set as a scores channel.')
+
+        # Verify which league the user wishes to remove.
+        target = target.strip("'\",")  # Remove quotes, idiot proofing.
+        leagues = self.cache[(ctx.guild.id, channel.id)]
+        matches = [i for i in leagues if target.lower() in i.lower()]
+        index = await embed_utils.page_selector(ctx, matches)
+        if index is None:
+            return  # rip.
+        target = matches[index]
         
-        # Remove quotes, idiot proofing.
-        target = target.strip("'\",")
-        
-        replies = []
         connection = await self.bot.db.acquire()
         async with connection.transaction():
-            for c in channels:
-                if c.id not in {i[1] for i in self.cache}:
-                    replies.append(f'{c.mention} is not set as a scores channel.')
-                    continue
-                leagues = self.cache[(ctx.guild.id, c.id)]
-                
-                if target not in leagues:
-                    replies.append(f"🚫 **{target}** was not in {c.mention}'s tracked leagues. (Check "
-                                   f"capitalisation?)")
-                    continue
-                else:
-                    await connection.execute("""
-                        DELETE FROM scores_leagues WHERE (league,channel_id) = ($1,$2)
-                    """, target, c.id)
-                leagues.pop(target)
-                leagues = ", ".join(leagues)
-                replies.append(f"✅ **{target}** was deleted from the tracked leagues for {c.mention},"
-                               f" the new tracked leagues list is: ```yaml\n{leagues}```\n")
+            await connection.execute(""" DELETE FROM scores_leagues WHERE (league,channel_id) = ($1,$2)""",
+                                     target, channel.id)
+        leagues.remove(target)
+        leagues = ", ".join(leagues)
+        await ctx.send(f"✅ **{target}** was deleted from the tracked leagues for {channel.mention},"
+                       f" the new tracked leagues list is: ```yaml\n{leagues}```\n")
         await self.bot.db.release(connection)
         await self.update_cache()
-        await ctx.send('\n'.join(replies))
     
     @_remove.command()
     @commands.has_permissions(manage_channels=True)
-    async def all(self, ctx, channels: commands.Greedy[discord.TextChannel]):
-        """Remove ALL competition from your live-scores channels """
-        channels = await self._pick_channels(ctx, channels)
-        
-        if not channels:
-            return  # rip
+    async def all(self, ctx, channel: discord.TextChannel = None):
+        """ Remove ALL competitions from a live-scores channel
+
+        Either perform ls remove all in the channel you wish to delete it from, or use
+        ls remove all #channel to delete it from another channel."""
+        channel = ctx.channel if channel is None else channel
+        if channel.id not in {i[1] for i in self.cache}:
+            return await ctx.send(f'{channel.mention} is not set as a scores channel.')
         
         connection = await self.bot.db.acquire()
-        replies = []
         async with connection.transaction():
-            for c in channels:
-                if c.id not in [i[1] for i in self.cache]:
-                    replies.append(f"🚫 {c.mention} was not set as a scores channel.")
-                    continue
-                async with connection.transaction():
-                    await connection.execute("""DELETE FROM scores_leagues WHERE channel_id = $1""", c.id)
-                replies.append(f"✅ {c.mention} no longer tracks any leagues. Use `ls reset` to undo this.")
+            async with connection.transaction():
+                await connection.execute("""DELETE FROM scores_leagues WHERE channel_id = $1""", channel.id)
         await self.bot.db.release(connection)
         await self.update_cache()
-        await ctx.send("\n".join(replies))
+        await ctx.send(f"✅ {c.mention} no longer tracks any leagues. Use `ls reset` or `ls add` to "
+                       f"re-popultate it with new leagues or the default leagues.")
     
-    @ls.command(usage="ls remove <(Optional: #channel #channel2)>")
+    @ls.command(usage="ls reset <#channel>")
     @commands.has_permissions(manage_channels=True)
-    async def reset(self, ctx, channels: commands.Greedy[discord.TextChannel]):
-        """ Reset live-scores channel(s) to the list of default competitions """
-        channels = await self._pick_channels(ctx, channels)
-        
-        if not channels:
-            return  # rip
+    async def reset(self, ctx, channel: discord.TextChannel = None):
+        """ Reset competitions for a live-scores channel to the defaults.
+
+        Either perform `ls reset` in the channel you wish to reset it from, or use
+        `ls reset #channel` to reset it from another channel."""
+        channel = ctx.channel if channel is None else channel
+        if channel.id not in {i[1] for i in self.cache}:
+            return await ctx.send(f'{channel.mention} is not set as a scores channel.')
+
+        whitelist = self.cache[(ctx.guild.id, channel.id)]
+        if whitelist == default_leagues:
+            return await ctx.send(f"⚠ {channel.mention} is already using the default leagues.")
         
         connection = await self.bot.db.acquire()
-        replies = []
         async with connection.transaction():
-            for c in channels:
-                if c.id not in [i[1] for i in self.cache]:
-                    replies.append(f"🚫 {c.mention} was not set as a scores channel.")
-                    continue
-                whitelist = self.cache[(ctx.guild.id, c.id)]
-                if whitelist is None:
-                    replies.append(f"⚠️ {c.mention} is already using the default leagues.")
-                    continue
-                async with connection.transaction():
-                    await connection.execute("""
-                        DELETE FROM scores_leagues WHERE channel_id = $1
-                    """, c.id)
-                for i in default_leagues:
-                    await connection.execute("""INSERT INTO scores_leagues (channel_id, league) VALUES ($1, $2)""",
-                                             c.id, i)
-                replies.append(f"✅ {c.mention} had it's tracked leagues reset to the default.")
+            await connection.execute(""" DELETE FROM scores_leagues WHERE channel_id = $1 """, channel.id)
+            for i in default_leagues:
+                await connection.execute("""INSERT INTO scores_leagues (channel_id, league) VALUES ($1, $2)""",
+                                         channel.id, i)
         await self.bot.db.release(connection)
         await self.update_cache()
-        await ctx.send("\n".join(replies))
+        await ctx.send(f"✅ {channel.mention} had it's tracked leagues reset to the defaults.")
     
 
 def setup(bot):
