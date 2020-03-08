@@ -39,7 +39,7 @@ def fetch(driver, url, xpath, **kwargs):
                 x = WebDriverWait(driver, 3).until(ec.presence_of_element_located(z))
             except TimeoutException:
                 continue  # Element does not exist, do not need to delete it.
-            scr = """var element = arguments[0];element.parentNode.removeChild(element);"""
+            scr = """var z = arguments[0];z.parentNode.removeChild(z);"""
             driver.execute_script(scr, x)
     
     # Hide cookie popups, switch tabs, etc.
@@ -50,6 +50,10 @@ def fetch(driver, url, xpath, **kwargs):
                 x.click()
             except (TimeoutException, ElementNotInteractableException, StaleElementReferenceException):
                 pass  # Can't click on what we can't find.
+    
+    # Run any scripts
+    if "script" in kwargs:
+        driver.execute_script(kwargs['script'])
     
     return element
 
