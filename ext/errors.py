@@ -88,7 +88,10 @@ class Errors(commands.Cog):
         try:
             await ctx.send(embed=e)
         except discord.Forbidden:
-            await ctx.send('An error occurred, I need embed_links permissions to send embeds.')
+            try:
+                await ctx.send('An error occurred, I need embed_links permissions to send embeds.')
+            except discord.Forbidden:
+                pass  # well fuck you too then?
         except discord.HTTPException:
             print(e.description)
             e.description = "An error occurred, error too long to output in embed."
