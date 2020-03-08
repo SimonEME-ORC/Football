@@ -123,7 +123,7 @@ class Fixture:
         return f"{self.emoji_time} {self.home}{home_cards} {self.formatted_score} {away_cards}{self.away}"
 
     @property
-    def live_score_embed_row(self) -> str:
+    def live_score_embed_row(self) -> str:  
         home_cards = f" `{self.home_attrs}` " if self.home_attrs is not None else " "
         away_cards = f" `{self.away_attrs}` " if self.away_attrs is not None else " "
         return f"{self.emoji_time} [{self.home}{home_cards} {self.formatted_score} {away_cards}{self.away}]({self.url})"
