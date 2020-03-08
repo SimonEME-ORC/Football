@@ -201,7 +201,7 @@ def ruin(image):
 async def get_faces(ctx, target):
     """ Retrieve face features from Project Oxford """
     if isinstance(target, discord.Member):
-        target = str(ctx.message.mentions[0].avatar_url_as(format="png"))
+        target = target.avatar_url_as(format="png")
     elif target is None:
         for i in ctx.message.attachments:
             if i.height is None:  # Not an image.
@@ -265,7 +265,7 @@ class ImageManip(commands.Cog):
             
             async with self.bot.session.get(str(ctx.author.avatar_url_as(format="png"))) as resp:
                 av = await resp.content.read()
-            match = random.choice(ctx.guild.members)
+            match = random.choice([i for i in ctx.guild.members if str(i.status) != "offline"] )
             name = match.display_name
             
             async with self.bot.session.get(str(match.avatar_url_as(format="png"))) as resp:
