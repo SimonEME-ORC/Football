@@ -72,6 +72,8 @@ async def page_selector(ctx, item_list, base_embed=None) -> int:
 async def paginate(ctx, embeds, preserve_footer=False, items=None, wait_length: int = 60) -> int or None:
     assert len(embeds) > 0, "No results found."
     page = 0
+    
+    # Add our page number info.
     if len(embeds) > 1:
         for x, y in enumerate(embeds, 1):
             page_line = f"{ctx.author}: Page {x} of {len(embeds)}"
@@ -79,25 +81,13 @@ async def paginate(ctx, embeds, preserve_footer=False, items=None, wait_length: 
                 y.add_field(name="Page", value=page_line)
             else:
                 y.set_footer(icon_url=PAGINATION_FOOTER_ICON, text=page_line)
-        if ctx.me.permissions_in(ctx.channel).add_reactions:
-            if not ctx.me.permissions_in(ctx.channel).manage_messages:
-                if ctx.guild is None:
-                    warn = "I can't remove your reactions in DMs, so you'll have to click twice."
-                else:
-                    warn = "I don't have manage_messages permissions, so you'll have to click twice."
-                m = await ctx.send(warn, embed=embeds[page])
-            else:
-                m = await ctx.send(embed=embeds[page])
-        else:
-            m = None
-            if ctx.guild is not None:
-                warn = "I don't have add_reaction permissions so I can only show you the first page of results."
-                await ctx.send(warn, embed=embeds[page])
-                if not items:
-                    return None
-    else:
-        m = await ctx.send(embed=embeds[page])
-    
+                
+    if not ctx.me.permissions_in(ctx.channel).add_reactions:
+        await ctx.send("I don't have add_reaction permissions so I can only show you the first page of results.")
+        if not items:
+            return None
+
+    m = await ctx.send(embed=embeds[page])
     # Add reaction, we only need "First" and "Last" if there are more than 2 pages.
     reacts = []
     if m is not None:
@@ -109,32 +99,33 @@ async def paginate(ctx, embeds, preserve_footer=False, items=None, wait_length: 
             if len(embeds) > 2:
                 reacts.append(ctx.bot.loop.create_task(m.add_reaction("⏭")))  # last
             reacts.append(ctx.bot.loop.create_task(m.add_reaction('🚫')))
-
-    def react_check(r, u):
-        if r.message.id == m.id and u.id == ctx.author.id:
-            emoji = str(r.emoji)
-            return emoji.startswith(('⏮', '◀', '▶', '⏭', '🚫'))
-
-    def id_check(message):
-        if not ctx.author.id == message.author.id or not message.content.isdigit():
-            return False
-        if items is not None:
-            if int(message.content.strip('[]')) in range(len(items)):
-                return True
     
+    # If we're passing an items, we want to get the user's chosen result from the dict.
+    # But we always want to be able to change page, or cancel the paginator.
+
     while not ctx.bot.is_closed():
-        # If we're passing an items, we want to get the user's chosen result from the dict.
-        # But we always want to be able to change page, or cancel the paginator.
-        
         waits = []
         if items is not None:
+            def id_check(message):
+                if not ctx.author.id == message.author.id or not message.content.isdigit():
+                    return False
+                if int(message.content.strip('[]')) in range(len(items)):
+                    return True
+        
             waits.append(ctx.bot.wait_for("message", check=id_check))
         if ctx.me.permissions_in(ctx.channel).add_reactions:
+            def react_check(r, u):
+                if r.message.id == m.id and u.id == ctx.author.id:
+                    return str(r.emoji).startswith(('⏮', '◀', '▶', '⏭', '🚫'))
+        
             waits.append(ctx.bot.wait_for("reaction_add", check=react_check))
-        finished, pending = await asyncio.wait([ctx.bot.wait_for("message", check=id_check),
-                                                ctx.bot.wait_for("reaction_add", check=react_check)],
-                                               timeout=wait_length,
-                                               return_when=asyncio.FIRST_COMPLETED)
+            waits.append(ctx.bot.wait_for("reaction_remove", check=react_check))
+    
+        if not waits:
+            return  # :man_shrugging:
+    
+        finished, pending = await asyncio.wait(waits, timeout=wait_length, return_when=asyncio.FIRST_COMPLETED)
+        
         try:
             result = finished.pop().result()
         except KeyError:  # pop from empty set.
@@ -143,7 +134,10 @@ async def paginate(ctx, embeds, preserve_footer=False, items=None, wait_length: 
                 e.title = "Timed out."
                 e.colour = discord.Colour.red()
                 e.set_footer(text=f"Stopped waiting  response after {wait_length} seconds.")
-                await m.edit(embed=e)
+                try:
+                    await m.edit(embed=e, delete_after=10)
+                except discord.NotFound:
+                    pass # Why?
             else:
                 try:
                     await m.clear_reactions()
@@ -151,6 +145,8 @@ async def paginate(ctx, embeds, preserve_footer=False, items=None, wait_length: 
                     for i in m.reactions:
                         if i.author == ctx.me:
                             await m.remove_reaction(i, ctx.me)
+                except discord.NotFound:
+                    pass
             return None
         
         # Kill other.
@@ -158,19 +154,16 @@ async def paginate(ctx, embeds, preserve_footer=False, items=None, wait_length: 
             i.cancel()
         
         if isinstance(result, discord.Message):
-            # We actually return something.
-            index = int(result.content)
-            
             for i in reacts:  # Still adding reactions.
                 i.cancel()
             
-            await m.delete()  # Just a little cleanup.
             try:
+                await m.delete()  # Just a little cleanup.
                 await result.delete()
             except (discord.Forbidden, discord.NotFound):
                 pass
-            
-            return index
+            # We actually return something.
+            return int(result.content)
         
         else:  # Reaction.
             # We just want to change page, or cancel.
@@ -189,14 +182,10 @@ async def paginate(ctx, embeds, preserve_footer=False, items=None, wait_length: 
                 page = len(embeds) - 1
                 
             elif result[0].emoji == "🚫":  # Delete:
-                
                 await m.delete()
                 for i in reacts:
                     i.cancel()
                 return None
-            
-            if ctx.me.permissions_in(ctx.channel).manage_messages:
-                await m.remove_reaction(result[0].emoji, ctx.author)
             await m.edit(embed=embeds[page])
 
 
